@@ -4,30 +4,29 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A page of allocated data.
-///
-/// This type takes two const type parameters: the number of items, and that number divided by 64, rounding up.  Rust
-/// limitations prevent us from asserting that this is correct at compile time without using nightly, so it is checked
-/// at runtime.  Use the type aliases for convenience when possible.
-struct AllocationPage<T: 'static, const N: usize, const N_DIV: usize> {
-    items: [UnsafeCell<MaybeUninit<T>>; N],
+struct AllocationPage<T: 'static> {
+    items: Vec<UnsafeCell<MaybeUninit<T>>>,
 
     /// bits are set in this bitset as the page fills, and cleared as the page is emptied.
     ///
     /// The index of a given bit is `BIT % 64`, then numbered starting at the LSB.
-    bitset: [AtomicU64; N_DIV],
+    bitset: Vec<AtomicU64>,
 }
 
-impl<T: 'static, const N: usize, const N_DIV: usize> AllocationPage<T, N, N_DIV> {
-    pub(crate) fn new() -> Self {
-        let ndiv_expected = (N / 64) + (N % 64 != 0) as usize;
-        assert_eq!(N_DIV, ndiv_expected);
+impl<T: 'static> AllocationPage<T> {
+    pub(crate) fn new(capacity: usize) -> Self {
+        assert!(capacity > 0);
+        let bitset_size = capacity / 64 + (capacity % 64 != 0) as usize;
+        let mut ap = AllocationPage {
+            items: Vec::new(),
+            bitset: Vec::new(),
+        };
 
-        // Note that Loom's version of AtomicU64 doens't support constant evaluation.
+        ap.items
+            .resize_with(capacity, || UnsafeCell::new(MaybeUninit::uninit()));
+        ap.bitset.resize_with(bitset_size, || AtomicU64::new(0));
 
-        AllocationPage {
-            items: [(); N].map(|_| UnsafeCell::new(MaybeUninit::uninit())),
-            bitset: [(); N_DIV].map(|_| AtomicU64::new(0)),
-        }
+        ap
     }
 
     /// Find a possibly free index in the page to allocate.
@@ -143,8 +142,8 @@ impl<T: 'static, const N: usize, const N_DIV: usize> AllocationPage<T, N, N_DIV>
     }
 }
 
-unsafe impl<T, const N: usize, const N_DIV: usize> Sync for AllocationPage<T, N, N_DIV> {}
-unsafe impl<T, const N: usize, const N_DIV: usize> Send for AllocationPage<T, N, N_DIV> {}
+unsafe impl<T> Sync for AllocationPage<T> {}
+unsafe impl<T> Send for AllocationPage<T> {}
 
 #[cfg(test)]
 mod tests {
@@ -154,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_basic_single_threaded() {
-        let page: AllocationPage<u32, 63, 1> = AllocationPage::new();
+        let page: AllocationPage<u32> = AllocationPage::new(63);
         let mut ptrs = vec![];
 
         for i in 0..63u32 {
@@ -183,7 +182,7 @@ mod tests {
     fn test_basic_multithreaded() {
         use std::sync::Arc;
 
-        let page = Arc::new(AllocationPage::<u32, 256, 4>::new());
+        let page = Arc::new(AllocationPage::<u32>::new(256));
 
         let mut handles = vec![];
         for i in 0..4 {
@@ -206,12 +205,12 @@ mod tests {
                 }
 
                 // Now lets bash on the allocation and deallocation by reallocating them all pairwise.
-                for i in 0..64 {
-                    page.deallocate(ptrs[i]);
-                    ptrs[i] = page
+                for (i, dest) in ptrs.iter_mut().enumerate() {
+                    page.deallocate(*dest);
+                    *dest = page
                         .allocate((i + offset) as u32)
                         .expect("Should be able to allocate");
-                    let got = unsafe { *ptrs[i].as_ref() };
+                    let got = unsafe { *dest.as_ref() };
                     assert_eq!(got, (i + offset) as u32);
                 }
 
@@ -242,7 +241,7 @@ mod tests {
         let (sender, receiver) = chan::unbounded::<usize>();
         let (expected_sender, expected_receiver) = chan::unbounded::<usize>();
 
-        let page = Arc::new(AllocationPage::<DropRecorder, 256, 4>::new());
+        let page = Arc::new(AllocationPage::<DropRecorder>::new(256));
 
         let mut handles = vec![];
         for i in 0..4 {
@@ -268,13 +267,13 @@ mod tests {
                 }
 
                 // Now lets bash on the allocation and deallocation by reallocating them all pairwise.
-                for i in 0..64 {
-                    page.deallocate(ptrs[i]);
+                for (i, dest) in ptrs.iter_mut().enumerate() {
+                    page.deallocate(*dest);
                     expected_sender.send(offset + i).unwrap();
-                    ptrs[i] = page
+                    *dest = page
                         .allocate(DropRecorder(sender.clone(), i + offset))
                         .expect("Should be able to allocate");
-                    let got = unsafe { ptrs[i].as_ref().1 };
+                    let got = unsafe { dest.as_ref().1 };
                     assert_eq!(got, i + offset);
                 }
 
