@@ -380,6 +380,7 @@ mod tests {
         let alloc = SimpleBoxStrategy;
 
         let ptr = SharedPtr::new(&alloc, CloseDrop(sender));
+        #[allow(clippy::redundant_clone)]
         let _ = ptr.clone();
         std::mem::drop(ptr);
 
