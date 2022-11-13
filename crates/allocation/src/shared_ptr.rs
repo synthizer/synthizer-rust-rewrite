@@ -372,5 +372,18 @@ mod tests {
         );
     }
 
+    struct CloseDrop(crossbeam::channel::Sender<()>);
+
+    #[test]
+    fn test_dropping() {
+        let (sender, receiver) = crossbeam::channel::bounded(1);
+        let alloc = SimpleBoxStrategy;
+
+        let ptr = SharedPtr::new(&alloc, CloseDrop(sender));
+        let _ = ptr.clone();
+        std::mem::drop(ptr);
+
+        assert!(receiver.recv().is_err());
+    }
     // Sadly there is essentially no useful multithreaded test here, so that's about all we can do for now.
 }
