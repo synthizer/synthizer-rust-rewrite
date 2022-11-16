@@ -24,32 +24,25 @@ pub struct WeakPtr<T: ?Sized + Send + Sync + 'static> {
 mod sealed {
     use super::*;
 
+    /// Kinds of operation we may request on a control block.
+    pub(crate) enum ControlBlockOp {
+        FreeControlBlock,
+        FreeData,
+    }
+
     /// A header for a reference-counted pointer.
     #[derive(Debug)]
     pub struct SharedPtrControlBlock {
-        /// The allocator which created this pointer.
-        pub(crate) allocator: NonNull<i8>,
-
-        pub(crate) allocator_arg: Option<NonNull<i8>>,
-
         /// the original type stored in this pointer. Used to support safe downcasting.
         pub(crate) type_id: TypeId,
 
         /// The original data, of the most-derived type.
         pub(crate) original_data: NonNull<i8>,
 
-        /// The callback to free this allocation's control block.
+        /// The callback to perform operations on this control block.
         ///
-        /// Called with `(allocator, allocator_arg, free_control_arg)`.
-        pub(crate) free_control_callback: unsafe fn(NonNull<i8>, Option<NonNull<i8>>, NonNull<i8>),
-
-        /// Passed to the control fre callback.
-        pub(crate) free_control_arg: NonNull<i8>,
-
-        /// The callback to free the data
-        ///
-        /// called with `(allocator, allocator_arg, soriginal_data)`.
-        pub(crate) free_callback: unsafe fn(NonNull<i8>, Option<NonNull<i8>>, NonNull<i8>),
+        /// Allocators that need more state wrap the control block in another struct and do pointer casting.
+        pub(crate) control_callback: unsafe fn(NonNull<SharedPtrControlBlock>, ControlBlockOp),
 
         /// The reference count of the control block. Starts at 1.
         pub(crate) refcount: AtomicUsize,
@@ -77,11 +70,8 @@ impl SharedPtrControlBlock {
         unsafe {
             let refcount = cb.as_ref().refcount.fetch_sub(1, Ordering::Release);
             if refcount == 1 {
-                let weak_callback = cb.as_ref().free_control_callback;
-                let weak_arg = cb.as_ref().free_control_arg;
-                let alloc = cb.as_ref().allocator;
-                let alloc_arg = cb.as_ref().allocator_arg;
-                weak_callback(alloc, alloc_arg, weak_arg);
+                let callback = cb.as_ref().control_callback;
+                callback(cb, ControlBlockOp::FreeControlBlock);
             }
         }
     }
@@ -95,18 +85,15 @@ impl SharedPtrControlBlock {
         unsafe {
             let refcount = cb.as_ref().strong_refcount.fetch_sub(1, Ordering::Release);
             if refcount == 1 {
-                let callback = cb.as_ref().free_callback;
-                let arg = cb.as_ref().original_data;
-                let alloc = cb.as_ref().allocator;
-                let alloc_arg = cb.as_ref().allocator_arg;
-                callback(alloc, alloc_arg, arg);
+                let callback = cb.as_ref().control_callback;
+                callback(cb, ControlBlockOp::FreeData);
             }
         }
     }
 }
 
 impl<T: Send + Sync + 'static> SharedPtr<T> {
-    pub fn new<Alloc: SharedPtrAllocStrategy>(alloc: &Alloc, val: T) -> SharedPtr<T> {
+    pub(crate) fn new<Alloc: SharedPtrAllocStrategy>(alloc: &Alloc, val: T) -> SharedPtr<T> {
         let (control_block, value) = alloc.do_alloc::<T>(val);
         unsafe {
             assert_eq!(control_block.as_ref().refcount.load(Ordering::Relaxed), 1);
