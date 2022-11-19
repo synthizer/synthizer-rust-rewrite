@@ -111,6 +111,26 @@ impl<T: Send + Sync + 'static> SharedPtr<T> {
             value,
         }
     }
+
+    /// cast this pointer through a projection.
+    pub fn project<
+        O: ?Sized + Send + Sync + 'static,
+        Proj: crate::Projection<Input = T, Output = O>,
+    >(
+        input: SharedPtr<T>,
+    ) -> SharedPtr<O> {
+        let out = Proj::project(input.value);
+        let ret = SharedPtr {
+            control_block: input.control_block,
+            value: out,
+        };
+
+        // We are returning a new pointer and we don't want the overhead of incrementing refreence counts. Consequently,
+        // forget the input.
+        std::mem::forget(input);
+
+        ret
+    }
 }
 
 impl<T: ?Sized + Send + Sync + 'static> Deref for SharedPtr<T> {

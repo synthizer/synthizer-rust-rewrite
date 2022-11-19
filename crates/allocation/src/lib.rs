@@ -13,7 +13,9 @@
 mod allocation_page;
 mod allocation_strategies;
 mod allocator;
+mod projection;
 mod shared_ptr;
 
 pub use allocator::*;
+pub use projection::*;
 pub use shared_ptr::*;
