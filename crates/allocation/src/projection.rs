@@ -70,7 +70,7 @@ mod tests {
         }
     }
 
-    struct TestStruct(usize);
+    struct TestStruct;
 
     impl TestIndirect for TestStruct {}
 
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_trait_projection() {
-        let test = TestStruct(5);
+        let test = TestStruct;
         let alloc = crate::Allocator::new(Default::default());
 
         let ptr = alloc.allocate(test);

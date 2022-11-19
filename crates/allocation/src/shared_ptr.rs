@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// are created through [crate::Allocator], which knows how to dispatch to different kinds of allocators based on
 /// configuration.
 pub struct SharedPtr<T: ?Sized + Send + Sync + 'static> {
-    control_block: NonNull<SharedPtrControlBlock>,
+    /// None for zero-sized types.
+    control_block: Option<NonNull<SharedPtrControlBlock>>,
+
     value: NonNull<T>,
 }
 
@@ -18,7 +20,8 @@ pub struct SharedPtr<T: ?Sized + Send + Sync + 'static> {
 ///
 /// this is like [std::sync::Weak], but for [SharedPtr]s.
 pub struct WeakPtr<T: ?Sized + Send + Sync + 'static> {
-    control_block: NonNull<SharedPtrControlBlock>,
+    /// None for zero-sized types.
+    control_block: Option<NonNull<SharedPtrControlBlock>>,
     value: NonNull<T>,
 }
 
@@ -107,8 +110,18 @@ impl<T: Send + Sync + 'static> SharedPtr<T> {
         }
 
         SharedPtr {
-            control_block,
+            control_block: Some(control_block),
             value,
+        }
+    }
+
+    /// Create a shared pointer for a zero-sized type.
+    ///
+    /// We assume that ZSTs are fine without a backing allocator.
+    pub(crate) fn new_zst() -> SharedPtr<T> {
+        SharedPtr {
+            control_block: None,
+            value: NonNull::dangling(),
         }
     }
 
@@ -144,9 +157,12 @@ impl<T: ?Sized + Send + Sync + 'static> Deref for SharedPtr<T> {
 impl<T: ?Sized + Send + Sync + 'static> Drop for SharedPtr<T> {
     fn drop(&mut self) {
         unsafe {
-            // Strong is always first.
-            SharedPtrControlBlock::decref_strong(self.control_block);
-            SharedPtrControlBlock::decref_weak(self.control_block);
+            if let Some(cb) = self.control_block {
+                // Strong is always first.
+
+                SharedPtrControlBlock::decref_strong(cb);
+                SharedPtrControlBlock::decref_weak(cb);
+            }
         }
     }
 }
@@ -154,12 +170,10 @@ impl<T: ?Sized + Send + Sync + 'static> Drop for SharedPtr<T> {
 impl<T: ?Sized + Send + Sync + 'static> WeakPtr<T> {
     pub fn new(strong: &SharedPtr<T>) -> Self {
         unsafe {
-            let old = strong
-                .control_block
-                .as_ref()
-                .refcount
-                .fetch_add(1, Ordering::Relaxed);
-            assert_ne!(old, 0);
+            if let Some(x) = strong.control_block {
+                let old = x.as_ref().refcount.fetch_add(1, Ordering::Relaxed);
+                assert_ne!(old, 0);
+            }
         }
 
         WeakPtr {
@@ -173,65 +187,76 @@ impl<T: ?Sized + Send + Sync + 'static> WeakPtr<T> {
         // We can only upgrade if it is possible to increase the strong reference count from 0, which is *not* the same
         // as just trying to increment it and checking.  Incrementing and checking "resurrects" the object, which is
         // invalid in the case of a 0 refcount.
-        unsafe {
-            let mut cur = self
-                .control_block
-                .as_ref()
-                .strong_refcount
-                .load(Ordering::Relaxed);
-            loop {
-                if cur == 0 {
-                    return None;
-                }
-                match self
-                    .control_block
+        if let Some(control_block) = self.control_block {
+            unsafe {
+                let mut cur = control_block
                     .as_ref()
                     .strong_refcount
-                    .compare_exchange(cur, cur + 1, Ordering::Acquire, Ordering::Relaxed)
-                {
-                    Err(x) => {
-                        cur = x;
+                    .load(Ordering::Relaxed);
+                loop {
+                    if cur == 0 {
+                        return None;
                     }
-                    Ok(_) => {
-                        self.control_block
-                            .as_ref()
-                            .refcount
-                            .fetch_add(1, Ordering::Acquire);
-                        return Some(SharedPtr {
-                            control_block: self.control_block,
-                            value: self.value,
-                        });
+                    match control_block.as_ref().strong_refcount.compare_exchange(
+                        cur,
+                        cur + 1,
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    ) {
+                        Err(x) => {
+                            cur = x;
+                        }
+                        Ok(_) => {
+                            control_block
+                                .as_ref()
+                                .refcount
+                                .fetch_add(1, Ordering::Acquire);
+                            return Some(SharedPtr {
+                                control_block: self.control_block,
+                                value: self.value,
+                            });
+                        }
                     }
                 }
             }
         }
+
+        // Otherwise it's a ZST.
+        Some(SharedPtr {
+            control_block: self.control_block,
+            value: self.value,
+        })
     }
 }
 
 impl<T: ?Sized + Send + Sync + 'static> Drop for WeakPtr<T> {
     fn drop(&mut self) {
-        unsafe {
-            SharedPtrControlBlock::decref_weak(self.control_block);
+        if let Some(control_block) = self.control_block {
+            unsafe {
+                SharedPtrControlBlock::decref_weak(control_block);
+            }
         }
     }
 }
 
 impl<T: ?Sized + Send + Sync + 'static> Clone for SharedPtr<T> {
     fn clone(&self) -> Self {
-        let old_cb_ref = unsafe {
-            self.control_block
-                .as_ref()
-                .refcount
-                .fetch_add(1, Ordering::Relaxed)
-        };
-        let old_strong_ref = unsafe {
-            self.control_block
-                .as_ref()
-                .strong_refcount
-                .fetch_add(1, Ordering::Relaxed)
-        };
-        assert_ne!(old_cb_ref, 0);
-        assert_ne!(old_strong_ref, 0);
+        if let Some(control_block) = self.control_block {
+            let old_cb_ref = unsafe {
+                control_block
+                    .as_ref()
+                    .refcount
+                    .fetch_add(1, Ordering::Relaxed)
+            };
+            let old_strong_ref = unsafe {
+                control_block
+                    .as_ref()
+                    .strong_refcount
+                    .fetch_add(1, Ordering::Relaxed)
+            };
+            assert_ne!(old_cb_ref, 0);
+            assert_ne!(old_strong_ref, 0);
+        }
         SharedPtr {
             control_block: self.control_block,
             value: self.value,
@@ -315,12 +340,19 @@ mod tests {
         assert_eq!(ptr.0, 1);
         assert_eq!(ptr2.0, 1);
         assert_eq!(
-            unsafe { ptr.control_block.as_ref().refcount.load(Ordering::Relaxed) },
+            unsafe {
+                ptr.control_block
+                    .unwrap()
+                    .as_ref()
+                    .refcount
+                    .load(Ordering::Relaxed)
+            },
             2
         );
         assert_eq!(
             unsafe {
                 ptr.control_block
+                    .unwrap()
                     .as_ref()
                     .strong_refcount
                     .load(Ordering::Relaxed)
@@ -330,13 +362,20 @@ mod tests {
 
         std::mem::drop(ptr);
         assert_eq!(
-            unsafe { ptr2.control_block.as_ref().refcount.load(Ordering::Relaxed) },
+            unsafe {
+                ptr2.control_block
+                    .unwrap()
+                    .as_ref()
+                    .refcount
+                    .load(Ordering::Relaxed)
+            },
             1
         );
 
         assert_eq!(
             unsafe {
                 ptr2.control_block
+                    .unwrap()
                     .as_ref()
                     .strong_refcount
                     .load(Ordering::Relaxed)
@@ -346,12 +385,19 @@ mod tests {
 
         let weak = WeakPtr::new(&ptr2);
         assert_eq!(
-            unsafe { ptr2.control_block.as_ref().refcount.load(Ordering::Relaxed) },
+            unsafe {
+                ptr2.control_block
+                    .unwrap()
+                    .as_ref()
+                    .refcount
+                    .load(Ordering::Relaxed)
+            },
             2
         );
         assert_eq!(
             unsafe {
                 ptr2.control_block
+                    .unwrap()
                     .as_ref()
                     .strong_refcount
                     .load(Ordering::Relaxed)
@@ -365,12 +411,19 @@ mod tests {
         assert!(weak.upgrade().is_none());
 
         assert_eq!(
-            unsafe { weak.control_block.as_ref().refcount.load(Ordering::Relaxed) },
+            unsafe {
+                weak.control_block
+                    .unwrap()
+                    .as_ref()
+                    .refcount
+                    .load(Ordering::Relaxed)
+            },
             1
         );
         assert_eq!(
             unsafe {
                 weak.control_block
+                    .unwrap()
                     .as_ref()
                     .strong_refcount
                     .load(Ordering::Relaxed)

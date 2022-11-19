@@ -52,11 +52,35 @@ impl Allocator {
     pub fn allocate<T: Send + Sync + 'static>(&self, val: T) -> SharedPtr<T> {
         let type_size = std::mem::size_of::<T>();
 
+        if type_size == 0 {
+            return SharedPtr::new_zst();
+        }
+
         let possible_elements = self.config.page_size / type_size;
         if possible_elements <= self.config.page_elements {
             SharedPtr::new(&self.paged_strategy, val)
         } else {
             SharedPtr::new(&self.boxed_strategy, val)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ZeroSized;
+
+    impl ZeroSized {
+        fn hello(&self) -> &str {
+            "hello"
+        }
+    }
+
+    #[test]
+    fn test_alloc_zst() {
+        let alloc = Allocator::new(Default::default());
+        let got = alloc.allocate(ZeroSized);
+        assert_eq!(got.hello(), "hello");
     }
 }
