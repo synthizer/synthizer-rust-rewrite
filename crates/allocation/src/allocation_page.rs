@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A page of allocated data.
-struct AllocationPage<T: 'static> {
+pub(crate) struct AllocationPage<T: 'static> {
     items: Vec<UnsafeCell<MaybeUninit<T>>>,
 
     /// bits are set in this bitset as the page fills, and cleared as the page is emptied.
@@ -83,21 +83,19 @@ impl<T: 'static> AllocationPage<T> {
     /// Attempt to allocate a pointer from this page for the given `T`, returning a raw pointer to it.
     ///
     /// Returns `None` if there was no more capacity.
-    pub(crate) fn allocate(&self, val: T) -> Option<NonNull<T>> {
+    pub(crate) fn allocate(&self, val: T) -> Result<NonNull<T>, T> {
         while let Some(ind) = self.find_index() {
             if !self.alloc_index(ind) {
-                #[cfg(loom)]
-                loom::thread::yield_now();
                 continue;
             }
             unsafe {
                 let ptr = self.items[ind].get();
                 ptr.as_mut().unwrap().write(val);
-                return Some(NonNull::new(ptr as *mut T).unwrap());
+                return Ok(NonNull::new(ptr as *mut T).unwrap());
             }
         }
 
-        None
+        Err(val)
     }
 
     /// Given a pointer whichb was allocated in this page, deallocate the pointer and drop the data.
@@ -173,7 +171,7 @@ mod tests {
         assert_eq!(page.allocate(2).unwrap(), ptrs[3]);
 
         // And we can't go beyond the end.
-        assert!(page.allocate(500).is_none());
+        assert!(page.allocate(500).is_err());
 
         assert_eq!(page.bitset[0].load(Ordering::Relaxed), u64::MAX / 2);
     }
@@ -226,6 +224,7 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
     struct DropRecorder(chan::Sender<usize>, usize);
 
     impl Drop for DropRecorder {
