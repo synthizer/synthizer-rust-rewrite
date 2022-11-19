@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -36,7 +35,6 @@ mod sealed {
     #[derive(Debug)]
     pub struct SharedPtrControlBlock {
         /// the original type stored in this pointer. Used to support safe downcasting.
-        pub(crate) type_id: TypeId,
 
         /// The original data, of the most-derived type.
         pub(crate) original_data: NonNull<i8>,

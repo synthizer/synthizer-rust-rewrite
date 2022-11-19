@@ -28,7 +28,6 @@ impl SharedPtrAllocStrategy for SimpleBoxStrategy {
     ) -> (NonNull<SharedPtrControlBlock>, NonNull<T>) {
         let data = Box::into_raw(Box::<T>::new(val));
         let control_block = Box::into_raw(Box::new(SharedPtrControlBlock {
-            type_id: std::any::TypeId::of::<T>(),
             control_callback: simple_box_control_callback::<T>,
             original_data: unsafe { NonNull::new_unchecked(data.cast()) },
             refcount: AtomicUsize::new(1),

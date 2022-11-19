@@ -54,7 +54,7 @@ impl PagedStrategy {
         let mut block = PagedControlBlock {
             base: SharedPtrControlBlock {
                 control_callback: paged_control_block_op::<T>,
-                type_id: TypeId::of::<T>(),
+
                 original_data: original_data.cast(),
                 refcount: AtomicUsize::new(1),
                 strong_refcount: AtomicUsize::new(1),
