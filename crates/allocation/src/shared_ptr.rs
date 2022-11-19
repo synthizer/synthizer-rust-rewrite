@@ -5,17 +5,19 @@ use std::ops::Deref;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// A shared pointer to something.
+/// A shared pointer.
 ///
-/// Unlike Rust `Arc`, these are able to be allocated in continuous chunks of memory or using other allocation
-/// strategies, and the headers are "off to the side", so that runs of contiguous allocations are often contiguous in
-/// memory.
+/// This is like [std::sync::Arc], but can be backed by a custom allocator.  The allocator can vary per pointer.  These
+/// are created through [crate::Allocator], which knows how to dispatch to different kinds of allocators based on
+/// configuration.
 pub struct SharedPtr<T: ?Sized + Send + Sync + 'static> {
     control_block: NonNull<SharedPtrControlBlock>,
     value: NonNull<T>,
 }
 
-/// A weak pointer, just like in Rust, but capable of being backed by our custom allocation infrastructure.
+/// A weak pointer.
+///
+/// this is like [std::sync::Weak], but for [SharedPtr]s.
 pub struct WeakPtr<T: ?Sized + Send + Sync + 'static> {
     control_block: NonNull<SharedPtrControlBlock>,
     value: NonNull<T>,
