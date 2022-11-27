@@ -32,7 +32,7 @@ fn gen_primes() {
 /// Note that we expose the array as an array, not as a slice.  The size of the array may change.  Typical usage slices
 /// this anyway, but the idea is that exposing it as an array can improve cross-crate optimizations by always letting
 /// LLVM see through to the constant length.
-pub static PRIMES: {type_name} = {literal};
+pub const PRIMES: {type_name} = {literal};
 "#
     );
 
