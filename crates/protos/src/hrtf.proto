@@ -1,0 +1,24 @@
+syntax = "proto2";
+
+package hrtf;
+
+message HrtfAzimuth {
+    // The angle of this azimuth in degrees clockwise from forward.
+    required double angle = 1;
+
+    // The impulse for this azimuth.  All azimuths must have an impulse of the same length.
+    repeated float impulse = 2;
+}
+
+message HrtfElevation {
+    // The angle of this elevation in degrees starting from -90 (down).
+    required double angle = 1;
+
+    // The azimuths that make up this elevation sorted by angle.
+    repeated HrtfAzimuth azimuths = 2;
+}
+
+message HrtfDataset {
+    // The elevations in this dataset, sorted by angle.
+    repeated HrtfElevation elevations = 1;
+}
