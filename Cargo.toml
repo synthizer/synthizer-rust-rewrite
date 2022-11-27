@@ -8,3 +8,4 @@ cond_tree_macro = { path = "crates/cond_tree_macro" }
 itertools = "0.10.5"
 prost = "0.11.2"
 prost-build = "0.11.2"
+synthizer_protos = { path = "crates/protos" }

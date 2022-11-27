@@ -7,7 +7,7 @@ use std::io::Write;
 /// Goes one prime hier than this.
 const MAX_PRIME_INT: u64 = 44100 * 10;
 
-fn gen_primes() {
+pub fn gen_primes() {
     let mut generated_primes = vec![];
 
     let mut sieve = Sieve::new();
@@ -40,8 +40,4 @@ pub const PRIMES: {type_name} = {literal};
     let final_path = format!("{out_dir}/primes.rs");
     let mut file = std::fs::File::create(&final_path).unwrap();
     file.write_all(out.as_bytes()).unwrap();
-}
-
-fn main() {
-    gen_primes();
 }

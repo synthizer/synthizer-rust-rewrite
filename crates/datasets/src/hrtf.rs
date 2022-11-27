@@ -26,3 +26,9 @@ pub struct HrtfAzimuth<'a> {
     pub angle: f64,
     pub impulse: Cow<'a, &'a [f32]>,
 }
+
+mod inner {
+    include!(concat!(env!("OUT_DIR"), "/mit_kemar.rs"));
+}
+
+pub use inner::*;
