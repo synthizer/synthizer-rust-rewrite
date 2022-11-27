@@ -4,3 +4,4 @@ members = ["crates/*"]
 [workspace.dependencies]
 cond_tree = { path = "crates/cond_tree" }
 cond_tree_macro = { path = "crates/cond_tree_macro" }
+itertools = "0.10.5"
