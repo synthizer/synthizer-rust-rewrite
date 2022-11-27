@@ -250,7 +250,7 @@ cond_tree_macro::cond_tree_macro_tuples!(32);
 /// - `let identifier = expr` (but not an expr of the form `if cond {...} else {...}`): assumes that the result of
 ///   `expr` implements [Divergence], and then uses that.
 /// - `let identifier = if cond { ... } else { ... }`: `identifier` will be the first expression if `cond` is true,
-///   otherwise the second.  The first expression is assumed to be the fast path, e.g. [Cond::Right].
+///   otherwise the second.  The first expression is assumed to be the fast path, e.g. [Cond::Fast].
 ///
 /// All of the above may have an optional type `let a: (fast, slow) = ...`.  `let` may also be `const`, but if and only
 /// if the two expressions will evaluate to constants at compile time, and the types are not optional nor can they be
