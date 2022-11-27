@@ -7,5 +7,4 @@ edition = "2021"
 
 [dependencies]
 derive_more = "0.99.17"
-impl-trait-for-tuples = "0.2.2"
 cond_tree_macro.workspace = true
