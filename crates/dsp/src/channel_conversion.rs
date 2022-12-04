@@ -114,3 +114,88 @@ fn raw_to_raw<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'
         args.output_buffer.write_frame(f, will_write);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::output_buffer::SliceOutputBuffer;
+
+    use std::num::NonZeroUsize;
+
+    #[test]
+    fn test_mono_to_stereo() {
+        let input: [f32; 5] = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let mut output: [f32; 10] = [0.0; 10];
+
+        let mixer = ChannelConverter::new(ChannelFormat::Mono, ChannelFormat::Stereo).unwrap();
+        mixer.convert(
+            &input[..],
+            &mut SliceOutputBuffer::<f32, false>::new(&mut output[..], 2),
+        );
+        assert_eq!(output, [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0]);
+    }
+
+    #[test]
+    fn test_stereo_to_mono() {
+        let input: [f32; 6] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut output: [f32; 3] = [0.0; 3];
+
+        let converter = ChannelConverter::new(ChannelFormat::Stereo, ChannelFormat::Mono).unwrap();
+        converter.convert(
+            &input[..],
+            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 1),
+        );
+        assert_eq!(output, [1.5, 3.5, 5.5]);
+    }
+
+    #[test]
+    fn test_raw_truncation() {
+        // 3 channels
+        let input: [f32; 9] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+
+        // 2 channels.
+        let mut output: [f32; 6] = [0.0; 6];
+
+        let converter = ChannelConverter::new(
+            ChannelFormat::Raw {
+                channels: NonZeroUsize::new(3).unwrap(),
+            },
+            ChannelFormat::Raw {
+                channels: NonZeroUsize::new(2).unwrap(),
+            },
+        )
+        .unwrap();
+
+        converter.convert(
+            &input[..],
+            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 2),
+        );
+        assert_eq!(output, [1.0, 2.0, 4.0, 5.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn test_raw_zeroing() {
+        // 2 channels
+        let input: [f32; 6] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+
+        // 3 channels.
+        let mut output: [f32; 9] = [0.0; 9];
+
+        let converter = ChannelConverter::new(
+            ChannelFormat::Raw {
+                channels: NonZeroUsize::new(2).unwrap(),
+            },
+            ChannelFormat::Raw {
+                channels: NonZeroUsize::new(3).unwrap(),
+            },
+        )
+        .unwrap();
+
+        converter.convert(
+            &input[..],
+            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 2),
+        );
+        assert_eq!(output, [1.0, 2.0, 0.0, 3.0, 4.0, 0.0, 5.0, 6.0, 0.0]);
+    }
+}
