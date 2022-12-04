@@ -11,8 +11,8 @@ fn bools() {
                 let cond_a = a,
                 let cond_b = b,
             ) => {
-                    got_a = Some(cond_a);
-                    got_b = Some(cond_b);
+                    got_a = Some(cond_a.get());
+                    got_b = Some(cond_b.get());
             });
 
             assert_eq!(got_a, Some(a));
@@ -32,8 +32,8 @@ fn direct_idents() {
                 a,
                 b,
             ) => {
-                got_a = Some(a);
-                got_b = Some(b);
+                got_a = Some(a.get());
+                got_b = Some(b.get());
             });
 
             assert_eq!(got_a, Some(a));
@@ -95,28 +95,28 @@ fn slow_and_fast_are_not_inverted() {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-struct TrueTy;
+struct CustomTrueTy;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-struct FalseTy;
+struct CustomFalseTy;
 
-impl From<TrueTy> for FalseTy {
-    fn from(_: TrueTy) -> Self {
-        FalseTy
+impl From<CustomTrueTy> for CustomFalseTy {
+    fn from(_: CustomTrueTy) -> Self {
+        CustomFalseTy
     }
 }
 
 struct CustomDiv(bool);
 
 impl Divergence for CustomDiv {
-    type Slow = FalseTy;
-    type Fast = TrueTy;
+    type Slow = CustomFalseTy;
+    type Fast = CustomTrueTy;
 
     fn evaluate_divergence(self) -> Cond<Self::Fast, Self::Slow> {
         if self.0 {
-            Cond::Fast(TrueTy)
+            Cond::Fast(CustomTrueTy)
         } else {
-            Cond::Slow(FalseTy)
+            Cond::Slow(CustomFalseTy)
         }
     }
 }
@@ -125,11 +125,11 @@ impl Divergence for CustomDiv {
 fn tuple_collapsing() {
     assert_eq!(
         (CustomDiv(true), CustomDiv(true), CustomDiv(true)).evaluate_divergence(),
-        Cond::Fast((TrueTy, TrueTy, TrueTy))
+        Cond::Fast((CustomTrueTy, CustomTrueTy, CustomTrueTy))
     );
 
     assert_eq!(
         (CustomDiv(true), CustomDiv(false), CustomDiv(true)).evaluate_divergence(),
-        Cond::Slow((FalseTy, FalseTy, FalseTy))
+        Cond::Slow((CustomFalseTy, CustomFalseTy, CustomFalseTy))
     );
 }

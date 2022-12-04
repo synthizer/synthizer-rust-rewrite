@@ -44,7 +44,7 @@ pub enum Cond<F, S> {
 ///
 /// This crate provides implementations for bool, Result, and [Cond]:
 ///
-/// - For bool, `true` is the fast path.
+/// - For bool, you get [TrueTy] or [FalseTy], both of which have a `const fn get() -> bool`.  True is the fast path.
 /// - For `Cond`, `Fast` is the fast path.
 /// - For `Result`, `Ok(_) is the fast path.
 ///
@@ -55,9 +55,9 @@ pub enum Cond<F, S> {
 /// slow).  This is done by using the `From` impl.
 ///
 /// One unintuitive element of the tuple variation is that if the tuple diverges to two arms of the same type, the from
-/// impl will "flip" them around.  For example `(true, false, true)` would become `Cond::Slow((true, false, true))`
-/// since `Bool: From<Bool>` is identity.  The primary intent of the tuple variation is to handle diverging types, for
-/// example two kinds of delay line reading where one performs modulus.  That is:
+/// impl will "flip" them around.  For example, a `Cond<u32, u32>` will copy the fast path to the slow variant if
+/// converted to slow because `u32: From<u32>` returns the given value.  The primary intent of the tuple variation is to
+/// handle diverging types, for example two kinds of delay line reading where one performs modulus.  That is:
 ///
 /// ```IGNORE
 /// struct FastReader;
@@ -80,15 +80,52 @@ pub trait Divergence {
     fn evaluate_divergence(self) -> Cond<Self::Fast, Self::Slow>;
 }
 
-impl Divergence for bool {
-    type Slow = bool;
-    type Fast = bool;
+/// A type representing true.
+///
+/// [TrueTy::get] returns true, and conversions from [FalseTy] invert the bool.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct TrueTy;
 
-    fn evaluate_divergence(self) -> Cond<Self::Slow, Self::Fast> {
+impl TrueTy {
+    pub const fn get(&self) -> bool {
+        true
+    }
+}
+
+/// A type representing false.
+///
+/// [FalseTy::get] returns false, and conversions from [TrueTy] invert the bool to be false.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct FalseTy;
+
+impl FalseTy {
+    pub const fn get(&self) -> bool {
+        false
+    }
+}
+
+macro_rules! bool_from {
+    ($T1:ty, $T2:ty) => {
+        impl From<$T2> for $T1 {
+            fn from(_input: $T2) -> $T1 {
+                Default::default()
+            }
+        }
+    };
+}
+
+bool_from!(TrueTy, FalseTy);
+bool_from!(FalseTy, TrueTy);
+
+impl Divergence for bool {
+    type Slow = FalseTy;
+    type Fast = TrueTy;
+
+    fn evaluate_divergence(self) -> Cond<Self::Fast, Self::Slow> {
         if self {
-            Cond::Fast(true)
+            Cond::Fast(TrueTy)
         } else {
-            Cond::Slow(false)
+            Cond::Slow(FalseTy)
         }
     }
 }
