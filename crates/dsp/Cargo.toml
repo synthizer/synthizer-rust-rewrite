@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 derive_more.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
