@@ -5,8 +5,7 @@
 /// This abstracts over a few possibilities: the kind of the output buffer (e.g. a slice, a an array, etc) and whether
 /// or not the DSP algorithm is writing to or adding to an output.
 ///
-/// Output buffers don't maintain an index.  That's up to the caller.  They do, however, assume that writes will occur
-/// frame-by-frame without moving backward or having any frame be written more than once.  Skipping ahead is allowed.
+/// Output buffers don't maintain an index.  That's up to the caller.
 pub trait OutputBuffer {
     type SampleType;
 
@@ -16,19 +15,21 @@ pub trait OutputBuffer {
     /// Get the channels in a frame.
     fn get_channels(&self) -> usize;
 
-    /// Write a frame of audio data.
-    fn write_frame(&mut self, index: usize, frame: &[Self::SampleType]);
+    /// Write a sample of audio data.
+    fn write_sample(&mut self, frame: usize, channel: usize, sample: Self::SampleType);
 
-    /// Write a frame of audio data, but without checking that the slice is exactly one frame in length.
+    /// Write a sample of audio data, with unchecked bounds.
     ///
     /// # Safety
     ///
-    /// If this function is called with a slice that is not exactly one frame in length, behavior is undefined.
-    ///
-    /// If this function is called with an index which is less than or equal to the last frame, behavior is also
-    /// undefined.
-    unsafe fn write_frame_unchecked(&mut self, index: usize, frame: &[Self::SampleType]) {
-        self.write_frame(index, frame)
+    /// If the indices are out of bounds, behavior is undefined.
+    unsafe fn write_sample_unchecked(
+        &mut self,
+        frame: usize,
+        channel: usize,
+        sample: Self::SampleType,
+    ) {
+        self.write_sample(frame, channel, sample);
     }
 }
 
@@ -69,36 +70,27 @@ where
     }
 
     #[inline(always)]
-    fn write_frame(&mut self, index: usize, frame: &[Self::SampleType]) {
-        let channels = self.channels;
+    fn write_sample(&mut self, frame: usize, channel: usize, sample: Self::SampleType) {
+        let ind = frame * self.channels + channel;
         if ADD {
-            for i in 0..channels {
-                self.backing_slice[index * channels + i] += frame[i];
-            }
+            self.backing_slice[ind] += sample;
         } else {
-            for i in 0..channels {
-                self.backing_slice[index * channels + i] = frame[i];
-            }
+            self.backing_slice[ind] = sample;
         }
     }
 
     #[inline(always)]
-    unsafe fn write_frame_unchecked(&mut self, index: usize, frame: &[Self::SampleType]) {
-        let channels = self.channels;
+    unsafe fn write_sample_unchecked(
+        &mut self,
+        frame: usize,
+        channel: usize,
+        sample: Self::SampleType,
+    ) {
+        let ind = self.channels * frame + channel;
         if ADD {
-            for i in 0..channels {
-                unsafe {
-                    *self.backing_slice.get_unchecked_mut(index * channels + i) +=
-                        *frame.get_unchecked(i);
-                }
-            }
+            unsafe { *self.backing_slice.get_unchecked_mut(ind) += sample };
         } else {
-            for i in 0..channels {
-                unsafe {
-                    *self.backing_slice.get_unchecked_mut(index * channels + i) =
-                        *frame.get_unchecked(i);
-                }
-            }
+            *self.backing_slice.get_unchecked_mut(ind) = sample;
         }
     }
 }
@@ -140,35 +132,26 @@ where
         LEN / self.channels
     }
 
-    fn write_frame(&mut self, index: usize, frame: &[Self::SampleType]) {
-        let channels = self.channels;
+    fn write_sample(&mut self, frame: usize, channel: usize, sample: Self::SampleType) {
+        let ind = self.channels * frame + channel;
         if ADD {
-            for i in 0..channels {
-                self.backing_array[index * channels + i] += frame[i];
-            }
+            self.backing_array[ind] += sample;
         } else {
-            for i in 0..channels {
-                self.backing_array[index * channels + i] = frame[i];
-            }
+            self.backing_array[ind] = sample;
         }
     }
 
-    unsafe fn write_frame_unchecked(&mut self, index: usize, frame: &[Self::SampleType]) {
-        let channels = self.channels;
+    unsafe fn write_sample_unchecked(
+        &mut self,
+        frame: usize,
+        channel: usize,
+        sample: Self::SampleType,
+    ) {
+        let ind = frame * self.channels + channel;
         if ADD {
-            for i in 0..channels {
-                unsafe {
-                    *self.backing_array.get_unchecked_mut(index * channels + i) +=
-                        *frame.get_unchecked(i);
-                }
-            }
+            unsafe { *self.backing_array.get_unchecked_mut(ind) += sample };
         } else {
-            for i in 0..channels {
-                unsafe {
-                    *self.backing_array.get_unchecked_mut(index * channels + i) =
-                        *frame.get_unchecked(i);
-                }
-            }
+            unsafe { *self.backing_array.get_unchecked_mut(ind) = sample };
         }
     }
 }
@@ -216,32 +199,27 @@ where
         LEN / CHANS
     }
 
-    fn write_frame(&mut self, index: usize, frame: &[Self::SampleType]) {
+    fn write_sample(&mut self, frame: usize, channel: usize, sample: Self::SampleType) {
+        let ind = frame * CHANS + channel;
         if ADD {
-            for i in 0..CHANS {
-                self.backing_array[index * CHANS + i] += frame[i];
-            }
+            self.backing_array[ind] += sample;
         } else {
-            for i in 0..CHANS {
-                self.backing_array[index * CHANS + i] = frame[i];
-            }
+            self.backing_array[ind] = sample;
         }
     }
 
-    unsafe fn write_frame_unchecked(&mut self, index: usize, frame: &[Self::SampleType]) {
+    unsafe fn write_sample_unchecked(
+        &mut self,
+        frame: usize,
+        channel: usize,
+        sample: Self::SampleType,
+    ) {
+        let ind = CHANS * frame + channel;
         if ADD {
-            for i in 0..CHANS {
-                unsafe {
-                    *self.backing_array.get_unchecked_mut(index * CHANS + i) +=
-                        *frame.get_unchecked(i);
-                }
-            }
+            unsafe { *self.backing_array.get_unchecked_mut(ind) += sample };
         } else {
-            for i in 0..CHANS {
-                unsafe {
-                    *self.backing_array.get_unchecked_mut(index * CHANS + i) =
-                        *frame.get_unchecked(i);
-                }
+            unsafe {
+                *self.backing_array.get_unchecked_mut(ind) = sample;
             }
         }
     }

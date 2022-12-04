@@ -87,8 +87,8 @@ impl ChannelConverter {
 #[inline(always)]
 fn mono_to_stereo<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
     for (i, s) in args.input_data.iter().enumerate() {
-        let frame: [f32; 2] = [*s, *s];
-        args.output_buffer.write_frame(i, &frame[..]);
+        args.output_buffer.write_sample(i, 0, *s);
+        args.output_buffer.write_sample(i, 1, *s);
     }
 }
 
@@ -97,21 +97,22 @@ fn stereo_to_mono<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionAr
     for i in 0..args.input_data.len() / 2 {
         let left = args.input_data[i * 2];
         let right = args.input_data[i * 2 + 1];
-        let frame = [(left + right) * 0.5f32];
-        args.output_buffer.write_frame(i, &frame[..]);
+        let sample = (left + right) * 0.5f32;
+        args.output_buffer.write_sample(i, 0, sample);
     }
 }
 
 /// Convert raw to raw by either truncating or zeroing channels.
 fn raw_to_raw<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
-    let ichans = args.input_format.get_channel_count();
-    let ochans = args.output_format.get_channel_count();
+    let ichans = args.input_format.get_channel_count().get();
+    let ochans = args.output_format.get_channel_count().get();
     let frames = args.input_data.len() / ichans;
-    let frame_size = ichans.min(ochans).get();
+    let frame_size = ichans.min(ochans);
     for f in 0..frames {
-        let input_frame = &args.input_data[(ichans.get() * f)..];
-        let will_write = &input_frame[0..frame_size];
-        args.output_buffer.write_frame(f, will_write);
+        let frame = &args.input_data[f * ichans..f * ichans + ichans];
+        for (ch, s) in frame.iter().copied().enumerate().take(frame_size) {
+            args.output_buffer.write_sample(f, ch, s);
+        }
     }
 }
 
@@ -194,7 +195,7 @@ mod tests {
 
         converter.convert(
             &input[..],
-            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 2),
+            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 3),
         );
         assert_eq!(output, [1.0, 2.0, 0.0, 3.0, 4.0, 0.0, 5.0, 6.0, 0.0]);
     }
