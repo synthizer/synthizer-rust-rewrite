@@ -26,6 +26,9 @@
 //! evaluating a [Divergence].  [Cond] has two cases, `Slow` and `Fast`, which are the values of evaluating the
 //! condition and may be of different types.  The provided macro then matches on [Cond]s to "unroll" the tree of
 //! conditions.  
+mod maybe_int;
+
+pub use maybe_int::*;
 
 /// The result of evaluating a [Divergence].
 #[derive(derive_more::IsVariant, derive_more::Unwrap)]
@@ -42,11 +45,14 @@ pub enum Cond<F, S> {
 /// This trait represents the evaluation of something which diverges.  For example, a bool diverges to the values `true`
 /// and `false, a result to `(Ok(fast)` and Err(slow)`, etc.
 ///
-/// This crate provides implementations for bool, Result, and [Cond]:
+/// This crate provides the following implementations:
 ///
-/// - For bool, you get [TrueTy] or [FalseTy], both of which have a `const fn get() -> bool`.  True is the fast path.
-/// - For `Cond`, `Fast` is the fast path.
-/// - For `Result`, `Ok(_) is the fast path.
+/// - [bool]: `true` is the fast path.
+/// - [Result]: [Result::Ok] is the fast path.
+/// - [Cond]: identity, to provide a good customization point.
+/// - [MaybeInt]: a divergence which becomes a constant if a given value matches a compile-time-provided value.  Useful
+///       for example when working with strided array accesses where the stride is often one.
+///
 ///
 /// This crate also provides an implementation for tuples of conds, in order to allow building more complex trees where
 /// some conditions are correlated.  This is useful because the tree is O(n^2), so if there are some subset of those

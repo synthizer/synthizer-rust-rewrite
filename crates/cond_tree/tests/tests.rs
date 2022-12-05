@@ -133,3 +133,17 @@ fn tuple_collapsing() {
         Cond::Slow((CustomFalseTy, CustomFalseTy, CustomFalseTy))
     );
 }
+
+#[test]
+fn test_maybe_int() {
+    let is_matching: MaybeInt<u16, 12> = MaybeInt::new(12);
+    let is_mismatching: MaybeInt<u16, 14> = MaybeInt::new(12);
+
+    cond_tree!((
+        is_matching,
+        is_mismatching,
+    ) => {
+        assert!(is_matching.is_fixed());
+        assert!(!is_mismatching.is_fixed());
+    });
+}
