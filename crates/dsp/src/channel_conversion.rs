@@ -1,10 +1,10 @@
+use crate::views::*;
 use crate::ChannelFormat;
-use crate::{OutputView, ViewMeta};
 
-struct ConversionArgs<'a, OB> {
+struct ConversionArgs<'a, IB, OB> {
     input_format: &'a ChannelFormat,
     output_format: &'a ChannelFormat,
-    input_data: &'a [f32],
+    input_data: &'a IB,
     output_buffer: &'a mut OB,
 }
 
@@ -58,9 +58,12 @@ impl ChannelConverter {
     ///
     /// The input data must be a multiple of the channel count of the input format.
     #[inline(always)]
-    pub fn convert<OB: OutputView + ViewMeta<SampleType = f32>>(
+    pub fn convert<
+        IB: InputView + ViewMeta<SampleType = f32>,
+        OB: OutputView + ViewMeta<SampleType = f32>,
+    >(
         &self,
-        input_data: &[f32],
+        input_data: &IB,
         output_buffer: &mut OB,
     ) {
         use ChannelFormat as CF;
@@ -85,36 +88,48 @@ impl ChannelConverter {
 }
 
 #[inline(always)]
-fn mono_to_stereo<OB: OutputView + ViewMeta<SampleType = f32>>(
-    args: &'_ mut ConversionArgs<'_, OB>,
+fn mono_to_stereo<
+    IB: InputView + ViewMeta<SampleType = f32>,
+    OB: OutputView + ViewMeta<SampleType = f32>,
+>(
+    args: &'_ mut ConversionArgs<'_, IB, OB>,
 ) {
     for (i, s) in args.input_data.iter().enumerate() {
-        args.output_buffer.write_index(2 * i, *s);
-        args.output_buffer.write_index(2 * i + 1, *s);
+        args.output_buffer.write_index(2 * i, s);
+        args.output_buffer.write_index(2 * i + 1, s);
     }
 }
 
 #[inline(always)]
-fn stereo_to_mono<OB: OutputView + ViewMeta<SampleType = f32>>(
-    args: &'_ mut ConversionArgs<'_, OB>,
+fn stereo_to_mono<
+    IB: InputView + ViewMeta<SampleType = f32>,
+    OB: OutputView + ViewMeta<SampleType = f32>,
+>(
+    args: &'_ mut ConversionArgs<'_, IB, OB>,
 ) {
-    for i in 0..args.input_data.len() / 2 {
-        let left = args.input_data[i * 2];
-        let right = args.input_data[i * 2 + 1];
+    for i in 0..args.input_data.get_len() / 2 {
+        let left = args.input_data.read_sample(i * 2);
+        let right = args.input_data.read_sample(i * 2 + 1);
         let sample = (left + right) * 0.5f32;
         args.output_buffer.write_index(i, sample);
     }
 }
 
 /// Convert raw to raw by either truncating or zeroing channels.
-fn raw_to_raw<OB: OutputView + ViewMeta<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
+fn raw_to_raw<
+    IB: InputView + ViewMeta<SampleType = f32>,
+    OB: OutputView + ViewMeta<SampleType = f32>,
+>(
+    args: &'_ mut ConversionArgs<'_, IB, OB>,
+) {
     let ichans = args.input_format.get_channel_count().get();
     let ochans = args.output_format.get_channel_count().get();
-    let frames = args.input_data.len() / ichans;
+    let frames = args.input_data.get_len() / ichans;
     let frame_size = ichans.min(ochans);
     for f in 0..frames {
-        let frame = &args.input_data[f * ichans..f * ichans + ichans];
-        for (ch, s) in frame.iter().copied().enumerate().take(frame_size) {
+        let offset: usize = f * ichans;
+        for ch in 0..frame_size {
+            let s = args.input_data.read_sample(offset + ch);
             args.output_buffer.write_index(f * ochans + ch, s);
         }
     }
@@ -123,8 +138,6 @@ fn raw_to_raw<OB: OutputView + ViewMeta<SampleType = f32>>(args: &'_ mut Convers
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use crate::views::SliceView;
 
     use std::num::NonZeroUsize;
 
@@ -135,8 +148,8 @@ mod tests {
 
         let mixer = ChannelConverter::new(ChannelFormat::Mono, ChannelFormat::Stereo).unwrap();
         mixer.convert(
-            &input[..],
-            &mut SliceView::<f32, false>::new(&mut output[..], 2),
+            &InputSliceView::new(&input[..], 1),
+            &mut OutputSliceView::<f32, false>::new(&mut output[..], 2),
         );
         assert_eq!(output, [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0]);
     }
@@ -148,8 +161,8 @@ mod tests {
 
         let converter = ChannelConverter::new(ChannelFormat::Stereo, ChannelFormat::Mono).unwrap();
         converter.convert(
-            &input[..],
-            &mut SliceView::<_, false>::new(&mut output[..], 1),
+            &InputSliceView::new(&input[..], 2),
+            &mut OutputSliceView::<_, false>::new(&mut output[..], 1),
         );
         assert_eq!(output, [1.5, 3.5, 5.5]);
     }
@@ -173,8 +186,8 @@ mod tests {
         .unwrap();
 
         converter.convert(
-            &input[..],
-            &mut SliceView::<_, false>::new(&mut output[..], 2),
+            &InputSliceView::new(&input[..], 3),
+            &mut OutputSliceView::<_, false>::new(&mut output[..], 2),
         );
         assert_eq!(output, [1.0, 2.0, 4.0, 5.0, 7.0, 8.0]);
     }
@@ -198,8 +211,8 @@ mod tests {
         .unwrap();
 
         converter.convert(
-            &input[..],
-            &mut SliceView::<_, false>::new(&mut output[..], 3),
+            &InputSliceView::new(&input[..], 2),
+            &mut OutputSliceView::<_, false>::new(&mut output[..], 3),
         );
         assert_eq!(output, [1.0, 2.0, 0.0, 3.0, 4.0, 0.0, 5.0, 6.0, 0.0]);
     }

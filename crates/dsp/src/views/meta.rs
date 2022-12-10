@@ -1,4 +1,4 @@
-use super::structs::*;
+use super::*;
 
 /// metadata for a view.
 ///
@@ -22,9 +22,31 @@ pub trait ViewMeta {
     fn get_len(&self) -> usize;
 }
 
-impl<'a, T, const ADD: bool> ViewMeta for SliceView<'a, T, ADD>
+impl<'a, T, const ADD: bool> ViewMeta for MutableSliceView<'a, T, ADD>
 where
-    T: std::ops::AddAssign + Copy,
+    T: Copy,
+{
+    type SampleType = T;
+
+    #[inline(always)]
+    fn get_channels(&self) -> usize {
+        self.channels
+    }
+
+    #[inline(always)]
+    fn get_frames(&self) -> usize {
+        self.backing_slice.len() / self.channels
+    }
+
+    #[inline(always)]
+    fn get_len(&self) -> usize {
+        self.backing_slice.len()
+    }
+}
+
+impl<'a, T> ViewMeta for ImmutableSliceView<'a, T>
+where
+    T: Copy,
 {
     type SampleType = T;
 
@@ -45,9 +67,32 @@ where
 }
 
 impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool> ViewMeta
-    for StaticChannelsArrayView<'a, T, LEN, CHANS, ADD>
+    for MutableStaticChannelsArrayView<'a, T, LEN, CHANS, ADD>
 where
-    T: Copy + std::ops::AddAssign,
+    T: Copy,
+{
+    type SampleType = T;
+
+    #[inline(always)]
+    fn get_channels(&self) -> usize {
+        CHANS
+    }
+
+    #[inline(always)]
+    fn get_frames(&self) -> usize {
+        LEN / CHANS
+    }
+
+    #[inline(always)]
+    fn get_len(&self) -> usize {
+        LEN
+    }
+}
+
+impl<'a, T, const LEN: usize, const CHANS: usize> ViewMeta
+    for ImmutableStaticChannelsArrayView<'a, T, LEN, CHANS>
+where
+    T: Copy,
 {
     type SampleType = T;
 
@@ -68,9 +113,31 @@ where
 }
 
 impl<'a, T, const LEN: usize, const ADD: bool> ViewMeta
-    for DynamicChannelsArrayView<'a, T, LEN, ADD>
+    for MutableDynamicChannelsArrayView<'a, T, LEN, ADD>
 where
-    T: Copy + std::ops::AddAssign,
+    T: Copy,
+{
+    type SampleType = T;
+
+    #[inline(always)]
+    fn get_channels(&self) -> usize {
+        self.channels
+    }
+
+    #[inline(always)]
+    fn get_frames(&self) -> usize {
+        LEN / self.channels
+    }
+
+    #[inline(always)]
+    fn get_len(&self) -> usize {
+        LEN
+    }
+}
+
+impl<'a, T, const LEN: usize> ViewMeta for ImmutableDynamicChannelsArrayView<'a, T, LEN>
+where
+    T: Copy,
 {
     type SampleType = T;
 

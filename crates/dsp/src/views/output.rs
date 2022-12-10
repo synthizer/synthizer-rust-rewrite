@@ -1,6 +1,7 @@
 #![allow(clippy::needless_range_loop)] // this is clearer, and possibly faster.
-use super::structs::*;
 use crate::ViewMeta;
+
+use super::*;
 
 /// A view over somewhere where audio can be written to.
 ///
@@ -25,7 +26,7 @@ pub trait OutputView: ViewMeta {
     }
 }
 
-impl<'a, T, const ADD: bool> OutputView for SliceView<'a, T, ADD>
+impl<'a, T, const ADD: bool> OutputView for MutableSliceView<'a, T, ADD>
 where
     T: std::ops::AddAssign + Copy,
 {
@@ -49,7 +50,7 @@ where
 }
 
 impl<'a, T, const LEN: usize, const ADD: bool> OutputView
-    for DynamicChannelsArrayView<'a, T, LEN, ADD>
+    for MutableDynamicChannelsArrayView<'a, T, LEN, ADD>
 where
     T: Copy + std::ops::AddAssign,
 {
@@ -73,7 +74,7 @@ where
 }
 
 impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool> OutputView
-    for StaticChannelsArrayView<'a, T, LEN, CHANS, ADD>
+    for MutableStaticChannelsArrayView<'a, T, LEN, CHANS, ADD>
 where
     T: Copy + std::ops::AddAssign,
 {
