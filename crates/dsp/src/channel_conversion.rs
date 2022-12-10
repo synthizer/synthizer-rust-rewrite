@@ -1,5 +1,5 @@
 use crate::ChannelFormat;
-use crate::OutputBuffer;
+use crate::OutputView;
 
 struct ConversionArgs<'a, OB> {
     input_format: &'a ChannelFormat,
@@ -58,7 +58,7 @@ impl ChannelConverter {
     ///
     /// The input data must be a multiple of the channel count of the input format.
     #[inline(always)]
-    pub fn convert<OB: OutputBuffer<SampleType = f32>>(
+    pub fn convert<OB: OutputView<SampleType = f32>>(
         &self,
         input_data: &[f32],
         output_buffer: &mut OB,
@@ -85,25 +85,25 @@ impl ChannelConverter {
 }
 
 #[inline(always)]
-fn mono_to_stereo<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
+fn mono_to_stereo<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
     for (i, s) in args.input_data.iter().enumerate() {
-        args.output_buffer.write_sample(i, 0, *s);
-        args.output_buffer.write_sample(i, 1, *s);
+        args.output_buffer.write_index(2 * i, *s);
+        args.output_buffer.write_index(2 * i + 1, *s);
     }
 }
 
 #[inline(always)]
-fn stereo_to_mono<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
+fn stereo_to_mono<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
     for i in 0..args.input_data.len() / 2 {
         let left = args.input_data[i * 2];
         let right = args.input_data[i * 2 + 1];
         let sample = (left + right) * 0.5f32;
-        args.output_buffer.write_sample(i, 0, sample);
+        args.output_buffer.write_index(i, sample);
     }
 }
 
 /// Convert raw to raw by either truncating or zeroing channels.
-fn raw_to_raw<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
+fn raw_to_raw<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
     let ichans = args.input_format.get_channel_count().get();
     let ochans = args.output_format.get_channel_count().get();
     let frames = args.input_data.len() / ichans;
@@ -111,7 +111,7 @@ fn raw_to_raw<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'
     for f in 0..frames {
         let frame = &args.input_data[f * ichans..f * ichans + ichans];
         for (ch, s) in frame.iter().copied().enumerate().take(frame_size) {
-            args.output_buffer.write_sample(f, ch, s);
+            args.output_buffer.write_index(f * ochans + ch, s);
         }
     }
 }
@@ -120,7 +120,7 @@ fn raw_to_raw<OB: OutputBuffer<SampleType = f32>>(args: &'_ mut ConversionArgs<'
 mod tests {
     use super::*;
 
-    use crate::output_buffer::SliceOutputBuffer;
+    use crate::views::SliceOutputView;
 
     use std::num::NonZeroUsize;
 
@@ -132,7 +132,7 @@ mod tests {
         let mixer = ChannelConverter::new(ChannelFormat::Mono, ChannelFormat::Stereo).unwrap();
         mixer.convert(
             &input[..],
-            &mut SliceOutputBuffer::<f32, false>::new(&mut output[..], 2),
+            &mut SliceOutputView::<f32, false>::new(&mut output[..], 2),
         );
         assert_eq!(output, [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0]);
     }
@@ -145,7 +145,7 @@ mod tests {
         let converter = ChannelConverter::new(ChannelFormat::Stereo, ChannelFormat::Mono).unwrap();
         converter.convert(
             &input[..],
-            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 1),
+            &mut SliceOutputView::<_, false>::new(&mut output[..], 1),
         );
         assert_eq!(output, [1.5, 3.5, 5.5]);
     }
@@ -170,7 +170,7 @@ mod tests {
 
         converter.convert(
             &input[..],
-            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 2),
+            &mut SliceOutputView::<_, false>::new(&mut output[..], 2),
         );
         assert_eq!(output, [1.0, 2.0, 4.0, 5.0, 7.0, 8.0]);
     }
@@ -195,7 +195,7 @@ mod tests {
 
         converter.convert(
             &input[..],
-            &mut SliceOutputBuffer::<_, false>::new(&mut output[..], 3),
+            &mut SliceOutputView::<_, false>::new(&mut output[..], 3),
         );
         assert_eq!(output, [1.0, 2.0, 0.0, 3.0, 4.0, 0.0, 5.0, 6.0, 0.0]);
     }
