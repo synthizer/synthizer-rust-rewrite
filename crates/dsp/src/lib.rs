@@ -6,4 +6,4 @@ pub mod views;
 pub use channel_conversion::ChannelConverter;
 pub use channel_format::*;
 pub use time::*;
-pub use views::OutputView;
+pub use views::{OutputView, ViewMeta};

@@ -1,4 +1,5 @@
 #![allow(clippy::needless_range_loop)] // this is clearer, and possibly faster.
+use crate::ViewMeta;
 
 /// A view over somewhere where audio can be written to.
 ///
@@ -8,18 +9,7 @@
 /// OutputViews also hold a number of channels, but all operations are done with raw indices.  This is so that we can
 /// move the proofs of bounds checks closer to the users, and hopefully get LLVM to see through things without regularly
 /// using unsafe.
-pub trait OutputView {
-    type SampleType;
-
-    /// get the total number of frames which may be written.
-    fn get_frames(&self) -> usize;
-
-    /// Get the channels in a frame.
-    fn get_channels(&self) -> usize;
-
-    /// Get the length of this view.
-    fn get_len(&self) -> usize;
-
+pub trait OutputView: ViewMeta {
     /// Write a sample of audio data.
     fn write_index(&mut self, index: usize, sample: Self::SampleType);
 
@@ -46,7 +36,7 @@ pub struct SliceOutputView<'a, T, const ADD: bool> {
 impl<'a, T, const ADD: bool> SliceOutputView<'a, T, ADD> {
     #[inline(always)]
     pub fn new(slice: &'a mut [T], channels: usize) -> Self {
-        debug_assert_eq!(slice.len() % channels, 0);
+        assert_eq!(slice.len() % channels, 0);
         Self {
             channels,
             backing_slice: slice,
@@ -54,7 +44,7 @@ impl<'a, T, const ADD: bool> SliceOutputView<'a, T, ADD> {
     }
 }
 
-impl<'a, T, const ADD: bool> OutputView for SliceOutputView<'a, T, ADD>
+impl<'a, T, const ADD: bool> ViewMeta for SliceOutputView<'a, T, ADD>
 where
     T: std::ops::AddAssign + Copy,
 {
@@ -74,7 +64,12 @@ where
     fn get_len(&self) -> usize {
         self.backing_slice.len()
     }
+}
 
+impl<'a, T, const ADD: bool> OutputView for SliceOutputView<'a, T, ADD>
+where
+    T: std::ops::AddAssign + Copy,
+{
     #[inline(always)]
     fn write_index(&mut self, index: usize, sample: Self::SampleType) {
         if ADD {
@@ -108,6 +103,8 @@ pub struct DynamicChannelsArrayOutputView<'a, T, const LEN: usize, const ADD: bo
 impl<'a, T, const LEN: usize, const ADD: bool> DynamicChannelsArrayOutputView<'a, T, LEN, ADD> {
     #[inline(always)]
     pub fn new(backing_array: &'a mut [T; LEN], channels: usize) -> Self {
+        assert_eq!(LEN % channels, 0);
+
         Self {
             backing_array,
             channels,
@@ -115,7 +112,7 @@ impl<'a, T, const LEN: usize, const ADD: bool> DynamicChannelsArrayOutputView<'a
     }
 }
 
-impl<'a, T, const LEN: usize, const ADD: bool> OutputView
+impl<'a, T, const LEN: usize, const ADD: bool> ViewMeta
     for DynamicChannelsArrayOutputView<'a, T, LEN, ADD>
 where
     T: Copy + std::ops::AddAssign,
@@ -136,7 +133,13 @@ where
     fn get_len(&self) -> usize {
         LEN
     }
+}
 
+impl<'a, T, const LEN: usize, const ADD: bool> OutputView
+    for DynamicChannelsArrayOutputView<'a, T, LEN, ADD>
+where
+    T: Copy + std::ops::AddAssign,
+{
     #[inline(always)]
     fn write_index(&mut self, index: usize, sample: Self::SampleType) {
         if ADD {
@@ -179,11 +182,12 @@ impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool>
 {
     #[inline(always)]
     pub fn new(backing_array: &'a mut [T; LEN]) -> Self {
+        assert_eq!(LEN % CHANS, 0);
         Self { backing_array }
     }
 }
 
-impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool> OutputView
+impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool> ViewMeta
     for StaticChannelsArrayOutputView<'a, T, LEN, CHANS, ADD>
 where
     T: Copy + std::ops::AddAssign,
@@ -204,7 +208,13 @@ where
     fn get_len(&self) -> usize {
         LEN
     }
+}
 
+impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool> OutputView
+    for StaticChannelsArrayOutputView<'a, T, LEN, CHANS, ADD>
+where
+    T: Copy + std::ops::AddAssign,
+{
     #[inline(always)]
     fn write_index(&mut self, index: usize, sample: Self::SampleType) {
         if ADD {

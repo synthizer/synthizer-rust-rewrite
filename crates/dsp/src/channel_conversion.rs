@@ -1,5 +1,5 @@
 use crate::ChannelFormat;
-use crate::OutputView;
+use crate::{OutputView, ViewMeta};
 
 struct ConversionArgs<'a, OB> {
     input_format: &'a ChannelFormat,
@@ -58,7 +58,7 @@ impl ChannelConverter {
     ///
     /// The input data must be a multiple of the channel count of the input format.
     #[inline(always)]
-    pub fn convert<OB: OutputView<SampleType = f32>>(
+    pub fn convert<OB: OutputView + ViewMeta<SampleType = f32>>(
         &self,
         input_data: &[f32],
         output_buffer: &mut OB,
@@ -85,7 +85,9 @@ impl ChannelConverter {
 }
 
 #[inline(always)]
-fn mono_to_stereo<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
+fn mono_to_stereo<OB: OutputView + ViewMeta<SampleType = f32>>(
+    args: &'_ mut ConversionArgs<'_, OB>,
+) {
     for (i, s) in args.input_data.iter().enumerate() {
         args.output_buffer.write_index(2 * i, *s);
         args.output_buffer.write_index(2 * i + 1, *s);
@@ -93,7 +95,9 @@ fn mono_to_stereo<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs
 }
 
 #[inline(always)]
-fn stereo_to_mono<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
+fn stereo_to_mono<OB: OutputView + ViewMeta<SampleType = f32>>(
+    args: &'_ mut ConversionArgs<'_, OB>,
+) {
     for i in 0..args.input_data.len() / 2 {
         let left = args.input_data[i * 2];
         let right = args.input_data[i * 2 + 1];
@@ -103,7 +107,7 @@ fn stereo_to_mono<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs
 }
 
 /// Convert raw to raw by either truncating or zeroing channels.
-fn raw_to_raw<OB: OutputView<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
+fn raw_to_raw<OB: OutputView + ViewMeta<SampleType = f32>>(args: &'_ mut ConversionArgs<'_, OB>) {
     let ichans = args.input_format.get_channel_count().get();
     let ochans = args.output_format.get_channel_count().get();
     let frames = args.input_data.len() / ichans;
