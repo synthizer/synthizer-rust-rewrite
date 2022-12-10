@@ -124,7 +124,7 @@ fn raw_to_raw<OB: OutputView + ViewMeta<SampleType = f32>>(args: &'_ mut Convers
 mod tests {
     use super::*;
 
-    use crate::views::SliceOutputView;
+    use crate::views::SliceView;
 
     use std::num::NonZeroUsize;
 
@@ -136,7 +136,7 @@ mod tests {
         let mixer = ChannelConverter::new(ChannelFormat::Mono, ChannelFormat::Stereo).unwrap();
         mixer.convert(
             &input[..],
-            &mut SliceOutputView::<f32, false>::new(&mut output[..], 2),
+            &mut SliceView::<f32, false>::new(&mut output[..], 2),
         );
         assert_eq!(output, [1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0, 5.0]);
     }
@@ -149,7 +149,7 @@ mod tests {
         let converter = ChannelConverter::new(ChannelFormat::Stereo, ChannelFormat::Mono).unwrap();
         converter.convert(
             &input[..],
-            &mut SliceOutputView::<_, false>::new(&mut output[..], 1),
+            &mut SliceView::<_, false>::new(&mut output[..], 1),
         );
         assert_eq!(output, [1.5, 3.5, 5.5]);
     }
@@ -174,7 +174,7 @@ mod tests {
 
         converter.convert(
             &input[..],
-            &mut SliceOutputView::<_, false>::new(&mut output[..], 2),
+            &mut SliceView::<_, false>::new(&mut output[..], 2),
         );
         assert_eq!(output, [1.0, 2.0, 4.0, 5.0, 7.0, 8.0]);
     }
@@ -199,7 +199,7 @@ mod tests {
 
         converter.convert(
             &input[..],
-            &mut SliceOutputView::<_, false>::new(&mut output[..], 3),
+            &mut SliceView::<_, false>::new(&mut output[..], 3),
         );
         assert_eq!(output, [1.0, 2.0, 0.0, 3.0, 4.0, 0.0, 5.0, 6.0, 0.0]);
     }

@@ -22,7 +22,7 @@ pub trait ViewMeta {
     fn get_len(&self) -> usize;
 }
 
-impl<'a, T, const ADD: bool> ViewMeta for SliceOutputView<'a, T, ADD>
+impl<'a, T, const ADD: bool> ViewMeta for SliceView<'a, T, ADD>
 where
     T: std::ops::AddAssign + Copy,
 {
@@ -45,7 +45,7 @@ where
 }
 
 impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool> ViewMeta
-    for StaticChannelsArrayOutputView<'a, T, LEN, CHANS, ADD>
+    for StaticChannelsArrayView<'a, T, LEN, CHANS, ADD>
 where
     T: Copy + std::ops::AddAssign,
 {
@@ -67,9 +67,8 @@ where
     }
 }
 
-
 impl<'a, T, const LEN: usize, const ADD: bool> ViewMeta
-    for DynamicChannelsArrayOutputView<'a, T, LEN, ADD>
+    for DynamicChannelsArrayView<'a, T, LEN, ADD>
 where
     T: Copy + std::ops::AddAssign,
 {
