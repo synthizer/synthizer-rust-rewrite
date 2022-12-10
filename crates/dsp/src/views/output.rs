@@ -28,6 +28,7 @@ pub trait OutputView {
     /// # Safety
     ///
     /// If the index is out of bounds, behavior is undefined.
+    #[inline(always)]
     unsafe fn write_index_unchecked(&mut self, index: usize, sample: Self::SampleType) {
         self.write_index(index, sample);
     }
@@ -43,6 +44,7 @@ pub struct SliceOutputView<'a, T, const ADD: bool> {
 }
 
 impl<'a, T, const ADD: bool> SliceOutputView<'a, T, ADD> {
+    #[inline(always)]
     pub fn new(slice: &'a mut [T], channels: usize) -> Self {
         debug_assert_eq!(slice.len() % channels, 0);
         Self {
@@ -68,6 +70,7 @@ where
         self.backing_slice.len() / self.channels
     }
 
+    #[inline(always)]
     fn get_len(&self) -> usize {
         self.backing_slice.len()
     }
@@ -103,6 +106,7 @@ pub struct DynamicChannelsArrayOutputView<'a, T, const LEN: usize, const ADD: bo
 }
 
 impl<'a, T, const LEN: usize, const ADD: bool> DynamicChannelsArrayOutputView<'a, T, LEN, ADD> {
+    #[inline(always)]
     pub fn new(backing_array: &'a mut [T; LEN], channels: usize) -> Self {
         Self {
             backing_array,
@@ -128,10 +132,12 @@ where
         LEN / self.channels
     }
 
+    #[inline(always)]
     fn get_len(&self) -> usize {
         LEN
     }
 
+    #[inline(always)]
     fn write_index(&mut self, index: usize, sample: Self::SampleType) {
         if ADD {
             self.backing_array[index] += sample;
@@ -140,6 +146,7 @@ where
         }
     }
 
+    #[inline(always)]
     unsafe fn write_index_unchecked(&mut self, index: usize, sample: Self::SampleType) {
         if ADD {
             unsafe { *self.backing_array.get_unchecked_mut(index) += sample };
@@ -170,6 +177,7 @@ pub struct StaticChannelsArrayOutputView<
 impl<'a, T, const LEN: usize, const CHANS: usize, const ADD: bool>
     StaticChannelsArrayOutputView<'a, T, LEN, CHANS, ADD>
 {
+    #[inline(always)]
     pub fn new(backing_array: &'a mut [T; LEN]) -> Self {
         Self { backing_array }
     }
@@ -192,10 +200,12 @@ where
         LEN / CHANS
     }
 
+    #[inline(always)]
     fn get_len(&self) -> usize {
         LEN
     }
 
+    #[inline(always)]
     fn write_index(&mut self, index: usize, sample: Self::SampleType) {
         if ADD {
             self.backing_array[index] += sample;
@@ -204,6 +214,7 @@ where
         }
     }
 
+    #[inline(always)]
     unsafe fn write_index_unchecked(&mut self, index: usize, sample: Self::SampleType) {
         if ADD {
             unsafe { *self.backing_array.get_unchecked_mut(index) += sample };
