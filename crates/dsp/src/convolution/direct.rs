@@ -34,7 +34,7 @@ pub fn convolve_direct(
             let input_frame = frame + impulse_ind;
             let input_ind = input.get_channels() * input_frame + input_channel;
             unsafe {
-                sum += (impulse_val * input.read_index_unchecked(input_ind));
+                sum += impulse_val * input.read_index_unchecked(input_ind);
             }
         }
 
