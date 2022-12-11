@@ -9,3 +9,7 @@ edition = "2021"
 derive_more.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
+
+
+[dev-dependencies]
+paste.workspace = true

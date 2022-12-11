@@ -108,8 +108,8 @@ fn stereo_to_mono<
     args: &'_ mut ConversionArgs<'_, IB, OB>,
 ) {
     for i in 0..args.input_data.get_len() / 2 {
-        let left = args.input_data.read_sample(i * 2);
-        let right = args.input_data.read_sample(i * 2 + 1);
+        let left = args.input_data.read_index(i * 2);
+        let right = args.input_data.read_index(i * 2 + 1);
         let sample = (left + right) * 0.5f32;
         args.output_buffer.write_index(i, sample);
     }
@@ -129,7 +129,7 @@ fn raw_to_raw<
     for f in 0..frames {
         let offset: usize = f * ichans;
         for ch in 0..frame_size {
-            let s = args.input_data.read_sample(offset + ch);
+            let s = args.input_data.read_index(offset + ch);
             args.output_buffer.write_index(f * ochans + ch, s);
         }
     }

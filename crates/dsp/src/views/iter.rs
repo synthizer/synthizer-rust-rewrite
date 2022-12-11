@@ -13,7 +13,7 @@ impl<'a, T: InputView + ViewMeta> Iterator for ViewIter<'a, T> {
         if self.index >= self.view.get_len() {
             None
         } else {
-            let o = self.view.read_sample(self.index);
+            let o = self.view.read_index(self.index);
             self.index += 1;
             Some(o)
         }

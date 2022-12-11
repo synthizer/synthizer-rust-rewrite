@@ -5,7 +5,7 @@ use super::*;
 ///
 /// All input views have channel counts, but expose only the raw index in order to aid in getting bounds checking etc. closer to where they're used.
 pub trait InputView: ViewMeta {
-    fn read_sample(&self, index: usize) -> Self::SampleType;
+    fn read_index(&self, index: usize) -> Self::SampleType;
 
     /// Read a sample without checking indices.
     ///
@@ -13,7 +13,7 @@ pub trait InputView: ViewMeta {
     ///
     /// If the index is out of bounds, behavior is undefined.
     unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
-        self.read_sample(index)
+        self.read_index(index)
     }
 
     fn iter(&self) -> ViewIter<'_, Self>
@@ -32,7 +32,7 @@ where
     T: Copy,
 {
     #[inline(always)]
-    fn read_sample(&self, index: usize) -> Self::SampleType {
+    fn read_index(&self, index: usize) -> Self::SampleType {
         self.backing_slice[index]
     }
 
@@ -46,7 +46,7 @@ where
     T: Copy,
 {
     #[inline(always)]
-    fn read_sample(&self, index: usize) -> Self::SampleType {
+    fn read_index(&self, index: usize) -> Self::SampleType {
         self.backing_slice[index]
     }
 
@@ -60,7 +60,7 @@ where
     T: Copy,
 {
     #[inline(always)]
-    fn read_sample(&self, index: usize) -> Self::SampleType {
+    fn read_index(&self, index: usize) -> Self::SampleType {
         self.backing_array[index]
     }
 
@@ -76,7 +76,7 @@ where
     T: Copy,
 {
     #[inline(always)]
-    fn read_sample(&self, index: usize) -> Self::SampleType {
+    fn read_index(&self, index: usize) -> Self::SampleType {
         self.backing_array[index]
     }
 
@@ -92,7 +92,7 @@ where
     T: Copy,
 {
     #[inline(always)]
-    fn read_sample(&self, index: usize) -> Self::SampleType {
+    fn read_index(&self, index: usize) -> Self::SampleType {
         self.backing_array[index]
     }
 
@@ -108,7 +108,7 @@ where
     T: Copy,
 {
     #[inline(always)]
-    fn read_sample(&self, index: usize) -> Self::SampleType {
+    fn read_index(&self, index: usize) -> Self::SampleType {
         self.backing_array[index]
     }
 

@@ -1,5 +1,6 @@
 pub mod channel_conversion;
 mod channel_format;
+pub mod convolution;
 mod time;
 pub mod views;
 
