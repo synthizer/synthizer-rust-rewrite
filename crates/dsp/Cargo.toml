@@ -13,3 +13,9 @@ thiserror.workspace = true
 
 [dev-dependencies]
 paste.workspace = true
+criterion.workspace = true
+
+
+[[bench]]
+name = "convolution"
+harness = false
