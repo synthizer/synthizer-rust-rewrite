@@ -82,6 +82,14 @@ impl<T: IntType, const COMMON: i64> MaybeInt<T, COMMON> {
         assert!((T::MIN..=T::MAX).contains(&COMMON));
         MaybeInt(value)
     }
+
+    /// Get the inner value.
+    ///
+    /// This is about as expensive as using [VaryingInt].
+    #[inline(always)]
+    pub fn get(&self) -> T {
+        self.0
+    }
 }
 
 impl<T: IntType, const COMMON: i64> From<T> for MaybeInt<T, COMMON> {

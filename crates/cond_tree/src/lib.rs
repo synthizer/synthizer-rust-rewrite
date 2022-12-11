@@ -26,6 +26,8 @@
 //! evaluating a [Divergence].  [Cond] has two cases, `Slow` and `Fast`, which are the values of evaluating the
 //! condition and may be of different types.  The provided macro then matches on [Cond]s to "unroll" the tree of
 //! conditions.  
+pub extern crate cond_tree_macro as ctm;
+
 mod maybe_int;
 
 pub use maybe_int::*;
@@ -305,6 +307,6 @@ macro_rules! cond_tree {
         use $crate::Cond;
         use $crate::Divergence;
 
-        cond_tree_macro::cond_tree_macro_impl!($pats => $b)
+    $crate::ctm::cond_tree_macro_impl!($pats => $b)
     }};
 }
