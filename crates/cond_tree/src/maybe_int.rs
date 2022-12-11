@@ -24,7 +24,10 @@ use crate::{Cond, Divergence};
 /// Unfortunately, Rust const generics doesn't allow const args to depend on other type parameters.  For this reason,
 /// the const arg in the generics is always i64, and a panic will result if `new()` is called on an instantiation which
 /// cannot fit in a `T`.  Note that while `u64` is supported, a fundamental limitation here is that the maximum integral
-/// value may only be `i64::MAX`.  For now, we don't support i/u128.
+/// value at compile-time may only be `i64::MAX`.  There is no restriction on the range at runtime, save that values
+/// which are too large will always use the varying version of the divergence.
+///
+/// For now, we don't support i/u128.
 ///
 /// The list of supported types is all sizes of integer, signed or unsigned, up to 64 bits.  This is enforced via a
 /// sealed trait.
@@ -78,6 +81,12 @@ impl<T: IntType, const COMMON: i64> MaybeInt<T, COMMON> {
     pub fn new(value: T) -> MaybeInt<T, COMMON> {
         assert!((T::MIN..=T::MAX).contains(&COMMON));
         MaybeInt(value)
+    }
+}
+
+impl<T: IntType, const COMMON: i64> From<T> for MaybeInt<T, COMMON> {
+    fn from(val: T) -> Self {
+        Self::new(val)
     }
 }
 
