@@ -27,21 +27,19 @@ pub fn convolve_direct(
     assert!(!impulse.is_empty());
 
     for frame in 0..output.get_frames() {
-        // We use f64 so that we don't have catastrophic loss in the precision.  We could consider more complex things
-        // like cahan summation, but that's unnecessary: this is for audio so all values are between -1.0 and 1.0 in
-        // common usage, and the O(n^2) here means not using this for things long enough to make f64 catastrophic
-        // cancellation matter.
-        let mut sum: f64 = 0.0;
+        // We could use f64 which would help with precision, but we only use this function on small impulses and using
+        // f32 is worth around a 10% performance improvement on average.
+        let mut sum: f32 = 0.0;
         for (impulse_ind, impulse_val) in impulse.iter().copied().enumerate() {
             let input_frame = frame + impulse_ind;
             let input_ind = input.get_channels() * input_frame + input_channel;
             unsafe {
-                sum += (impulse_val * input.read_index_unchecked(input_ind)) as f64;
+                sum += (impulse_val * input.read_index_unchecked(input_ind));
             }
         }
 
         let output_index = frame * output.get_channels() + output_channel;
-        unsafe { output.write_index_unchecked(output_index, sum as f32) };
+        unsafe { output.write_index_unchecked(output_index, sum) };
     }
 }
 
