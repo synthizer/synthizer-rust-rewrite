@@ -66,7 +66,9 @@ fn convolve_direct_inner(
             // We could use f64 which would help with precision, but we only use this function on small impulses and using
             // f32 is worth around a 10% performance improvement on average.
             let mut sum: f32 = 0.0;
-            for (impulse_ind, impulse_val) in impulse.iter().copied().enumerate() {
+            for impulse_ind in 0..impulse.len() {
+                let impulse_val = unsafe { *impulse.get_unchecked(impulse_ind) };
+
                 let input_frame = frame + impulse_ind;
                 let input_ind = num_input_channels * input_frame + input_channel;
                 unsafe {
