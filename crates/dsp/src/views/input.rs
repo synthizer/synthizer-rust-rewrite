@@ -12,7 +12,7 @@ pub trait InputView: ViewMeta {
     /// # Safety
     ///
     /// If the index is out of bounds, behavior is undefined.
-    unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
+    unsafe fn read_index_unchecked(&self, index: usize) -> Self::SampleType {
         self.read_index(index)
     }
 
@@ -36,7 +36,7 @@ where
         self.backing_slice[index]
     }
 
-    unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
+    unsafe fn read_index_unchecked(&self, index: usize) -> Self::SampleType {
         *self.backing_slice.get_unchecked(index)
     }
 }
@@ -50,7 +50,7 @@ where
         self.backing_slice[index]
     }
 
-    unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
+    unsafe fn read_index_unchecked(&self, index: usize) -> Self::SampleType {
         *self.backing_slice.get_unchecked(index)
     }
 }
@@ -65,7 +65,7 @@ where
     }
 
     #[inline(always)]
-    unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
+    unsafe fn read_index_unchecked(&self, index: usize) -> Self::SampleType {
         *self.backing_array.get_unchecked(index)
     }
 }
@@ -81,7 +81,7 @@ where
     }
 
     #[inline(always)]
-    unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
+    unsafe fn read_index_unchecked(&self, index: usize) -> Self::SampleType {
         *self.backing_array.get_unchecked(index)
     }
 }
@@ -97,7 +97,7 @@ where
     }
 
     #[inline(always)]
-    unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
+    unsafe fn read_index_unchecked(&self, index: usize) -> Self::SampleType {
         *self.backing_array.get_unchecked(index)
     }
 }
@@ -113,7 +113,7 @@ where
     }
 
     #[inline(always)]
-    unsafe fn read_sample_unchecked(&self, index: usize) -> Self::SampleType {
+    unsafe fn read_index_unchecked(&self, index: usize) -> Self::SampleType {
         *self.backing_array.get_unchecked(index)
     }
 }

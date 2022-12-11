@@ -35,11 +35,13 @@ pub fn convolve_direct(
         for (impulse_ind, impulse_val) in impulse.iter().copied().enumerate() {
             let input_frame = frame + impulse_ind;
             let input_ind = input.get_channels() * input_frame + input_channel;
-            sum += (impulse_val * input.read_index(input_ind)) as f64;
+            unsafe {
+                sum += (impulse_val * input.read_index_unchecked(input_ind)) as f64;
+            }
         }
 
         let output_index = frame * output.get_channels() + output_channel;
-        output.write_index(output_index, sum as f32);
+        unsafe { output.write_index_unchecked(output_index, sum as f32) };
     }
 }
 
