@@ -27,7 +27,7 @@ pub fn convolve_direct(
     assert!(!impulse.is_empty());
 
     for frame in 0..output.get_frames() {
-        // We use f64 so that we dont' have catastrophic loss in the precision.  We could consider more complex things
+        // We use f64 so that we don't have catastrophic loss in the precision.  We could consider more complex things
         // like cahan summation, but that's unnecessary: this is for audio so all values are between -1.0 and 1.0 in
         // common usage, and the O(n^2) here means not using this for things long enough to make f64 catastrophic
         // cancellation matter.
