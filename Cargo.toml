@@ -8,6 +8,7 @@ cond_tree_macro = { path = "crates/cond_tree_macro" }
 criterion = "0.4.0"
 derive_more = "0.99.17"
 itertools = "0.10.5"
+num = "0.4.0"
 paste = "1.0.9"
 prost = "0.11.2"
 prost-build = "0.11.2"
