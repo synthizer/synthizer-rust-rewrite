@@ -7,6 +7,7 @@ mod config;
 pub mod convolution;
 mod db;
 mod time;
+mod unique_id;
 pub mod views;
 
 pub use channel_conversion::ChannelConverter;
