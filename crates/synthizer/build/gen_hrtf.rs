@@ -23,7 +23,7 @@ fn check_sorted<T, K: std::cmp::PartialOrd>(slice: &[T], mut by_fn: impl FnMut(&
 fn parse_one(name: &str) -> p_hrtf::HrtfDataset {
     use std::io::Read;
 
-    let mut file = std::fs::File::open(&format!("src/bin_protos/{}.bin", name)).unwrap();
+    let mut file = std::fs::File::open(&format!("src/datasets/bin_protos/{}.bin", name)).unwrap();
     let mut all_bytes = vec![];
     file.read_to_end(&mut all_bytes).unwrap();
 
