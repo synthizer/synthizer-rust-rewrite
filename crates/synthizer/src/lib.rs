@@ -1,4 +1,5 @@
 pub mod biquad;
+pub(crate) mod block_stream_conversion;
 pub mod channel_conversion;
 mod channel_format;
 #[cfg(test)]
