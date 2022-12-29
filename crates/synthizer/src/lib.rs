@@ -7,6 +7,7 @@ mod close_floats;
 mod config;
 pub mod convolution;
 mod db;
+pub mod fast_xoroshiro;
 mod time;
 mod unique_id;
 pub mod views;

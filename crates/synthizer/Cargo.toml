@@ -10,6 +10,8 @@ build = "build/main.rs"
 cond_tree.workspace = true
 derive_more.workspace = true
 num.workspace = true
+rand.workspace = true
+rand_xoshiro.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 
@@ -25,4 +27,8 @@ synthizer_protos.workspace = true
 
 [[bench]]
 name = "convolution"
+harness = false
+
+[[bench]]
+name = "fast_xoroshiro"
 harness = false
