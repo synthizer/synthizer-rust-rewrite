@@ -27,7 +27,7 @@ impl BlockToStreamConverter {
     /// Fill a slice with some available data, draining the available data we still have.
     ///
     /// Returns how many frames were written out.
-    pub(crate) fn drain_once(&mut self, mut destination: &mut [f32]) -> usize {
+    pub(crate) fn drain_once(&mut self, destination: &mut [f32]) -> usize {
         let chan_count = self.format.get_channel_count().get();
         assert_eq!(destination.len() % chan_count, 0);
 

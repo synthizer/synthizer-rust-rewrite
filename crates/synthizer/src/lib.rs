@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod biquad;
 pub(crate) mod block_stream_conversion;
 pub mod channel_conversion;

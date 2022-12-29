@@ -38,26 +38,6 @@ macro_rules! next {
     }};
 }
 
-macro_rules! jump1 {
-    ($self: expr, $ind:expr) => {{
-        const JUMP: [u64; 2] = [0x2bd7a6a6e99c2ddcu64, 0x0992ccaf6a6fca05u64];
-        let mut s0 = 0u64;
-        let mut s1 = 0u64;
-        for i in 0..2 {
-            for b in 0..64 {
-                if (JUMP[i] & 1u64 << b) != 0 {
-                    s0 ^= $self.s0[$ind];
-                    s1 ^= $self.s1[$ind];
-                }
-                next!($self, $ind);
-            }
-
-            $self.s0[$ind] = s0;
-            $self.s1[$ind] = s1;
-        }
-    }};
-}
-
 impl<const N: usize> FastXoroshiro128PlusPlus<N> {
     pub fn new_seeded(seed: u64) -> Self {
         use rand::prelude::*;
@@ -86,10 +66,11 @@ impl<const N: usize> FastXoroshiro128PlusPlus<N> {
     pub fn gen_slice(&mut self, destination: &mut [u64]) {
         let full_iters = destination.len() / N;
         for i in 0..full_iters {
-            let mut arr: &mut [u64; N] = (&mut destination[i * N..(i + 1) * N]).try_into().unwrap();
+            let arr: &mut [u64; N] = (&mut destination[i * N..(i + 1) * N]).try_into().unwrap();
             *arr = self.gen_array();
         }
 
+        #[allow(clippy::needless_range_loop)]
         for i in (full_iters * N)..destination.len() {
             let gen = i % N;
             destination[i] = next!(self, gen);
@@ -109,6 +90,7 @@ impl<const N: usize> FastXoroshiro128PlusPlus<N> {
             }
         }
 
+        #[allow(clippy::needless_range_loop)]
         for i in (full * N)..O {
             let gen = i % N;
             out[i] = next!(self, gen);
