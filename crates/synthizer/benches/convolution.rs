@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 
-use synthizer_dsp::convolution::convolve_direct;
-use synthizer_dsp::views::*;
+use synthizer::convolution::convolve_direct;
+use synthizer::views::*;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("direct_convolution");
