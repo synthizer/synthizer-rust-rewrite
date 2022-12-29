@@ -9,7 +9,7 @@ const LENGTHS: &[usize] = &[1usize, 4usize, 10usize, 16usize, 128usize];
 fn wrapping_sum_black_box(slice: &[u64]) {
     let mut sum = 0u64;
     for i in slice {
-        sum.wrapping_add(*i);
+        sum = sum.wrapping_add(*i);
     }
     black_box(sum);
 }
