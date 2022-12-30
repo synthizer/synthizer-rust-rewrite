@@ -1,4 +1,4 @@
-use cond_tree::MaybeInt;
+use cond_tree::{diverge_fn, MaybeInt};
 
 use crate::views::*;
 
@@ -41,6 +41,7 @@ pub fn convolve_direct(
 }
 
 /// This function pulls out the values we need in order to be able to diverge with cond_tree.
+#[diverge_fn]
 fn convolve_direct_inner(
     input: &(impl ViewMeta<SampleType = f32> + InputView),
     num_input_channels: MaybeInt<u16, 1>,
@@ -50,10 +51,8 @@ fn convolve_direct_inner(
     output_channel: usize,
     impulse: &[f32],
 ) {
-    cond_tree::cond_tree!((
-        num_input_channels,
-        num_output_channels,
-    ) => {
+    #[diverge(num_input_channels, num_output_channels)]
+    {
         let num_input_channels = num_input_channels.get() as usize;
         let num_output_channels = num_output_channels.get() as usize;
 
@@ -79,7 +78,7 @@ fn convolve_direct_inner(
             let output_index = frame * num_output_channels + output_channel;
             unsafe { output.write_index_unchecked(output_index, sum) };
         }
-    });
+    }
 }
 
 #[cfg(test)]

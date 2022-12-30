@@ -1,19 +1,21 @@
 use cond_tree::*;
 
 #[test]
+#[diverge_fn]
 fn bools() {
     for a in [false, true] {
         for b in [false, true] {
             let got_a;
             let got_b;
 
-            cond_tree!((
-                let cond_a = a,
+            #[diverge(
+                let                 cond_a = a,
                 let cond_b = b,
-            ) => {
-                    got_a = Some(cond_a.get());
-                    got_b = Some(cond_b.get());
-            });
+            )]
+            {
+                got_a = Some(cond_a.get());
+                got_b = Some(cond_b.get());
+            };
 
             assert_eq!(got_a, Some(a));
             assert_eq!(got_b, Some(b));
@@ -22,19 +24,18 @@ fn bools() {
 }
 
 #[test]
+#[diverge_fn]
 fn direct_idents() {
     for a in [false, true] {
         for b in [false, true] {
             let got_a;
             let got_b;
 
-            cond_tree!((
-                a,
-                b,
-            ) => {
+            #[diverge(a, b)]
+            {
                 got_a = Some(a.get());
                 got_b = Some(b.get());
-            });
+            };
 
             assert_eq!(got_a, Some(a));
             assert_eq!(got_b, Some(b));
@@ -43,55 +44,63 @@ fn direct_idents() {
 }
 
 #[test]
+#[diverge_fn]
 fn using_result() {
     let got;
 
-    cond_tree!((
+    #[diverge(
         let a: (u32, u32) = Ok(5),
         let b: (u32, u32) = Err(10),
-    ) => {
+    )]
+    {
         got = a * b;
-    });
+    };
 
     assert_eq!(got, 50);
 }
 
 #[test]
+#[diverge_fn]
 fn using_diverging_consts() {
     let mut got = vec![];
 
     for c in [true, false] {
-        cond_tree!((
+        #[diverge(
             const A: (u32, &'static str) = if c { 5 } else { "foo" },
-        ) => {
+        )]
+        {
             got.push(A.to_string());
-        });
+        };
     }
 
     assert_eq!(got, vec!["5".to_string(), "foo".to_string()]);
 }
 
 #[test]
+#[diverge_fn]
 fn consts_are_actually_consts() {
-    cond_tree!((
+    #[diverge(
         const A: (usize, usize) = if true { 5 } else { 10 },
         const B:(usize, usize) = if true { 5 } else { 10 },
-    ) => {
+    )]
+    {
         // The test is that using a constant here builds.
         #[allow(dead_code)]
         const C: [[u32; A]; B] = [[0; A]; B];
-    });
+    }
 }
 
 #[test]
+#[diverge_fn]
 fn slow_and_fast_are_not_inverted() {
-    cond_tree!((
+    #[diverge(
         let a: (usize, &'static str) = if true { 5 } else { "foo" },
         let b: (usize, &'static str) = if false { 10 } else { "bar" },
-    ) => {
+    )]
+    {
         assert_eq!(a.to_string(), "5".to_string());
         assert_eq!(b.to_string(), "bar".to_string());
-    });
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -122,6 +131,7 @@ impl Divergence for CustomDiv {
 }
 
 #[test]
+#[diverge_fn]
 fn tuple_collapsing() {
     assert_eq!(
         (CustomDiv(true), CustomDiv(true), CustomDiv(true)).evaluate_divergence(),
@@ -135,15 +145,14 @@ fn tuple_collapsing() {
 }
 
 #[test]
+#[diverge_fn]
 fn test_maybe_int() {
     let is_matching: MaybeInt<u16, 12> = MaybeInt::new(12);
     let is_mismatching: MaybeInt<u16, 14> = MaybeInt::new(12);
 
-    cond_tree!((
-        is_matching,
-        is_mismatching,
-    ) => {
+    #[diverge(is_matching, is_mismatching)]
+    {
         assert!(is_matching.is_fixed());
         assert!(!is_mismatching.is_fixed());
-    });
+    }
 }

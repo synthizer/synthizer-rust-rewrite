@@ -1,5 +1,5 @@
 use proc_macro::TokenStream;
-use proc_macro_error::abort;
+use proc_macro_error::{abort, ResultExt};
 use quote::quote;
 use syn::parse_quote;
 use syn::{
@@ -41,7 +41,7 @@ enum CondPattern {
 
 struct CondTree {
     patterns: Vec<CondPattern>,
-    block: syn::Block,
+    block: syn::ExprBlock,
 }
 
 impl Parse for LetOrConst {
@@ -194,9 +194,12 @@ fn render_one(pat: &CondPattern, child: &syn::Expr) -> syn::Expr {
     match pat {
         CondPattern::SimpleIdentifier(ident) => {
             parse_quote!(
-                match #ident.evaluate_divergence() {
-                    Cond::Fast(#ident) => #child,
-                    Cond::Slow(#ident) => #child,
+                match {
+                    use cond_tree::Divergence as _;
+                    #ident.evaluate_divergence()
+                } {
+                    cond_tree::Cond::Fast(#ident) => #child,
+                    cond_tree::Cond::Slow(#ident) => #child,
                 }
             )
         }
@@ -249,18 +252,95 @@ fn render_all(tree: CondTree) -> syn::Expr {
     child
 }
 
-#[proc_macro]
-#[proc_macro_error::proc_macro_error]
-pub fn cond_tree_macro_impl(input: TokenStream) -> TokenStream {
-    let input: CondTree = syn::parse_macro_input!(input);
+fn parse_header(header: syn::parse::ParseStream) -> syn::Result<Vec<CondPattern>> {
+    Ok(header
+        .parse_terminated::<_, Token![,]>(CondPattern::parse)?
+        .into_pairs()
+        .map(|x| x.into_value())
+        .collect())
+}
 
-    if input.patterns.is_empty() {
+fn cond_tree_from_header_and_body(header: syn::Attribute, block: syn::ExprBlock) -> CondTree {
+    let patterns = header.parse_args_with(parse_header).unwrap_or_abort();
+
+    let ctree = CondTree { patterns, block };
+
+    if ctree.patterns.is_empty() {
         let span = proc_macro::Span::call_site();
         abort!(span, "At least one pattern must be specified");
     }
 
-    let res = render_all(input);
-    quote::quote!(#res).into()
+    ctree
+}
+
+/// Mark a function as able to contain divergent expressions.
+///
+/// Once so marked it becomes possible to use [diverge] in this function.  Failure to marka function will end up with
+/// compile-time errors about unrecognized attributes, or errors about experimental attributes on expressions.
+///
+/// See the module-level documentation for more.
+#[proc_macro_attribute]
+#[proc_macro_error::proc_macro_error]
+pub fn diverge_fn(_attribute: TokenStream, input: TokenStream) -> TokenStream {
+    use syn::fold::Fold;
+
+    // the input attribute isn't anything we need to concern ourselves with: it is simply a marker.
+
+    // This visitor knows how to do two things:
+    //
+    // 1. For any `ExprBlock` with the `#[diverge]` attribute, expand this to a divergent expression.  This happens
+    //    before 2, because we handle the recursive visitation ourselves, and simply don't visit the attribute branch.
+    // 2. For anything with attributes which aren't ours, error if it has a `#[diverge]` on it: this means that we hit a
+    //    non-expression block.
+    struct DivergeVisitor;
+
+    const DIVERGE: &str = "diverge";
+
+    impl Fold for DivergeVisitor {
+        fn fold_attribute(&mut self, attrib: syn::Attribute) -> syn::Attribute {
+            if let Some(ident) = attrib.path.get_ident() {
+                if *ident == DIVERGE {
+                    proc_macro_error::emit_error!(
+                        ident,
+                        "The diverge attribute may only be used on block expressions"
+                    );
+                }
+            }
+
+            attrib
+        }
+
+        fn fold_expr_block(&mut self, expr: syn::ExprBlock) -> syn::ExprBlock {
+            let mut attrs = vec![];
+            let mut diverge_attr = None;
+            for a in expr.attrs {
+                if let Some(ident) = a.path.get_ident() {
+                    if *ident == DIVERGE {
+                        if diverge_attr.is_some() {
+                            proc_macro_error::emit_error!(a, "#[diverge] must only appear once");
+                        }
+                        diverge_attr = Some(a);
+                        continue;
+                    }
+                }
+
+                attrs.push(a);
+            }
+
+            let Some(diverge_attr) = diverge_attr else {
+                return syn::ExprBlock { attrs, ..expr };
+            };
+
+            let ctree =
+                cond_tree_from_header_and_body(diverge_attr, syn::ExprBlock { attrs, ..expr });
+            let ei = render_all(ctree);
+            syn::parse_quote!({ #ei })
+        }
+    }
+
+    let input: syn::ItemFn = syn::parse_macro_input!(input);
+    let output = syn::fold::fold_item_fn(&mut DivergeVisitor, input);
+    quote::quote!(#output).into()
 }
 
 /// An internal implementation detail. Punches out the traits for tuples.

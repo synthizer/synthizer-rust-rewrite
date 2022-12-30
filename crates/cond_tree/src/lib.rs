@@ -19,14 +19,45 @@
 //!
 //! But sometimes, there's many more conditions.  Consider for example crossfading 5 inputs to an audio effect if they
 //! change, where the output depends on feedback etc.  It would be nice to be able to write the loop the normal way
-//! rather than duplicating it 20 times.  This crate exposes a macro to do so.
+//! rather than duplicating it 20 times.  This crate exposes some macros to do so.
 //!
 //! There are two entities involved.  [Divergence] is a trait which encapsulates over things which are "like
-//! conditions".  This includes bools, results, etc.  Then there is [Cond], an enum representing the result of
-//! evaluating a [Divergence].  [Cond] has two cases, `Slow` and `Fast`, which are the values of evaluating the
-//! condition and may be of different types.  The provided macro then matches on [Cond]s to "unroll" the tree of
-//! conditions.  
-pub extern crate cond_tree_macro as ctm;
+//! conditions".  This includes bools, results, etc.  [Cond] is an enum representing the result of evaluating a
+//! [Divergence].  [Cond] has two cases, `Slow` and `Fast`, which are the values of evaluating the condition and may be
+//! of different types.  The provided macro magic then matches on [Cond]s to "unroll" the tree of conditions.  
+//!
+//! To use this crate, start by marking any function which wishes to diverge with [diverge_fn].  Then, in that function,
+//! code like this will diverge, and be expanded into `2^N`branches on the various combinations of the input patterns
+//! (see below):
+//!
+//! ```IGNORE
+//! #[diverge(a, let b = a_divergence(), const C = if d { 5 } else { 5})] {
+//!     // This code diverges.
+//! }
+//! ```
+//!
+//! If you forget [diverge_fn], then you get warnings about the `diverge` attribute not existing; this isn't an actual
+//! "proper" attribute, and currently has no path.  That is, it must always be `#[diverge(...)]`, not
+//! `#[cond_tree::diverge(...)]`.
+//!
+//! Additionally, `#[diverge]` must only appear on blocks (either expressions or statements).
+//!
+//! The `diverge` attribute supports the following cases:
+//!
+//! - `identifier`: assumes that `identifier` implements [Divergence], evaluates the identifier, and shadows it with an
+//!   identifier of the same name.  If the [Divergence] impl returns different types, the block must be valid for both.
+//! - `let identifier = expr` (but not an expr of the form `if cond {...} else {...}`): assumes that the result of
+//!   `expr` implements [Divergence], and then uses that.
+//! - `let identifier = if cond { ... } else { ... }`: `identifier` will be the first expression if `cond` is true,
+//!   otherwise the second.  The first expression is assumed to be the fast path, e.g. [Cond::Fast].
+//!
+//! All of the above may have an optional type `let a: (fast, slow) = ...`.  `let` may also be `const`, but if and only
+//! if the two expressions will evaluate to constants at compile time, and the types are not optional nor can they be
+//! `_`.  In practice, `const` can only be used with the `if ...` form: the other forms are not able to become
+//! compile-time expressions as they must go through the [Divergence] trait.
+//!
+//! Any other attributes on the block will be applied individually to the diverged branches.  To apply other attributes
+//! like `cfg`, wrap the diverging block in another block.
 
 mod maybe_int;
 
@@ -255,58 +286,4 @@ impl<S: std::fmt::Debug, F: std::fmt::Debug> std::fmt::Debug for Cond<S, F> {
 
 cond_tree_macro::cond_tree_macro_tuples!(32);
 
-/// Expand a set of conditions into a tree, morally equivalent to:
-///
-/// ```IGNORE
-/// if cond1 {
-///     if cond2 {
-///         body
-///     } else {
-///         body
-///     }
-/// } else {
-///     if cond2 {
-///         body
-///     } else {
-///         body
-///     }
-/// }
-/// ```
-///
-/// Except that it is possible to inject named values.  For example (see below for the meanings of the patterns):
-///
-/// ```IGNORE
-/// cond_tree!(
-///     let thing1 = a_divergence,
-///     let thing2 = if condition { expr1} else { expr2 },
-///     (let thing3 = ..., let thing4 = ..., let thing5 = ...),
-///     => {
-///         println!("{}",thing1);
-///         println!("{}", thing2);
-///     }
-/// )
-/// ```
-///
-/// Each input to the macro before the => defines a divergent condition.  The block after the => is then duplicated for
-/// all permutations.  The accepted patterns are as follows:
-///
-/// - `identifier`: assumes that `identifier` implements [Divergence], evaluates the identifier, and shadows it with an
-///   identifier of the same name.  If the [Divergence] impl returns different types, the block must be valid for both.
-/// - `let identifier = expr` (but not an expr of the form `if cond {...} else {...}`): assumes that the result of
-///   `expr` implements [Divergence], and then uses that.
-/// - `let identifier = if cond { ... } else { ... }`: `identifier` will be the first expression if `cond` is true,
-///   otherwise the second.  The first expression is assumed to be the fast path, e.g. [Cond::Fast].
-///
-/// All of the above may have an optional type `let a: (fast, slow) = ...`.  `let` may also be `const`, but if and only
-/// if the two expressions will evaluate to constants at compile time, and the types are not optional nor can they be
-/// `_`.  in effect this means `const` can only be used with the `if ...` form.
-#[macro_export]
-macro_rules! cond_tree {
-    ($pats: tt => $b: block) => {{
-        // Set up the scope.
-        use $crate::Cond;
-        use $crate::Divergence;
-
-    $crate::ctm::cond_tree_macro_impl!($pats => $b)
-    }};
-}
+pub use cond_tree_macro::*;
