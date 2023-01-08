@@ -156,3 +156,27 @@ fn test_maybe_int() {
         assert!(!is_mismatching.is_fixed());
     }
 }
+
+#[diverge_fn]
+#[test]
+fn nested_diverging() {
+    let mut got = vec![];
+
+    for i in [false, true] {
+        for j in [false, true] {
+            #[diverge(
+                let x = if i { 5 } else { 4 }
+            )]
+            {
+                #[diverge(
+                    let y = if j { 8 } else { 7 }
+                )]
+                {
+                    got.push((x, y));
+                };
+            }
+        }
+    }
+
+    assert_eq!(got, vec![(4, 7), (4, 8), (5, 7), (5, 8)]);
+}

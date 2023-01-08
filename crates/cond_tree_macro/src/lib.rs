@@ -331,8 +331,15 @@ pub fn diverge_fn(_attribute: TokenStream, input: TokenStream) -> TokenStream {
                 return syn::ExprBlock { attrs, ..expr };
             };
 
-            let ctree =
-                cond_tree_from_header_and_body(diverge_attr, syn::ExprBlock { attrs, ..expr });
+            let block = syn::fold::fold_block(self, expr.block);
+            let ctree = cond_tree_from_header_and_body(
+                diverge_attr,
+                syn::ExprBlock {
+                    attrs,
+                    block,
+                    ..expr
+                },
+            );
             let ei = render_all(ctree);
             syn::parse_quote!({ #ei })
         }
