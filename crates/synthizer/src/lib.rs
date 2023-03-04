@@ -9,6 +9,7 @@ mod config;
 pub mod convolution;
 mod data_structures;
 mod db;
+mod deferred_freeing;
 pub mod fast_xoroshiro;
 mod time;
 mod unique_id;
