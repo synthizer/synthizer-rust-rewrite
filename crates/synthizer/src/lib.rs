@@ -7,6 +7,7 @@ mod channel_format;
 mod close_floats;
 mod config;
 pub mod convolution;
+mod data_structures;
 mod db;
 pub mod fast_xoroshiro;
 mod time;
