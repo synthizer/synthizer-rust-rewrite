@@ -10,6 +10,7 @@ pub mod convolution;
 mod data_structures;
 mod db;
 mod deferred_freeing;
+mod inline_any;
 pub mod fast_xoroshiro;
 mod time;
 mod unique_id;
