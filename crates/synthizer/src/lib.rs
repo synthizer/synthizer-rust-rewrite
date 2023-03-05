@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 pub mod biquad;
 pub(crate) mod block_stream_conversion;
 pub mod channel_conversion;
@@ -10,8 +10,8 @@ pub mod convolution;
 mod data_structures;
 mod db;
 mod deferred_freeing;
-mod inline_any;
 pub mod fast_xoroshiro;
+mod inline_any;
 mod time;
 mod unique_id;
 pub mod views;
