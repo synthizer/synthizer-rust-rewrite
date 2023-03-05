@@ -38,6 +38,6 @@ pub const PRIMES: {type_name} = {literal};
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let final_path = format!("{out_dir}/primes.rs");
-    let mut file = std::fs::File::create(&final_path).unwrap();
+    let mut file = std::fs::File::create(final_path).unwrap();
     file.write_all(out.as_bytes()).unwrap();
 }

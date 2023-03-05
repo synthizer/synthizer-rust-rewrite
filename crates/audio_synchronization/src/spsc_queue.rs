@@ -227,7 +227,7 @@ impl<T: Copy> SpscQueue<T> {
         if offset < cur_chunk.as_ref().capacity.get() {
             // Easy: just put it in and return.
             let dptr = get_data_ptr(cur_chunk);
-            dptr.as_ptr().add(offset as usize).write(value);
+            dptr.as_ptr().add(offset).write(value);
             self.producer_index.fetch_add(1, Ordering::Release);
             return;
         }
