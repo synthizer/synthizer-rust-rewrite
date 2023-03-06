@@ -1,5 +1,6 @@
-use cond_tree::{diverge_fn, MaybeInt};
+use supermatch::supermatch_fn;
 
+use crate::maybe_int::*;
 use crate::views::*;
 
 /// Evaluate a convolution by directly evaluating the sum.
@@ -16,6 +17,7 @@ use crate::views::*;
 /// # Panics
 ///
 /// Panics if any validation fails, as these are (or should be) programmer bugs.  
+#[supermatch_fn]
 pub fn convolve_direct(
     input: &(impl ViewMeta<SampleType = f32> + InputView),
     input_channel: usize,
@@ -28,56 +30,87 @@ pub fn convolve_direct(
     assert_eq!(input.get_frames(), output.get_frames() + impulse.len() - 1);
     assert!(!impulse.is_empty());
 
-    let ochans = output.get_channels() as u16;
-    convolve_direct_inner(
-        input,
-        (input.get_channels() as u16).into(),
-        input_channel,
-        output,
-        ochans.into(),
-        output_channel,
-        impulse,
-    );
+    let ichans = input.get_channels();
+    let ochans = output.get_channels();
+
+    #[supermatch]
+    match ichans {
+        ichans @ 0..=16usize =>
+        {
+            #[supermatch]
+            match ochans {
+                ochans @ 0..=16usize => {
+                    convolve_direct_inner(
+                        input,
+                        FixedInt::<usize, { ichans as i64 }>::new(),
+                        input_channel,
+                        output,
+                        FixedInt::<usize, { ochans as i64 }>::new(),
+                        output_channel,
+                        impulse,
+                    );
+                }
+                _ => {
+                    convolve_direct_inner(
+                        input,
+                        FixedInt::<usize, { ichans as i64 }>::new(),
+                        input_channel,
+                        output,
+                        VaryingInt::<usize>::new(ochans),
+                        output_channel,
+                        impulse,
+                    );
+                }
+            }
+        }
+        _ => {
+            convolve_direct_inner(
+                input,
+                VaryingInt::<usize>::new(ichans),
+                input_channel,
+                output,
+                VaryingInt::<usize>::new(ochans),
+                output_channel,
+                impulse,
+            );
+        }
+    }
 }
 
 /// This function pulls out the values we need in order to be able to diverge with cond_tree.
-#[diverge_fn]
 fn convolve_direct_inner(
     input: &(impl ViewMeta<SampleType = f32> + InputView),
-    num_input_channels: MaybeInt<u16, 1>,
+    num_input_channels: impl IntSource<Output = usize>,
     input_channel: usize,
     output: &mut (impl ViewMeta<SampleType = f32> + OutputView),
-    num_output_channels: MaybeInt<u16, 1>,
+    num_output_channels: impl IntSource<Output = usize>,
     output_channel: usize,
     impulse: &[f32],
 ) {
-    #[diverge(num_input_channels, num_output_channels)]
-    {
-        let num_input_channels = num_input_channels.get() as usize;
-        let num_output_channels = num_output_channels.get() as usize;
+    let num_input_channels = num_input_channels.as_int();
+    let num_output_channels = num_output_channels.as_int();
 
-        assert!(input_channel < num_input_channels);
-        assert!(output_channel < num_output_channels);
-        assert_eq!(input.get_frames(), output.get_frames() + impulse.len() - 1);
-        assert!(!impulse.is_empty());
+    assert!(input_channel < num_input_channels);
+    assert!(output_channel < num_output_channels);
+    assert_eq!(input.get_frames(), output.get_frames() + impulse.len() - 1);
+    assert!(!impulse.is_empty());
 
-        for frame in 0..output.get_frames() {
-            // We could use f64 which would help with precision, but we only use this function on small impulses and using
-            // f32 is worth around a 10% performance improvement on average.
-            let mut sum: f32 = 0.0;
-            for impulse_ind in 0..impulse.len() {
-                let impulse_val = unsafe { *impulse.get_unchecked(impulse_ind) };
+    for frame in 0..output.get_frames() {
+        // We could use f64 which would help with precision, but we only use this function on small impulses and using
+        // f32 is worth around a 10% performance improvement on average.
+        let mut sum: f32 = 0.0;
+        for impulse_ind in 0..impulse.len() {
+            let impulse_val = unsafe { *impulse.get_unchecked(impulse_ind) };
 
-                let input_frame = frame + impulse_ind;
-                let input_ind = num_input_channels * input_frame + input_channel;
-                unsafe {
-                    sum += impulse_val * input.read_index_unchecked(input_ind);
-                }
+            let input_frame = frame + impulse_ind;
+            let input_ind = num_input_channels * input_frame + input_channel;
+            unsafe {
+                sum += impulse_val * input.read_index_unchecked(input_ind);
             }
-
-            let output_index = frame * num_output_channels + output_channel;
-            unsafe { output.write_index_unchecked(output_index, sum) };
         }
+
+        let output_index = frame * num_output_channels + output_channel;
+        unsafe { output.write_index_unchecked(output_index, sum) };
     }
 }
 
