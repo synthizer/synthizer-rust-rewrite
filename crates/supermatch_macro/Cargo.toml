@@ -9,7 +9,6 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
-derive_more = "0.99.17"
 proc-macro-error = "1.0.4"
 proc-macro2 = "1.0.47"
 quote = "1.0.21"
