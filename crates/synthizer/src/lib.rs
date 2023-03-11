@@ -11,6 +11,7 @@ mod db;
 mod deferred_freeing;
 pub mod fast_xoroshiro;
 mod inline_any;
+mod math;
 mod maybe_int;
 mod time;
 mod unique_id;
