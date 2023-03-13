@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 
 use proc_macro_error::abort;
-use syn::{parse_quote, spanned::Spanned};
+use syn::{parse_quote_spanned, spanned::Spanned};
 
 fn expr_to_numeric(expr: &syn::Expr) -> Option<(i64, &str)> {
     match expr {
@@ -86,10 +86,11 @@ fn expand_pat(pattern: &syn::Pat) -> Vec<(syn::Pat, Option<syn::ItemConst>)> {
                 .map(|i| {
                     let i = syn::LitInt::new(&i.to_string(), pi.span());
 
-                    let pat = parse_quote!(#i);
+                    let pat = parse_quote_spanned!(pattern.span() => #i);
                     let ident = &pi.ident;
 
-                    let decl = parse_quote!(
+                    let decl = parse_quote_spanned!(
+                        pi.span() =>
                         #[allow(non_upper_case_globals)]
                         const #ident: #suffix = #i;
                     );
@@ -117,7 +118,7 @@ fn expand_match(what: &syn::ExprMatch) -> syn::ExprMatch {
             new_pats.into_iter().map(|(pat, decl)| {
                 let old_body = &arm.body;
                 let new_body = if decl.is_some() {
-                    parse_quote!({#decl; #old_body})
+                    parse_quote_spanned!(old_body.span() => {#decl; #old_body})
                 } else {
                     old_body.clone()
                 };
