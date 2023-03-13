@@ -118,7 +118,7 @@ fn expand_match(what: &syn::ExprMatch) -> syn::ExprMatch {
             new_pats.into_iter().map(|(pat, decl)| {
                 let old_body = &arm.body;
                 let new_body = if decl.is_some() {
-                    parse_quote_spanned!(old_body.span() => {#decl; #old_body})
+                    parse_quote_spanned!(old_body.span() => {#decl #old_body })
                 } else {
                     old_body.clone()
                 };
