@@ -1,1 +1,1 @@
-mod trig_waveforms;
+pub(crate) mod trig_waveforms;

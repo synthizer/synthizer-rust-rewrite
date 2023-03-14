@@ -15,3 +15,5 @@ pub const SR: u16 = 44100;
 /// We choose 16 because this is the value needed by third-order ambisonics.  Though we don't support that yet, we may
 /// wish to in future, and it makes as good a value as any.
 pub(crate) const MAX_CHANNELS: usize = 16;
+
+pub(crate) const BLOCK_SIZE: usize = 128;

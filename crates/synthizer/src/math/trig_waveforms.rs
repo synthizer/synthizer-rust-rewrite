@@ -31,7 +31,7 @@ eval_impl!(CosEval, cos);
 eval_impl!(TanEval, tan);
 
 /// A trigonometric waveform at a given frequency.
-pub(crate) struct TrigWaveform {
+pub(crate) struct TrigWaveformEvaluator {
     evaluator: TrigFunction,
 
     /// From 0.0 to 1.0.  The offset of the wave.
@@ -52,17 +52,17 @@ macro_rules! constructor {
     };
 }
 
-impl TrigWaveform {
+impl TrigWaveformEvaluator {
     constructor!(new_sin, TrigFunction::Sin(SinEval));
     constructor!(new_cos, TrigFunction::Cos(CosEval));
     constructor!(new_tan, TrigFunction::Tan(TanEval));
 
-    fn set_frequency(&mut self, frequency: f32) -> &mut Self {
+    pub(crate) fn set_frequency(&mut self, frequency: f32) -> &mut Self {
         self.frequency = frequency;
         self
     }
 
-    pub fn set_phase(&mut self, phase: f32) -> &mut Self {
+    pub(crate) fn set_phase(&mut self, phase: f32) -> &mut Self {
         self.phase = phase;
         self
     }
@@ -70,7 +70,7 @@ impl TrigWaveform {
     /// Tick this trigonometric waveform some number of times, pushing output values as well as a tick count to the
     /// provided closure.
     #[supermatch::supermatch_fn]
-    fn evaluate_ticks(&mut self, ticks: usize, mut destination: impl FnMut(usize, f32)) {
+    pub(crate) fn evaluate_ticks(&mut self, ticks: usize, mut destination: impl FnMut(usize, f32)) {
         let increment = self.frequency / SR as f32;
 
         #[supermatch]
