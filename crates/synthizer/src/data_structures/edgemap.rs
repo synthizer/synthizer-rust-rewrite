@@ -27,7 +27,7 @@ pub(crate) trait Edge {
 /// identifier, but also generalizing to an input wouldn't work since many nodes can have a 2nd input.  For our use case
 /// this is fine: we only ever need to generalize to nodes/node-like things (it would not make sense to do anything with
 /// "everything connected to a 2nd input").
-trait GeneralizedEndpoint<T> {
+pub(crate) trait GeneralizedEndpoint<T> {
     fn generalize(&self) -> &T;
 }
 
