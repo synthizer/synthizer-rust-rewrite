@@ -7,11 +7,14 @@ build = "build/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arc-swap.workspace = true
 arrayvec.workspace = true
+atomic_refcell.workspace = true
 derive_more.workspace = true
 num.workspace = true
 rand.workspace = true
 rand_xoshiro.workspace = true
+sharded-slab.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 supermatch.workspace = true
