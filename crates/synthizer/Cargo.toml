@@ -21,7 +21,7 @@ paste.workspace = true
 criterion.workspace = true
 
 [build-dependencies]
-primes = "0.3.0"
+primes.workspace = true
 itertools.workspace = true
 prost.workspace = true
 synthizer_protos.workspace = true
