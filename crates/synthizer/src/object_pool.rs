@@ -203,8 +203,8 @@ mod tests {
         let tok = pool.insert(1u32);
         let loc = pool.lookup(&tok).unwrap();
 
-        let good1 = loc.get();
-        let good2 = loc.get();
-        let panics_here = loc.get_mut();
+        let _good1 = loc.get();
+        let _good2 = loc.get();
+        let _panics_here = loc.get_mut();
     }
 }
