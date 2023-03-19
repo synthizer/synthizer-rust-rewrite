@@ -1,16 +1,27 @@
+use std::collections::HashMap;
+
 /// A map of edges.
 ///
-/// This is a realtime-safe collection of edges which only ever grows if the initial capacity is exhausted.  The
-/// underlying implementation, however, is currently `O(edges)` on all operations.  This will be fixed; it's just to get
-/// us off the ground.
+/// This is a realtime-safe collection of edges which only ever grows if the initial capacity is exhausted.  It is
+/// backed by lazily-sorted vecs and a hashmap.  Usage proceeds in two phases: it is mutated by whatever, [EdgeMap::sort] is called,
+/// and then immutable access is permitted.  Put another way, all immutable access must first be preceeded by
+/// [EdgeMap::sort].
 pub(crate) struct EdgeMap<E: Edge> {
-    edges: Vec<E>,
+    edges: HashMap<(E::Outgoing, E::Incoming), E>,
+
+    by_outgoing: Vec<(E::Outgoing, E::Incoming)>,
+
+    /// Edges in the map sorted by (incoming, outgoing).
+    by_incoming: Vec<(E::Incoming, E::Outgoing)>,
+
+    /// True if the vecs are sorted.
+    sorted: bool,
 }
 
 /// AN edge in an edge map, with an outgoing and incoming endpoint.
 pub(crate) trait Edge {
-    type Outgoing: Eq + Ord + std::hash::Hash;
-    type Incoming: Eq + Ord + std::hash::Hash;
+    type Outgoing: Copy + Eq + Ord + std::hash::Hash;
+    type Incoming: Copy + Eq + Ord + std::hash::Hash;
 
     fn get_outgoing(&self) -> &Self::Outgoing;
     fn get_incoming(&self) -> &Self::Incoming;
@@ -19,6 +30,7 @@ pub(crate) trait Edge {
 /// A generalized endpoint is like the node in a (node, input) tuple.
 ///
 /// All outgoing and incoming types should generalize to themselves, plus any auxiliary data, e.g. nodes.
+/// Self-generalization is handled automatically via a blanket impl.
 ///
 /// Generalizations should be such that a sorted sequence of the more specific value produces a sorted sequence of the
 /// generalized value.  The current implementation does not rely on this because it is `O(N)` on everything, but a more
@@ -27,36 +39,78 @@ pub(crate) trait Edge {
 /// identifier, but also generalizing to an input wouldn't work since many nodes can have a 2nd input.  For our use case
 /// this is fine: we only ever need to generalize to nodes/node-like things (it would not make sense to do anything with
 /// "everything connected to a 2nd input").
-pub(crate) trait GeneralizedEndpoint<T> {
+pub(crate) trait GeneralizedEndpoint<T: Copy> {
     fn generalize(&self) -> &T;
+}
+
+impl<T: Copy> GeneralizedEndpoint<T> for T {
+    fn generalize(&self) -> &T {
+        self
+    }
+}
+
+struct FindResult {
+    outgoing_index: usize,
+    incoming_index: usize,
 }
 
 impl<E: Edge> EdgeMap<E> {
     pub(crate) fn new(capacity: usize) -> Self {
         EdgeMap {
-            edges: Vec::with_capacity(capacity),
+            edges: HashMap::with_capacity(capacity),
+            by_outgoing: Vec::with_capacity(capacity),
+            by_incoming: Vec::with_capacity(capacity),
+            sorted: true,
         }
     }
 
+    /// Sort the vecs if required.
+    ///
+    /// Should be called after mutation, for immutable access.
+    pub(crate) fn sort(&mut self) {
+        if self.sorted {
+            return;
+        }
+        self.by_outgoing.sort_unstable();
+        self.by_incoming.sort_unstable();
+
+        self.sorted = true;
+    }
+
+    fn assert_sorted(&self) {
+        assert!(
+            self.sorted,
+            ".sort() must be called after muttating and before reading"
+        );
+    }
+
     /// Find an edge with a given incoming and outgoing value.
-    fn find(&self, outgoing: &E::Outgoing, incoming: &E::Incoming) -> Option<usize> {
-        self.edges
-            .iter()
-            .enumerate()
-            .find(|(_, e)| e.get_incoming() == incoming && e.get_outgoing() == outgoing)
-            .map(|x| x.0)
+    fn find(&self, outgoing: &E::Outgoing, incoming: &E::Incoming) -> Option<FindResult> {
+        self.assert_sorted();
+
+        let Ok(outgoing_index) = self.by_outgoing.binary_search(&(*outgoing, *incoming)) else { return None };
+        let incoming_index = self
+            .by_incoming
+            .binary_search(&(*incoming, *outgoing))
+            .expect("If there is an outgoing node, there should be an incoming one too");
+
+        Some(FindResult {
+            outgoing_index,
+            incoming_index,
+        })
     }
 
     /// Insert or replace an edge from a given incoming source to a given outgoing destination, returning the old edge.
+    ///
+    /// This function will sort the vec if necessary.
     pub fn upsert(&mut self, edge: E) -> Option<E> {
-        match self.find(edge.get_outgoing(), edge.get_incoming()) {
-            Some(x) => {
-                let mut new = edge;
-                std::mem::swap(&mut new, &mut self.edges[x]);
-                Some(new)
-            }
+        let k = (*edge.get_outgoing(), *edge.get_incoming());
+        match self.edges.insert(k, edge) {
+            Some(e) => Some(e),
             None => {
-                self.edges.push(edge);
+                self.by_outgoing.push(k);
+                self.by_incoming.push((k.1, k.0));
+                self.sorted = false;
                 None
             }
         }
@@ -64,8 +118,18 @@ impl<E: Edge> EdgeMap<E> {
 
     /// Remove an edge from the edge map, if present. Returns the old edge if any.
     fn remove(&mut self, outgoing: &E::Outgoing, incoming: &E::Incoming) -> Option<E> {
-        let ind = self.find(outgoing, incoming)?;
-        Some(self.edges.remove(ind))
+        let k = (*outgoing, *incoming);
+        match self.edges.remove(&k) {
+            None => None,
+            Some(x) => {
+                let o_ind = self.by_outgoing.binary_search(&k).unwrap();
+                self.by_outgoing.swap_remove(o_ind);
+                let i_ind = self.by_incoming.binary_search(&(k.1, k.0)).unwrap();
+                self.by_incoming.swap_remove(i_ind);
+                self.sorted = false;
+                Some(x)
+            }
+        }
     }
 
     /// Iterate over all outgoing edges for a given outgoing value, potentially generalized.
@@ -74,11 +138,16 @@ impl<E: Edge> EdgeMap<E> {
     fn iter_outgoing<'a, Pred>(&'a self, outgoing: &'a Pred) -> impl Iterator<Item = &E> + 'a
     where
         E::Outgoing: GeneralizedEndpoint<Pred>,
-        Pred: PartialEq,
+        Pred: Ord + Copy,
     {
-        self.edges
-            .iter()
-            .filter(move |e| e.get_outgoing().generalize() == outgoing)
+        self.assert_sorted();
+        let outgoing_ind = self
+            .by_outgoing
+            .partition_point(|x| x.0.generalize() < outgoing);
+
+        (outgoing_ind..self.by_outgoing.len())
+            .map(|i| self.edges.get(&self.by_outgoing[i]).unwrap())
+            .take_while(move |e| e.get_outgoing().generalize() == outgoing)
     }
 
     /// Iterate over all incoming edges for a given incoming value, potentially generalized.
@@ -88,11 +157,18 @@ impl<E: Edge> EdgeMap<E> {
     fn iter_incoming<'a, Pred>(&'a self, incoming: &'a Pred) -> impl Iterator<Item = &E> + 'a
     where
         E::Incoming: GeneralizedEndpoint<Pred>,
-        Pred: PartialEq,
+        Pred: Ord + Copy,
     {
-        self.edges
-            .iter()
-            .filter(move |e| e.get_incoming().generalize() == incoming)
+        self.assert_sorted();
+        let incoming_ind = self
+            .by_incoming
+            .partition_point(|x| x.0.generalize() < incoming);
+        (incoming_ind..self.by_incoming.len())
+            .map(|i| {
+                let k = (self.by_incoming[i].1, self.by_incoming[i].0);
+                self.edges.get(&k).unwrap()
+            })
+            .take_while(move |e| e.get_incoming().generalize() == incoming)
     }
 }
 
@@ -100,13 +176,13 @@ impl<E: Edge> EdgeMap<E> {
 mod tests {
     use super::*;
 
-    #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+    #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
     struct NodeInput {
         node: u8,
         input: u8,
     }
 
-    #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+    #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
     struct NodeOutput {
         node: u8,
         output: u8,
@@ -116,18 +192,6 @@ mod tests {
     struct Connection {
         output: NodeOutput,
         input: NodeInput,
-    }
-
-    impl GeneralizedEndpoint<NodeInput> for NodeInput {
-        fn generalize(&self) -> &NodeInput {
-            self
-        }
-    }
-
-    impl GeneralizedEndpoint<NodeOutput> for NodeOutput {
-        fn generalize(&self) -> &NodeOutput {
-            self
-        }
     }
 
     impl GeneralizedEndpoint<u8> for NodeInput {
@@ -161,6 +225,7 @@ mod tests {
             input: NodeInput { node: node2, input },
         }
     }
+
     #[test]
     fn test_edgemap() {
         let mut map = EdgeMap::<Connection>::new(100);
@@ -172,6 +237,7 @@ mod tests {
         map.upsert(conn(2, 0, 3, 0));
         map.upsert(conn(2, 1, 3, 0));
         map.upsert(conn(2, 1, 3, 1));
+        map.sort();
 
         let mut edges = map
             .iter_outgoing(&NodeOutput { node: 1, output: 0 })
@@ -227,6 +293,7 @@ mod tests {
             &NodeInput { node: 2, input: 0 },
         )
         .expect("Should have removed");
+        map.sort();
 
         let mut edges = map
             .iter_outgoing(&NodeOutput { node: 1, output: 0 })
