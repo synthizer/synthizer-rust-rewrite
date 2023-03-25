@@ -21,6 +21,8 @@ supermatch.workspace = true
 
 [dev-dependencies]
 paste.workspace = true
+petgraph.workspace = true
+proptest.workspace = true
 criterion.workspace = true
 
 [build-dependencies]
