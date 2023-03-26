@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use ahash::{HashMap, HashMapExt};
 
 /// A map of edges.
 ///
@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// backed by lazily-sorted vecs and a hashmap.  Usage proceeds in two phases: it is mutated by whatever, [EdgeMap::sort] is called,
 /// and then immutable access is permitted.  Put another way, all immutable access must first be preceeded by
 /// [EdgeMap::sort].
-pub(crate) struct EdgeMap<E: Edge> {
+pub struct EdgeMap<E: Edge> {
     edges: HashMap<(E::Outgoing, E::Incoming), E>,
 
     by_outgoing: Vec<(E::Outgoing, E::Incoming)>,
@@ -19,7 +19,7 @@ pub(crate) struct EdgeMap<E: Edge> {
 }
 
 /// AN edge in an edge map, with an outgoing and incoming endpoint.
-pub(crate) trait Edge {
+pub trait Edge {
     type Outgoing: Copy + Eq + Ord + std::hash::Hash;
     type Incoming: Copy + Eq + Ord + std::hash::Hash;
 
@@ -39,7 +39,7 @@ pub(crate) trait Edge {
 /// identifier, but also generalizing to an input wouldn't work since many nodes can have a 2nd input.  For our use case
 /// this is fine: we only ever need to generalize to nodes/node-like things (it would not make sense to do anything with
 /// "everything connected to a 2nd input").
-pub(crate) trait GeneralizedEndpoint<T: Copy> {
+pub trait GeneralizedEndpoint<T: Copy> {
     fn generalize(&self) -> &T;
 }
 
@@ -55,7 +55,7 @@ struct FindResult {
 }
 
 impl<E: Edge> EdgeMap<E> {
-    pub(crate) fn new(capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         EdgeMap {
             edges: HashMap::with_capacity(capacity),
             by_outgoing: Vec::with_capacity(capacity),
@@ -67,7 +67,7 @@ impl<E: Edge> EdgeMap<E> {
     /// Sort the vecs if required.
     ///
     /// Should be called after mutation, for immutable access.
-    pub(crate) fn sort(&mut self) {
+    pub fn sort(&mut self) {
         if self.sorted {
             return;
         }
@@ -101,8 +101,6 @@ impl<E: Edge> EdgeMap<E> {
     }
 
     /// Insert or replace an edge from a given incoming source to a given outgoing destination, returning the old edge.
-    ///
-    /// This function will sort the vec if necessary.
     pub fn upsert(&mut self, edge: E) -> Option<E> {
         let k = (*edge.get_outgoing(), *edge.get_incoming());
         match self.edges.insert(k, edge) {
@@ -134,8 +132,9 @@ impl<E: Edge> EdgeMap<E> {
 
     /// Iterate over all outgoing edges for a given outgoing value, potentially generalized.
     ///
-    /// For example, "give me all things output 2 of node a is connected to", or "all things any output of node a is connected to"
-    fn iter_outgoing<'a, Pred>(&'a self, outgoing: &'a Pred) -> impl Iterator<Item = &E> + 'a
+    /// For example, "give me all things output 2 of node a is connected to", or "all things any output of node a is
+    /// connected to"
+    pub fn iter_outgoing<'a, Pred>(&'a self, outgoing: &'a Pred) -> impl Iterator<Item = &E> + 'a
     where
         E::Outgoing: GeneralizedEndpoint<Pred>,
         Pred: Ord + Copy,
@@ -154,7 +153,7 @@ impl<E: Edge> EdgeMap<E> {
     ///
     /// For example, "give me all things connected to input 2 of node a", or "give me all things connected to an input
     /// of node a".
-    fn iter_incoming<'a, Pred>(&'a self, incoming: &'a Pred) -> impl Iterator<Item = &E> + 'a
+    pub fn iter_incoming<'a, Pred>(&'a self, incoming: &'a Pred) -> impl Iterator<Item = &E> + 'a
     where
         E::Incoming: GeneralizedEndpoint<Pred>,
         Pred: Ord + Copy,

@@ -1,4 +1,6 @@
 #![allow(dead_code, unused_imports)]
+#[doc(hidden)]
+pub mod bench_reexport;
 pub mod biquad;
 pub mod channel_conversion;
 mod channel_format;

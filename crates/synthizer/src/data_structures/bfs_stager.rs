@@ -14,8 +14,8 @@ use std::hash::Hash;
 /// The constraint on the type here is `Eq + Ord + Hash`: this allows future-proofing.
 ///
 /// Internally, stages are `u16`, where the first stage is `u16::MAX` and we count down.
-pub(crate) struct BfsStager<N: Copy + Eq + Ord + std::hash::Hash> {
-    buffer: Vec<(u16, N)>,
+pub struct BfsStager<N: Copy + Eq + Ord + std::hash::Hash> {
+    buffer: Vec<(N, u16)>,
 
     /// Once we find something below this number of stages, panicn and assume there was a cycle.
     ///
@@ -32,29 +32,29 @@ impl<N: Copy + Eq + Ord + Hash> BfsStager<N> {
     }
 
     /// Clear this stager for the next time it will be reused.  Does not deallocate.
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.buffer.clear();
     }
 
     /// Execute a bredth-first search, preparing to be able to yield nodes in execution order.
-    pub(crate) fn execute(&mut self, policy: &impl BfsPolicy<Node = N>) {
+    pub fn execute(&mut self, policy: &impl BfsPolicy<Node = N>) {
         self.clear();
 
         // Put the roots into the vec.
         policy.determine_roots(|n| {
-            self.buffer.push((u16::MAX, n));
+            self.buffer.push((n, u16::MAX));
         });
         self.bfs_recurse(policy, 0, u16::MAX - 1);
 
-        // First, sort by the node then by the stage.  This allows deduplicating to find the lowest stage of each nodee
+        // First, sort by the node then by the stage.  This allows deduplicating to find the lowest stage of each node
         // with a simple slice op.
-        self.buffer.sort_unstable_by_key(|x| (x.1, x.0));
+        self.buffer.sort_unstable();
 
         // This dedup keeps the leftmost, which is the earliest position at which any node must execute.
-        self.buffer.dedup_by(|a, b| a.1 == b.1);
+        self.buffer.dedup_by(|a, b| a.0 == b.0);
 
-        // Now a normal sort gets nodes in stage order.
-        self.buffer.sort_unstable();
+        // Now get nodes in stage order.
+        self.buffer.sort_unstable_by_key(|x| (x.1, x.0));
     }
 
     /// The recursive step of the bfs search.
@@ -68,7 +68,7 @@ impl<N: Copy + Eq + Ord + Hash> BfsStager<N> {
         let fringe_stop = self.buffer.len();
 
         for i in fringe_start..fringe_stop {
-            policy.determine_dependencies(self.buffer[i].1, |n| self.buffer.push((stage, n)));
+            policy.determine_dependencies(self.buffer[i].0, |n| self.buffer.push((n, stage)));
         }
 
         if fringe_stop < self.buffer.len() {
@@ -77,12 +77,12 @@ impl<N: Copy + Eq + Ord + Hash> BfsStager<N> {
     }
 
     /// Iterate over all nodes in execution order.
-    fn iter(&self) -> impl Iterator<Item = N> + '_ {
-        self.buffer.iter().map(|x| x.1)
+    pub fn iter(&self) -> impl Iterator<Item = N> + '_ {
+        self.buffer.iter().map(|x| x.0)
     }
 }
 
-pub(crate) trait BfsPolicy {
+pub trait BfsPolicy {
     type Node: Copy + Eq + Ord + Hash;
 
     /// call the provided closure with all roots of the search, those nodes which can execute last.
@@ -184,6 +184,7 @@ mod tests {
             // The easiest way to test the ordering is to check that we can "execute" nodes.
             let mut executed = HashSet::<u8>::new();
             for n in proposal {
+                prop_assert!(!executed.contains(&n));
                 let nref = map.get(&n).unwrap();
                 graph
                     .edges_directed(*nref, petgraph::Direction::Incoming)

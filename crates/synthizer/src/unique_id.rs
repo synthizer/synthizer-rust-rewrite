@@ -5,11 +5,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 ///
 /// This opaque ID is unique per process per version of Synthizer, e.g. it shouldn't be exposed.  The underlying implementation is very fast, and the ID contains a niche, meaning that `Option<UniqueId>` is never bigger than the struct.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub(crate) struct UniqueId(NonZeroU64);
+pub struct UniqueId(NonZeroU64);
 
 impl UniqueId {
-    pub(crate) fn new() -> UniqueId {
+    pub fn new() -> UniqueId {
         UniqueId(unique_u64())
+    }
+}
+
+impl Default for UniqueId {
+    fn default() -> Self {
+        UniqueId::new()
     }
 }
 
