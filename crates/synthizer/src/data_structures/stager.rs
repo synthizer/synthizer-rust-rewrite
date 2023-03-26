@@ -14,7 +14,7 @@ use std::hash::Hash;
 /// The constraint on the type here is `Eq + Ord + Hash`: this allows future-proofing.
 ///
 /// Internally, stages are `u16`, where the first stage is `u16::MAX` and we count down.
-pub struct BfsStager<N: Copy + Eq + Ord + std::hash::Hash> {
+pub struct Stager<N: Copy + Eq + Ord + std::hash::Hash> {
     buffer: Vec<(N, u16)>,
 
     /// Once we find something below this number of stages, panicn and assume there was a cycle.
@@ -23,9 +23,9 @@ pub struct BfsStager<N: Copy + Eq + Ord + std::hash::Hash> {
     min_stage: u16,
 }
 
-impl<N: Copy + Eq + Ord + Hash> BfsStager<N> {
+impl<N: Copy + Eq + Ord + Hash> Stager<N> {
     pub fn new(capacity: usize, max_depth: u16) -> Self {
-        BfsStager {
+        Stager {
             buffer: Vec::with_capacity(capacity),
             min_stage: u16::MAX - max_depth,
         }
@@ -37,7 +37,7 @@ impl<N: Copy + Eq + Ord + Hash> BfsStager<N> {
     }
 
     /// Execute a bredth-first search, preparing to be able to yield nodes in execution order.
-    pub fn execute(&mut self, policy: &impl BfsPolicy<Node = N>) {
+    pub fn execute(&mut self, policy: &impl StagerPolicy<Node = N>) {
         self.clear();
 
         // Put the roots into the vec.
@@ -58,7 +58,12 @@ impl<N: Copy + Eq + Ord + Hash> BfsStager<N> {
     }
 
     /// The recursive step of the bfs search.
-    fn bfs_recurse(&mut self, policy: &impl BfsPolicy<Node = N>, fringe_start: usize, stage: u16) {
+    fn bfs_recurse(
+        &mut self,
+        policy: &impl StagerPolicy<Node = N>,
+        fringe_start: usize,
+        stage: u16,
+    ) {
         assert!(
             stage >= self.min_stage,
             "Found a cycle or a graph which is too deep to handle. Only allowing a max depth of {}",
@@ -82,7 +87,7 @@ impl<N: Copy + Eq + Ord + Hash> BfsStager<N> {
     }
 }
 
-pub trait BfsPolicy {
+pub trait StagerPolicy {
     type Node: Copy + Eq + Ord + Hash;
 
     /// call the provided closure with all roots of the search, those nodes which can execute last.
@@ -137,7 +142,7 @@ mod tests {
         map: &'a HashMap<u8, NodeIndex>,
     }
 
-    impl<'a> BfsPolicy for TestPolicy<'a> {
+    impl<'a> StagerPolicy for TestPolicy<'a> {
         type Node = u8;
 
         fn determine_roots(&self, mut callback: impl FnMut(Self::Node)) {
@@ -172,7 +177,7 @@ mod tests {
                 graph: &graph,
                 map: &map,
             };
-            let mut stager = BfsStager::<u8>::new(0, u16::MAX);
+            let mut stager = Stager::<u8>::new(0, u16::MAX);
             stager.execute(&policy);
             let proposal = stager.iter().collect::<Vec<_>>();
             prop_assert_eq!(proposal.len(), graph.node_count());

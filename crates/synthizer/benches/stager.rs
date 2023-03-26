@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 
 use synthizer::bench_reexport::{
-    data_structures::bfs_stager::*, data_structures::edgemap, unique_id::UniqueId,
+    data_structures::edgemap, data_structures::stager::*, unique_id::UniqueId,
 };
 
 struct Case {
@@ -54,7 +54,7 @@ struct BenchPolicy<'a> {
     edges: &'a edgemap::EdgeMap<BenchEdge>,
 }
 
-impl<'a> BfsPolicy for BenchPolicy<'a> {
+impl<'a> StagerPolicy for BenchPolicy<'a> {
     type Node = UniqueId;
 
     fn determine_roots(&self, mut callback: impl FnMut(Self::Node)) {
@@ -136,7 +136,7 @@ pub fn bfs_searcher(c: &mut Criterion) {
                     .chain(std::iter::once(audio_output_node))
                     .collect::<HashSet<_>>();
 
-                let mut bfs = BfsStager::<UniqueId>::new(nodes.len(), u16::MAX);
+                let mut bfs = Stager::<UniqueId>::new(nodes.len(), u16::MAX);
                 let mut workspace = Vec::with_capacity(nodes.len());
 
                 b.iter(|| {
