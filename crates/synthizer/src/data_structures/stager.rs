@@ -1,5 +1,7 @@
 use std::hash::Hash;
 
+use ahash::{HashMap, HashMapExt};
+
 /// Computes the execution order of nodes in a graph
 ///
 /// We divide nodes into stages,.  This type can return the execution order of some set of nodes such that each stage
@@ -7,15 +9,17 @@ use std::hash::Hash;
 /// stages.
 ///
 /// Internally, this type is a reusable buffer and a mostly stateless function which takes a graph traverser, which
-/// executes a bredth-first search.  We choose bredth-first searching here because we can use the tail of the buffer to
-/// expand the nodes, which means that most of the algorithm occurs in a cache-friendly fashion.  At the end, we sort
-/// the vec and deduplicate.
+/// executes a search.  The actual algorithm is a hybrid of depth-first and bredth-first searching: the key invariant is
+/// merely that we visit dependencies after their dependents.  As a consequence it doesn't actually matter how we expand
+/// the fringe.
 ///
 /// The constraint on the type here is `Eq + Ord + Hash`: this allows future-proofing.
 ///
 /// Internally, stages are `u16`, where the first stage is `u16::MAX` and we count down.
 pub struct Stager<N: Copy + Eq + Ord + std::hash::Hash> {
-    buffer: Vec<(N, u16)>,
+    buffer: Vec<N>,
+
+    stages: HashMap<N, u16>,
 
     /// Once we find something below this number of stages, panicn and assume there was a cycle.
     ///
@@ -27,6 +31,7 @@ impl<N: Copy + Eq + Ord + Hash> Stager<N> {
     pub fn new(capacity: usize, max_depth: u16) -> Self {
         Stager {
             buffer: Vec::with_capacity(capacity),
+            stages: HashMap::with_capacity(capacity),
             min_stage: u16::MAX - max_depth,
         }
     }
@@ -34,56 +39,56 @@ impl<N: Copy + Eq + Ord + Hash> Stager<N> {
     /// Clear this stager for the next time it will be reused.  Does not deallocate.
     pub fn clear(&mut self) {
         self.buffer.clear();
+        self.stages.clear();
     }
 
-    /// Execute a bredth-first search, preparing to be able to yield nodes in execution order.
+    /// Execute a search, preparing to be able to yield nodes in execution order.
     pub fn execute(&mut self, policy: &impl StagerPolicy<Node = N>) {
         self.clear();
 
-        // Put the roots into the vec.
         policy.determine_roots(|n| {
-            self.buffer.push((n, u16::MAX));
+            self.recurse(policy, n, u16::MAX);
         });
-        self.bfs_recurse(policy, 0, u16::MAX - 1);
 
-        // First, sort by the node then by the stage.  This allows deduplicating to find the lowest stage of each node
-        // with a simple slice op.
-        self.buffer.sort_unstable();
-
-        // This dedup keeps the leftmost, which is the earliest position at which any node must execute.
-        self.buffer.dedup_by(|a, b| a.0 == b.0);
-
-        // Now get nodes in stage order.
-        self.buffer.sort_unstable_by_key(|x| (x.1, x.0));
+        self.buffer.extend(self.stages.keys().copied());
+        self.buffer
+            .sort_unstable_by_key(|n| *self.stages.get(n).unwrap());
     }
 
     /// The recursive step of the bfs search.
-    fn bfs_recurse(
-        &mut self,
-        policy: &impl StagerPolicy<Node = N>,
-        fringe_start: usize,
-        stage: u16,
-    ) {
+    fn recurse(&mut self, policy: &impl StagerPolicy<Node = N>, node: N, stage: u16) {
         assert!(
             stage >= self.min_stage,
             "Found a cycle or a graph which is too deep to handle. Only allowing a max depth of {}",
             self.min_stage
         );
 
-        let fringe_stop = self.buffer.len();
+        let mut will_proceed = false;
 
-        for i in fringe_start..fringe_stop {
-            policy.determine_dependencies(self.buffer[i].0, |n| self.buffer.push((n, stage)));
+        self.stages
+            .entry(node)
+            .and_modify(|x| {
+                // Only continue if we're moving the node down a stage.
+                will_proceed = *x > stage;
+                *x = (*x).min(stage);
+            })
+            .or_insert_with(|| {
+                will_proceed = true;
+                stage
+            });
+
+        if !will_proceed {
+            return;
         }
 
-        if fringe_stop < self.buffer.len() {
-            self.bfs_recurse(policy, fringe_stop, stage - 1);
-        }
+        policy.determine_dependencies(node, |dep| {
+            self.recurse(policy, dep, stage - 1);
+        });
     }
 
     /// Iterate over all nodes in execution order.
     pub fn iter(&self) -> impl Iterator<Item = N> + '_ {
-        self.buffer.iter().map(|x| x.0)
+        self.buffer.iter().copied()
     }
 }
 
