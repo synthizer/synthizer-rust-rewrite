@@ -105,7 +105,7 @@ mod tests {
     use proptest::prelude::*;
     use proptest::proptest;
 
-    use std::collections::{HashMap, HashSet};
+    use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 
     fn edges_to_graph(edges: &[(u8, u8)]) -> (StableDiGraph<u8, ()>, HashMap<u8, NodeIndex>) {
         let mut out = StableDiGraph::default();
