@@ -26,3 +26,6 @@ supermatch = { path = "crates/supermatch" }
 supermatch_macro = { path = "crates/supermatch_macro" }
 synthizer_protos = { path = "crates/protos" }
 thiserror = "1.0.37"
+
+[profile.bench]
+lto = true
