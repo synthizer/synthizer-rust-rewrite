@@ -1,14 +1,19 @@
 use std::borrow::Cow;
 
+use crate::config::*;
+use crate::data_structures::AddOnlyBlock;
+use crate::data_structures::{AllocatedBlock, AudioGraph, BlockAllocator};
 use crate::node_descriptor::NodeDescriptor;
+use crate::server::AudioThreadServerServices;
+
+use arrayvec::ArrayVec;
 
 /// An output destination.
 pub(crate) enum OutputDestination<'a> {
-    /// This output is going to the specified slice.
+    /// This output is going to the specified blocks, which will match what the descriptor requested.
     ///
-    /// The slice will be zeroed and exactly `channels * BLOCK_SIZE` in length, where `channels` comes from the
-    /// descriptor for this node.
-    Slice(&'a mut [f32]),
+    /// The blocks may not be zeroed, and should be added to instead.
+    Block(ArrayVec<AddOnlyBlock<'a>, BLOCK_SIZE>),
 }
 
 pub(crate) type OutputsByIndex<'a> = arrayvec::ArrayVec<&'a mut OutputDestination<'a>, 16>;
@@ -30,6 +35,7 @@ impl FromOutputSlice for () {
 pub(crate) struct NodeExecutionContext<'a, N: Node + ?Sized> {
     pub(crate) outputs: &'a mut N::Outputs<'a>,
     pub(crate) state: &'a mut N::State,
+    pub(crate) services: &'a mut AudioThreadServerServices,
 }
 
 /// Results from executing a node.
@@ -49,6 +55,7 @@ pub(crate) trait Node {
     type Outputs<'a>: FromOutputSlice + Sized;
     type State: Send + Sized;
 
+    /// Run this node.
     fn execute(context: &mut NodeExecutionContext<Self>) -> NodeExecutionOutcome;
 
     /// Describe this node.
@@ -56,4 +63,9 @@ pub(crate) trait Node {
     /// This function will be called with the state after node setup.  Nodes should never change their descriptors at
     /// runtime.
     fn describe(state: &Self::State) -> Cow<'static, NodeDescriptor>;
+
+    /// Gather all state needed for this node and execute it.  Implementors of this trait should use the default impl.
+    fn gather_and_execute(_services: &mut AudioThreadServerServices, _graph: &mut AudioGraph) {
+        // todo
+    }
 }
