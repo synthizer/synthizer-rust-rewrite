@@ -32,11 +32,6 @@ itertools.workspace = true
 prost.workspace = true
 synthizer_protos.workspace = true
 
-
-[[bench]]
-name = "convolution"
-harness = false
-
 [[bench]]
 name = "fast_xoroshiro"
 harness = false
