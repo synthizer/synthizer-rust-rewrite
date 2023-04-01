@@ -2,6 +2,7 @@
 #[doc(hidden)]
 pub mod bench_reexport;
 pub mod biquad;
+mod channel_conversion;
 mod channel_format;
 #[cfg(test)]
 mod close_floats;

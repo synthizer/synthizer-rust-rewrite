@@ -36,6 +36,9 @@ impl BlockAllocator {
         }
     }
 
+    /// Allocate a block, which is usually *not* zeroed.
+    ///
+    /// Zeroing is left to the caller because this is an expensive operation.  In debug builds, the returned buffer is guaranteed to contain random data.
     pub fn allocate_block(&mut self) -> AllocatedBlock {
         let inner = unsafe { self.inner.get().as_mut().unwrap_unchecked() };
         let index = match inner.free_blocks.pop() {
@@ -46,17 +49,31 @@ impl BlockAllocator {
             }
         };
 
-        AllocatedBlock {
+        let mut ret = AllocatedBlock {
             allocator: self.inner.clone(),
             index,
+        };
+
+        // We'll want to speed this up, but it's fine for now.
+        #[cfg(debug_assertions)]
+        {
+            let mut rgen =
+                crate::fast_xoroshiro::FastXoroshiro128PlusPlus::<1>::new_seeded(index as u64);
+            let loc = self.deref_block(&mut ret);
+            for o in loc.iter_mut() {
+                let rval = rgen.gen_u64() as u16;
+                *o = 1.0 - (rval as f32) / (u16::MAX as f32) * 2.0;
+            }
         }
+
+        ret
     }
 
     /// Resolve the given allocated block to a mutable array.
     // This takes `&Self` and returns `&mut` because [AllocatedBlock] is a type-level proof that there is only one
     // outstanding reference.  The shared reference prevents allocating new blocks, thus ensuring that data  isn't
     // moved.
-    fn deref_block<'a>(&self, block: &'a mut AllocatedBlock) -> &'a mut [f32; BLOCK_SIZE] {
+    pub fn deref_block<'a>(&self, block: &'a mut AllocatedBlock) -> &'a mut [f32; BLOCK_SIZE] {
         let raw_blocks = {
             // OK: only one mutable reference to inner.
             let inner = unsafe { self.inner.get().as_mut().unwrap_unchecked() };

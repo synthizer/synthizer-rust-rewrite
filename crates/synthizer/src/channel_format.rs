@@ -14,6 +14,11 @@ pub enum ChannelFormat {
 }
 
 impl ChannelFormat {
+    pub fn new_raw(channels: usize) -> Self {
+        let nz = NonZeroUsize::new(channels).unwrap();
+        ChannelFormat::Raw { channels: nz }
+    }
+
     pub fn get_channel_count(&self) -> NonZeroUsize {
         match self {
             ChannelFormat::Mono => NonZeroUsize::new(1).unwrap(),
