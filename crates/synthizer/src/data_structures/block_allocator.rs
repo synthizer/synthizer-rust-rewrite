@@ -49,6 +49,7 @@ impl BlockAllocator {
             }
         };
 
+        #[allow(unused_mut)] // it's used in debug builds.
         let mut ret = AllocatedBlock {
             allocator: self.inner.clone(),
             index,
