@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include <stdlib.h>
 
 #define PREFIX(X) syz_miniaudio_0_1_0_##X
 
