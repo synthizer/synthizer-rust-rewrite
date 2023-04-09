@@ -136,6 +136,7 @@ void *PREFIX(playback_device_open)(const struct device_options *options, playbac
   config.sampleRate = options->sr;
   config.dataCallback = data_proc;
   config.playback.pDeviceID = options->device_id;
+  config.noDisableDenormals = MA_TRUE;
 
   device = malloc(sizeof(*device));
   device->rust_userdata = userdata;
