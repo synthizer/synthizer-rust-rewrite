@@ -213,7 +213,7 @@ fn open_device_inner<CB: FnMut(&DeviceConfig, &mut [f32]) + Send + 'static>(
 }
 
 /// Open a specified device.
-pub fn open_playback_device(
+pub fn open_output_device(
     info: &DeviceInfo,
     opts: &DeviceOptions,
     callback: impl FnMut(&DeviceConfig, &mut [f32]) + Send + 'static,
@@ -222,7 +222,7 @@ pub fn open_playback_device(
 }
 
 /// Open the system's default device.
-pub fn open_default_playback_device(
+pub fn open_default_output_device(
     opts: &DeviceOptions,
     callback: impl FnMut(&DeviceConfig, &mut [f32]) + Send + 'static,
 ) -> Result<DeviceHandle> {

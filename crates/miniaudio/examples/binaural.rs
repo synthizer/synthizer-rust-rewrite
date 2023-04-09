@@ -67,9 +67,9 @@ fn main() -> Result<()> {
     };
 
     let mut device = if ind == 0 {
-        open_default_playback_device(&device_opts, cb)?
+        open_default_output_device(&device_opts, cb)?
     } else {
-        open_playback_device(&devices[ind - 1], &device_opts, cb)?
+        open_output_device(&devices[ind - 1], &device_opts, cb)?
     };
 
     let mut running = true;
