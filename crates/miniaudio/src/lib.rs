@@ -8,12 +8,12 @@ macro_rules! syzcall {
     };
 }
 
-mod miniaudio_dispatch;
 #[allow(warnings, clippy::all)]
 mod c_binding;
 mod device;
 mod errors;
 mod initialization;
+mod miniaudio_dispatch;
 
 pub use device::*;
 pub use errors::*;

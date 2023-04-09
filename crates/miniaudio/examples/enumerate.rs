@@ -1,4 +1,4 @@
-use syz_miniaudio::*;
+use synthizer_miniaudio::*;
 
 pub fn main() -> Result<()> {
     env_logger::init();

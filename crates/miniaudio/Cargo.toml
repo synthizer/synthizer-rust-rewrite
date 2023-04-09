@@ -1,5 +1,5 @@
 [package]
-name = "syz_miniaudio"
+name = "synthizer_miniaudio"
 version = "0.1.0"
 edition = "2021"
 # We can change this as we release versions. Cargo will make sure that only one instance of this crate is in the tree

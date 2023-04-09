@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::num::NonZeroU32;
 
-use syz_miniaudio::*;
+use synthizer_miniaudio::*;
 
 const SR: NonZeroU32 = unsafe { NonZeroU32::new_unchecked(44100) };
 const FREQ_L: f64 = 300.0;
