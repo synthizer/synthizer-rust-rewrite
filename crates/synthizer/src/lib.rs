@@ -16,7 +16,6 @@ mod maybe_int;
 mod node;
 mod node_descriptor;
 pub mod nodes;
-mod object_pool;
 pub(crate) mod server;
 mod time;
 mod unique_id;
