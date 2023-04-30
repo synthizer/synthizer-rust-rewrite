@@ -15,15 +15,15 @@ jobs:
     - name: 'Run tests'
       shell: bash
       run: |
+        set -ex
         cd $GITHUB_WORKSPACE
         rustup update
-        cargo check --all-targets --all-features
-        cargo test --all-features
+        cargo check --all-targets --all-features --locked
+        cargo test --all-features --locked
     strategy:
       matrix:
         include:
           - os: ubuntu-20.04
-          - os: ubuntu-18.04
           - os: macos-latest
 
   test_windows:
