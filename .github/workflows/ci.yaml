@@ -43,6 +43,5 @@ jobs:
       shell: cmd
       run: |
         cd %GITHUB_WORKSPACE%
-        rustup update
         cargo check --all-targets --all-features
         cargo test --all-features
