@@ -7,6 +7,7 @@
 //! Crossbeam's unbounded channels and queues deallocate on the receiving side, even when using operations which
 //! ostensibly don't block.
 
+pub mod fast_thread_id;
 pub mod optional_atomic_u32;
 pub mod spsc_queue;
 mod sync;
