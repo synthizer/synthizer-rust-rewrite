@@ -1,4 +1,4 @@
-//! Primitives for synchronization in audio contexts.
+//! Primitives for synchronization in audio `texts.
 //!
 //! This crate provides mechanisms whereby an audio thread can communicate with other threads without ever entering the
 //! kernel or blocking for an unbounded amount of time.  Generally, synchronization primitives optimize for memory usage
@@ -7,6 +7,7 @@
 //! Crossbeam's unbounded channels and queues deallocate on the receiving side, even when using operations which
 //! ostensibly don't block.
 
+pub mod concurrent_slab;
 pub mod fast_thread_id;
 pub mod generational_atomic;
 pub mod optional_atomic_u32;

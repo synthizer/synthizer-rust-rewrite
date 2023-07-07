@@ -196,7 +196,6 @@ impl<T> SlabState<T> {
                         }
                         Err(x) => {
                             possible_next = x;
-                            crate::sync::yield_if_loom();
                         }
                     }
                 }
@@ -232,7 +231,6 @@ impl<T> SlabState<T> {
                 Ok(_) => break,
                 Err(x) => {
                     head = x;
-                    crate::sync::yield_if_loom();
                 }
             }
         }
@@ -240,11 +238,11 @@ impl<T> SlabState<T> {
 }
 
 /// A handle to a slab which never enters the kernel unless reallocating.
-/// 
+///
 /// Allocation and freeing from one thread is O(1).  Allocation and freeing from N threads spins, if and only if they
 /// all try to touch the same atomic u32 at the same time.  in other words, primarily single threaded use or use at low
 /// throughput will never block, unless the capacity is exceeded.
-/// 
+///
 /// Unlike other data structures in this crate, it isn't possible to build something fully wait-free because
 /// reallocation becomes a problem.  Note that the internal implementation currently uses std's RwLock.  Unless
 /// reallocating, only the read side is acquired.  This is good enough for now, but will be moved to a spinlock later.
