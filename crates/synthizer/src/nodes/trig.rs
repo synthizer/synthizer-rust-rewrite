@@ -56,11 +56,10 @@ impl Node for TrigWaveform {
         use crate::node::OutputDestination as OD;
         match context.outputs.output {
             OD::Block(s) => {
-                let mut dest = s[0].deref_block(&context.services.block_allocator);
                 context
                     .state
                     .evaluator
-                    .evaluate_ticks(BLOCK_SIZE, |i, v| dest.write(i, v));
+                    .evaluate_ticks(BLOCK_SIZE, |i, v| s[0].write(i, v));
                 crate::node::NodeExecutionOutcome::SentAudio
             }
         }

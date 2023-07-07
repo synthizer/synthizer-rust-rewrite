@@ -11,6 +11,7 @@ ahash.workspace = true
 arc-swap.workspace = true
 arrayvec.workspace = true
 atomic_refcell.workspace = true
+audio_synchronization.workspace = true
 derive_more.workspace = true
 num.workspace = true
 rand.workspace = true
