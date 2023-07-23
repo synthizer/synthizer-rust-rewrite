@@ -202,6 +202,8 @@ fn open_device_inner<CB: FnMut(&DeviceConfig, &mut [f32]) + Send + 'static>(
     })?;
 
     if dev.is_null() {
+        userdata_free(userdata);
+
         return Err(Error::new("Unable to open Miniaudio device"));
     }
 

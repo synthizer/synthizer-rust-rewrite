@@ -127,7 +127,7 @@ pub fn bfs_searcher(c: &mut Criterion) {
                     });
                 }
 
-                graph.sort();
+                graph.maintenance();
 
                 let nodes = source_nodes
                     .into_iter()

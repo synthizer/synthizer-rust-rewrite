@@ -16,6 +16,9 @@ pub struct EdgeMap<E: Edge> {
 
     /// True if the vecs are sorted.
     sorted: bool,
+
+    /// True if we need to run retain on the index vectors because of a removal.
+    needs_retain: bool,
 }
 
 /// AN edge in an edge map, with an outgoing and incoming endpoint.
@@ -49,11 +52,6 @@ impl<T: Copy> GeneralizedEndpoint<T> for T {
     }
 }
 
-struct FindResult {
-    outgoing_index: usize,
-    incoming_index: usize,
-}
-
 impl<E: Edge> EdgeMap<E> {
     pub fn new(capacity: usize) -> Self {
         EdgeMap {
@@ -61,43 +59,34 @@ impl<E: Edge> EdgeMap<E> {
             by_outgoing: Vec::with_capacity(capacity),
             by_incoming: Vec::with_capacity(capacity),
             sorted: true,
+            needs_retain: false,
         }
     }
 
-    /// Sort the vecs if required.
+    /// Sort the vecs if required, and drop tombstones.
     ///
     /// Should be called after mutation, for immutable access.
-    pub fn sort(&mut self) {
-        if self.sorted {
-            return;
+    pub fn maintenance(&mut self) {
+        if self.needs_retain {
+            self.by_outgoing.retain(|i| self.edges.contains_key(i));
+            self.by_incoming
+                .retain(|i| self.edges.contains_key(&(i.1, i.0)));
+            self.needs_retain = false;
         }
-        self.by_outgoing.sort_unstable();
-        self.by_incoming.sort_unstable();
 
-        self.sorted = true;
+        if !self.sorted {
+            self.by_outgoing.sort_unstable();
+            self.by_incoming.sort_unstable();
+
+            self.sorted = true;
+        }
     }
 
-    fn assert_sorted(&self) {
+    fn assert_maintenance_done(&self) {
         assert!(
-            self.sorted,
-            ".sort() must be called after muttating and before reading"
+            self.sorted && !self.needs_retain,
+            ".maintenance() must be called after mutating and before reading"
         );
-    }
-
-    /// Find an edge with a given incoming and outgoing value.
-    fn find(&self, outgoing: &E::Outgoing, incoming: &E::Incoming) -> Option<FindResult> {
-        self.assert_sorted();
-
-        let Ok(outgoing_index) = self.by_outgoing.binary_search(&(*outgoing, *incoming)) else { return None };
-        let incoming_index = self
-            .by_incoming
-            .binary_search(&(*incoming, *outgoing))
-            .expect("If there is an outgoing node, there should be an incoming one too");
-
-        Some(FindResult {
-            outgoing_index,
-            incoming_index,
-        })
     }
 
     /// Insert or replace an edge from a given incoming source to a given outgoing destination, returning the old edge.
@@ -114,20 +103,58 @@ impl<E: Edge> EdgeMap<E> {
         }
     }
 
-    /// Remove an edge from the edge map, if present. Returns the old edge if any.
+    /// Remove an edge from the edge map, if present.  Returns the old edge value.
     fn remove(&mut self, outgoing: &E::Outgoing, incoming: &E::Incoming) -> Option<E> {
         let k = (*outgoing, *incoming);
         match self.edges.remove(&k) {
             None => None,
             Some(x) => {
-                let o_ind = self.by_outgoing.binary_search(&k).unwrap();
-                self.by_outgoing.swap_remove(o_ind);
-                let i_ind = self.by_incoming.binary_search(&(k.1, k.0)).unwrap();
-                self.by_incoming.swap_remove(i_ind);
-                self.sorted = false;
+                self.needs_retain = true;
                 Some(x)
             }
         }
+    }
+
+    /// Drop all outgoing edges with the specified (possbily generalized) endpoint.
+    pub fn remove_outgoing<Pred>(&mut self, outgoing: &Pred)
+    where
+        E::Outgoing: GeneralizedEndpoint<Pred>,
+        Pred: Ord + Copy,
+    {
+        self.maintenance();
+        let outgoing_ind = self
+            .by_outgoing
+            .partition_point(|x| x.0.generalize() < outgoing);
+        for i in &self.by_outgoing[outgoing_ind..self.by_outgoing.len()] {
+            if i.0.generalize() != outgoing {
+                break;
+            }
+
+            self.edges.remove(i);
+        }
+
+        self.needs_retain = true;
+    }
+
+    /// Drop all incoming edges with the specified (possbily generalized) endpoint.
+    pub fn remove_incoming<Pred>(&mut self, incoming: &Pred)
+    where
+        E::Incoming: GeneralizedEndpoint<Pred>,
+        Pred: Ord + Copy,
+    {
+        self.maintenance();
+        let incoming_ind = self
+            .by_incoming
+            .partition_point(|x| x.0.generalize() < incoming);
+        for i in &self.by_incoming[incoming_ind..self.by_outgoing.len()] {
+            if i.0.generalize() != incoming {
+                break;
+            }
+
+            self.edges.remove(&(i.1, i.0));
+        }
+
+        self.needs_retain = true;
     }
 
     /// Iterate over all outgoing edges for a given outgoing value, potentially generalized.
@@ -139,7 +166,7 @@ impl<E: Edge> EdgeMap<E> {
         E::Outgoing: GeneralizedEndpoint<Pred>,
         Pred: Ord + Copy,
     {
-        self.assert_sorted();
+        self.assert_maintenance_done();
         let outgoing_ind = self
             .by_outgoing
             .partition_point(|x| x.0.generalize() < outgoing);
@@ -158,7 +185,7 @@ impl<E: Edge> EdgeMap<E> {
         E::Incoming: GeneralizedEndpoint<Pred>,
         Pred: Ord + Copy,
     {
-        self.assert_sorted();
+        self.assert_maintenance_done();
         let incoming_ind = self
             .by_incoming
             .partition_point(|x| x.0.generalize() < incoming);
@@ -236,7 +263,7 @@ mod tests {
         map.upsert(conn(2, 0, 3, 0));
         map.upsert(conn(2, 1, 3, 0));
         map.upsert(conn(2, 1, 3, 1));
-        map.sort();
+        map.maintenance();
 
         let mut edges = map
             .iter_outgoing(&NodeOutput { node: 1, output: 0 })
@@ -292,7 +319,7 @@ mod tests {
             &NodeInput { node: 2, input: 0 },
         )
         .expect("Should have removed");
-        map.sort();
+        map.maintenance();
 
         let mut edges = map
             .iter_outgoing(&NodeOutput { node: 1, output: 0 })

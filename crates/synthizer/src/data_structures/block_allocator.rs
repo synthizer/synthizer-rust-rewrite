@@ -29,7 +29,7 @@ impl BlockAllocator {
     /// Allocate a block, which is usually *not* zeroed.
     ///
     /// Zeroing is left to the caller because this is an expensive operation.  In debug builds, the returned buffer is guaranteed to contain random data.
-    pub fn allocate_block(&mut self) -> AllocatedBlock {
+    pub fn allocate_block(&self) -> AllocatedBlock {
         let handle = self.slab.insert(MaybeUninit::uninit());
         #[allow(unused_mut)] // it's used in debug builds.
         let mut ret = AllocatedBlock { handle };

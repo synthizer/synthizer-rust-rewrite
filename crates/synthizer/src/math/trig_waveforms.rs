@@ -19,8 +19,8 @@ enum TrigFunction {
 macro_rules! eval_impl {
     ($struct_ident:ident, $tf: ident) => {
         impl $struct_ident {
-            fn eval(&self, offset: f32) -> f32 {
-                (offset * 2.0 * std::f32::consts::PI).$tf()
+            fn eval(&self, offset: f64) -> f32 {
+                (offset * 2.0 * std::f64::consts::PI).$tf() as f32
             }
         }
     };
@@ -35,14 +35,14 @@ pub(crate) struct TrigWaveformEvaluator {
     evaluator: TrigFunction,
 
     /// From 0.0 to 1.0.  The offset of the wave.
-    phase: f32,
+    phase: f64,
 
-    frequency: f32,
+    frequency: f64,
 }
 
 macro_rules! constructor {
     ($name:ident, $tvariant: expr) => {
-        pub(crate) fn $name(frequency: f32, phase: f32) -> Self {
+        pub(crate) fn $name(frequency: f64, phase: f64) -> Self {
             Self {
                 evaluator: $tvariant,
                 frequency,
@@ -57,12 +57,12 @@ impl TrigWaveformEvaluator {
     constructor!(new_cos, TrigFunction::Cos(CosEval));
     constructor!(new_tan, TrigFunction::Tan(TanEval));
 
-    pub(crate) fn set_frequency(&mut self, frequency: f32) -> &mut Self {
+    pub(crate) fn set_frequency(&mut self, frequency: f64) -> &mut Self {
         self.frequency = frequency;
         self
     }
 
-    pub(crate) fn set_phase(&mut self, phase: f32) -> &mut Self {
+    pub(crate) fn set_phase(&mut self, phase: f64) -> &mut Self {
         self.phase = phase;
         self
     }
@@ -71,20 +71,57 @@ impl TrigWaveformEvaluator {
     /// provided closure.
     #[supermatch::supermatch_fn]
     pub(crate) fn evaluate_ticks(&mut self, ticks: usize, mut destination: impl FnMut(usize, f32)) {
-        let increment = self.frequency / SR as f32;
+        let increment = self.frequency / SR as f64;
 
         #[supermatch]
         match self.evaluator {
             TrigFunction::Sin(e) | TrigFunction::Cos(e) | TrigFunction::Tan(e) => {
                 for i in 0..ticks {
-                    let this_phase = self.phase + i as f32 * increment;
+                    let this_phase = self.phase + i as f64 * increment;
                     let res = e.eval(this_phase);
                     destination(i, res);
                 }
 
-                self.phase += increment * ticks as f32;
+                self.phase += increment * ticks as f64;
                 self.phase = self.phase.rem_euclid(1.0);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sin() {
+        const SAMPLES: usize = 20 * crate::config::BLOCK_SIZE;
+        const FREQ: f64 = 300.0;
+
+        let expected = (0..SAMPLES)
+            .map(|x| {
+                (x as f64 * 2.0 * std::f64::consts::PI * FREQ / crate::config::SR as f64).sin()
+                    as f32
+            })
+            .collect::<Vec<f32>>();
+
+        let mut got = vec![0.0f32; SAMPLES];
+
+        let mut evaluator = TrigWaveformEvaluator::new_sin(FREQ, 0.0);
+
+        for i in 0..(SAMPLES / crate::config::BLOCK_SIZE) {
+            let start = i * crate::config::BLOCK_SIZE;
+            let slice = &mut got[start..start + crate::config::BLOCK_SIZE];
+            evaluator.evaluate_ticks(crate::config::BLOCK_SIZE, |i, dest| {
+                slice[i] = dest;
+            });
+        }
+
+        for (i, (g, e)) in got.into_iter().zip(expected.into_iter()).enumerate() {
+            assert!(
+                (g - e).abs() < 0.01,
+                "Sample {i} is too different: got={g}, expected={e}",
+            );
         }
     }
 }
