@@ -16,7 +16,6 @@ mod data_structures;
 mod db;
 mod error;
 pub mod fast_xoroshiro;
-mod graph;
 mod math;
 mod maybe_int;
 pub mod nodes;

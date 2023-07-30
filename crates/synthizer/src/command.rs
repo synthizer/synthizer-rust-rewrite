@@ -41,7 +41,6 @@ impl Port {
 
 /// We have to isolate imports because the macro is using magic to allow for `paste` usage.
 mod cmdkind {
-    use crate::graph::GraphCommand;
     use crate::server::implementation::ServerCommand;
 
     use super::*;

@@ -41,7 +41,3 @@ synthizer_protos.workspace = true
 [[bench]]
 name = "fast_xoroshiro"
 harness = false
-
-[[bench]]
-name = "stager"
-harness = false
