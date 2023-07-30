@@ -14,6 +14,7 @@ derive_more = "0.99.17"
 enum_dispatch = "0.3.12"
 env_logger = "0.10.0"
 eye_dropper = { path = "crates/eye_dropper" }
+im = "15.1.0"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 log = "0.4.17"

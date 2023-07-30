@@ -4,6 +4,7 @@ use arrayvec::ArrayVec;
 use crate::channel_format::ChannelFormat;
 use crate::command::*;
 use crate::config::*;
+use crate::data_structures::Graph;
 use crate::data_structures::*;
 use crate::nodes::*;
 use crate::unique_id::UniqueId;
@@ -50,14 +51,29 @@ impl Default for ServerOptions {
     }
 }
 
+/// Holds a node, as well as information needed to execute it.
+struct NodeContainer {
+    node: NodeHandle,
+
+    /// Set to a unique value on every tick to serve as an inline marker as to whether or not this node has yet been
+    /// run.
+    ///
+    /// This replaces external sets, which require allocation.
+    executed_marker: UniqueId,
+}
+
 pub(crate) enum ServerCommand {
     RegisterNode { id: UniqueId, handle: NodeHandle },
     DeregisterNode { id: UniqueId },
+
+    // Todo: actually we want a graph node that owns and handles graphs, but for now this is fine.
+    UpdateGraph { new_graph: Graph },
 }
 
 /// The implementation of a server, which is either executed inline or on an audio thread depending on user preference.
 pub(crate) struct ServerImpl {
-    nodes: HashMap<UniqueId, NodeHandle>,
+    nodes: HashMap<UniqueId, NodeContainer>,
+    root_graph: Graph,
 
     services: AudioThreadServerServices,
 
@@ -77,6 +93,7 @@ impl ServerImpl {
     pub fn new(output_format: ChannelFormat, opts: ServerOptions) -> Self {
         let mut ret = Self {
             nodes: HashMap::with_capacity(opts.expected_nodes),
+            root_graph: Graph::new(),
             output_blocks: ArrayVec::new(),
             output_frames_available: 0,
             interleaved_output_frames: Vec::with_capacity(MAX_CHANNELS * BLOCK_SIZE),
@@ -104,13 +121,24 @@ impl ServerImpl {
             b.fill(0.0);
         }
 
-        for n in self.nodes.values_mut() {
-            n.execute_erased(&mut ErasedExecutionContext {
+        let marker = UniqueId::new();
+
+        self.root_graph.traverse_execution_order(|id| {
+            let n = self
+                .nodes
+                .get_mut(id)
+                .expect("Attempt to execute unregistered node");
+            if n.executed_marker == marker {
+                return;
+            }
+
+            n.executed_marker = marker;
+            n.node.execute_erased(&mut ErasedExecutionContext {
                 services: &mut self.services,
                 speaker_format: &self.runtime_config.output_format,
                 speaker_outputs: &mut self.output_blocks[..],
             });
-        }
+        });
 
         self.output_frames_available = BLOCK_SIZE;
     }
@@ -155,7 +183,13 @@ impl ServerImpl {
     fn run_server_command(&mut self, cmd: ServerCommand) {
         match cmd {
             ServerCommand::RegisterNode { id, handle } => {
-                let old = self.nodes.insert(id, handle);
+                let old = self.nodes.insert(
+                    id,
+                    NodeContainer {
+                        node: handle,
+                        executed_marker: UniqueId::new(),
+                    },
+                );
                 assert!(
                     old.is_none(),
                     "Logic error: attempt to register a node with the same id twice"
@@ -167,6 +201,10 @@ impl ServerImpl {
                     old.is_some(),
                     "Logic error: attempt to deregister node which was never registered"
                 );
+            }
+            ServerCommand::UpdateGraph { new_graph } => {
+                // todo: this deallocates. We must defer graph freeing to a background thread.
+                self.root_graph = new_graph;
             }
         }
     }

@@ -8,12 +8,14 @@ pub(crate) mod implementation;
 pub(crate) use audio_output_server::*;
 pub(crate) use implementation::ServerCommand;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use audio_synchronization::concurrent_slab::ExclusiveSlabRef;
 
 use crate::command::*;
+use crate::data_structures::Graph;
 use crate::error::*;
+use crate::nodes::NodeHandle;
 use crate::unique_id::UniqueId;
 
 #[derive(derive_more::IsVariant)]
@@ -45,6 +47,9 @@ impl ServerKind {
 #[derive(Clone)]
 pub struct ServerHandle {
     kind: Arc<ServerKind>,
+
+    /// The server's graph.
+    graph: Arc<Mutex<Graph>>,
 }
 
 impl ServerHandle {
@@ -53,6 +58,7 @@ impl ServerHandle {
         let kind = ServerKind::AudioOutput(backend);
         Ok(ServerHandle {
             kind: Arc::new(kind),
+            graph: Arc::new(Mutex::new(Graph::new())),
         })
     }
 
@@ -60,19 +66,36 @@ impl ServerHandle {
         self.kind.send_command(command);
     }
 
+    /// Mutate the graph behind the graph's mutex, then make sure the server picks that change up.
+    fn mutate_graph(&self, graph_mutator: impl FnOnce(&mut Graph)) {
+        let mut guard = self.graph.lock().unwrap();
+        graph_mutator(&mut guard);
+        self.send_command(Command::new(
+            &Port::for_server(),
+            ServerCommand::UpdateGraph {
+                new_graph: guard.clone(),
+            },
+        ));
+    }
+
+    /// Register a node with the graph and the server.
+    fn registert_node_impl(&self, id: UniqueId, handle: NodeHandle) {
+        self.mutate_graph(|g| {
+            g.register_node(id);
+            // And while behind the graph's mutex, also ensure that the server knows about this node.
+            self.send_command(Command::new(
+                &Port::for_server(),
+                ServerCommand::RegisterNode { id, handle },
+            ));
+        });
+    }
+
     /// This is temporary: Start a sine wave of a given frequency, running forever.
     pub fn start_sin(&self, freq: f64) -> Result<()> {
         let node = self
             .kind
             .allocate(crate::nodes::trig::TrigWaveform::new_sin(freq));
-        let cmd = Command::new(
-            &Port::for_server(),
-            ServerCommand::RegisterNode {
-                id: UniqueId::new(),
-                handle: node.into(),
-            },
-        );
-        self.send_command(cmd);
+        self.registert_node_impl(UniqueId::new(), node.into());
         Ok(())
     }
 }
