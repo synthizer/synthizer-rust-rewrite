@@ -33,10 +33,13 @@ fn unique_u64() -> NonZeroU64 {
 mod tests {
     use super::*;
 
+    // Note that tests are parallelized. This means that the values of unique_u64() are not stable, and so the test must
+    // check them against each other.
     #[test]
     fn test_unique_u64() {
-        assert_eq!(unique_u64().get(), 1);
-        assert_eq!(unique_u64().get(), 2);
-        assert_eq!(unique_u64().get(), 3);
+        let (id1, id2, id3) = (unique_u64(), unique_u64(), unique_u64());
+        assert_ne!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_ne!(id2, id3);
     }
 }
