@@ -16,7 +16,7 @@ pub struct BlockAllocator {
 
 /// An allocated block in a block allocator.
 pub struct AllocatedBlock {
-    handle: ExclusiveSlabRef<MaybeUninit<BlockArray<f32>>>,
+    handle: ExclusiveSlabRef<MaybeUninit<BlockArray>>,
 }
 
 impl BlockAllocator {
@@ -52,7 +52,7 @@ impl BlockAllocator {
 // initialized.
 
 impl std::ops::Deref for AllocatedBlock {
-    type Target = BlockArray<f32>;
+    type Target = BlockArray;
 
     fn deref(&self) -> &Self::Target {
         unsafe { self.handle.assume_init_ref() }

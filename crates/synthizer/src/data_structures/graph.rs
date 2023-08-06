@@ -146,7 +146,7 @@ impl Graph {
     /// This function will call the provided closure on all node ids (not edges) in the graph in an order such that
     /// execution of the ids will execute dependencies first.  This function does not deduplicate, and will call the
     /// closure more than once for the same node if more than one path to that node exists.
-    pub(crate) fn traverse_execution_order(&mut self, mut callback: impl FnMut(&UniqueId)) {
+    pub(crate) fn traverse_execution_order(&self, mut callback: impl FnMut(&UniqueId)) {
         let mut roots = self
             .nodes
             .iter()

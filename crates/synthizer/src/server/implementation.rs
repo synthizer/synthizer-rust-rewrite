@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ahash::{HashMap, HashMapExt};
 use arrayvec::ArrayVec;
 
@@ -12,6 +14,9 @@ use crate::unique_id::UniqueId;
 /// Services a server may offer to a consumer on the audio thread.
 pub(crate) struct AudioThreadServerServices {
     pub(crate) block_allocator: BlockAllocator,
+
+    /// A place where nodes store their output data.
+    pub(crate) input_data: HashMap<UniqueId, NodeInputsData>,
 }
 
 pub(crate) struct RuntimeServerConfig {
@@ -63,11 +68,19 @@ struct NodeContainer {
 }
 
 pub(crate) enum ServerCommand {
-    RegisterNode { id: UniqueId, handle: NodeHandle },
-    DeregisterNode { id: UniqueId },
+    RegisterNode {
+        id: UniqueId,
+        handle: NodeHandle,
+        descriptor: Cow<'static, NodeDescriptor>,
+    },
+    DeregisterNode {
+        id: UniqueId,
+    },
 
     // Todo: actually we want a graph node that owns and handles graphs, but for now this is fine.
-    UpdateGraph { new_graph: Graph },
+    UpdateGraph {
+        new_graph: Graph,
+    },
 }
 
 /// The implementation of a server, which is either executed inline or on an audio thread depending on user preference.
@@ -87,6 +100,9 @@ pub(crate) struct ServerImpl {
 
     /// Interleaved output data, which we need because the external world expects interleaved output data.
     interleaved_output_frames: Vec<f32>,
+
+    /// Memoized node descriptors.
+    pub(crate) memoized_descriptors: HashMap<UniqueId, Cow<'static, NodeDescriptor>>,
 }
 
 impl ServerImpl {
@@ -99,8 +115,10 @@ impl ServerImpl {
             interleaved_output_frames: Vec::with_capacity(MAX_CHANNELS * BLOCK_SIZE),
             services: AudioThreadServerServices {
                 block_allocator: BlockAllocator::new(opts.preallocated_blocks),
+                input_data: HashMap::with_capacity(opts.expected_nodes * MAX_INPUTS),
             },
             runtime_config: RuntimeServerConfig { output_format },
+            memoized_descriptors: HashMap::with_capacity(opts.expected_nodes),
         };
 
         for _ in 0..ret.runtime_config.output_format.get_channel_count().get() {
@@ -134,9 +152,12 @@ impl ServerImpl {
 
             n.executed_marker = marker;
             n.node.execute_erased(&mut ErasedExecutionContext {
+                id: *id,
                 services: &mut self.services,
+                graph: &self.root_graph,
                 speaker_format: &self.runtime_config.output_format,
                 speaker_outputs: &mut self.output_blocks[..],
+                descriptors: &self.memoized_descriptors,
             });
         });
 
@@ -182,7 +203,11 @@ impl ServerImpl {
 
     fn run_server_command(&mut self, cmd: ServerCommand) {
         match cmd {
-            ServerCommand::RegisterNode { id, handle } => {
+            ServerCommand::RegisterNode {
+                id,
+                handle,
+                descriptor,
+            } => {
                 let old = self.nodes.insert(
                     id,
                     NodeContainer {
@@ -194,6 +219,7 @@ impl ServerImpl {
                     old.is_none(),
                     "Logic error: attempt to register a node with the same id twice"
                 );
+                self.memoized_descriptors.insert(id, descriptor);
             }
             ServerCommand::DeregisterNode { id } => {
                 let old = self.nodes.remove(&id);
@@ -201,6 +227,7 @@ impl ServerImpl {
                     old.is_some(),
                     "Logic error: attempt to deregister node which was never registered"
                 );
+                self.memoized_descriptors.remove(&id);
             }
             ServerCommand::UpdateGraph { new_graph } => {
                 // todo: this deallocates. We must defer graph freeing to a background thread.
@@ -242,10 +269,22 @@ mod tests {
         let mut implementation = ServerImpl::new(ChannelFormat::Stereo, Default::default());
         let pool = crate::data_structures::ObjectPool::new();
         let node = pool.allocate(crate::nodes::trig::TrigWaveform::new_sin(FREQ));
+        let output = pool.allocate(crate::nodes::audio_output::AudioOutputNode::new(
+            ChannelFormat::Stereo,
+        ));
+        let sin_id = UniqueId::new();
+        let output_id = UniqueId::new();
         implementation.run_server_command(ServerCommand::RegisterNode {
-            id: UniqueId::new(),
+            id: sin_id,
+            descriptor: node.describe(),
             handle: node.into(),
         });
+        implementation.run_server_command(ServerCommand::RegisterNode {
+            id: output_id,
+            descriptor: output.describe(),
+            handle: output.into(),
+        });
+        implementation.root_graph.connect(sin_id, 0, output_id, 0);
 
         for slice in got[..].chunks_mut(BLOCK_SIZE * 2 + 100) {
             implementation.fill_slice(slice);

@@ -22,7 +22,7 @@ pub(crate) struct TrigWaveformOutputs<'a> {
 }
 
 // TODO: macro this.
-impl<'a> FromOutputSlice<'a> for TrigWaveformOutputs<'a> {
+impl<'a> ToNamedOutputs<'a> for TrigWaveformOutputs<'a> {
     fn to_named_outputs<'b>(
         outputs: &'b mut crate::nodes::OutputsByIndex<'a>,
     ) -> TrigWaveformOutputs<'a> {
@@ -32,8 +32,9 @@ impl<'a> FromOutputSlice<'a> for TrigWaveformOutputs<'a> {
     }
 }
 
-impl NodeAt for TrigWaveform {
+impl HasNodeDescriptor for TrigWaveform {
     type Outputs<'a> = TrigWaveformOutputs<'a>;
+    type Inputs<'a> = ();
 
     fn describe(&self) -> Cow<'static, NodeDescriptor> {
         use crate::channel_format::ChannelFormat;
@@ -43,9 +44,12 @@ impl NodeAt for TrigWaveform {
             outputs: Cow::Borrowed(&[OutputDescriptor {
                 channel_format: ChannelFormat::Mono,
             }]),
+            inputs: Cow::Borrowed(&[]),
         })
     }
+}
 
+impl NodeAt for TrigWaveform {
     fn execute(
         &mut self,
         context: &mut crate::nodes::NodeExecutionContext<Self>,

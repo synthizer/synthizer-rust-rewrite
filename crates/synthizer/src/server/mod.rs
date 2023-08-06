@@ -15,7 +15,8 @@ use audio_synchronization::concurrent_slab::ExclusiveSlabRef;
 use crate::command::*;
 use crate::data_structures::Graph;
 use crate::error::*;
-use crate::nodes::NodeHandle;
+use crate::nodes::traits::NodeAt;
+use crate::nodes::*;
 use crate::unique_id::UniqueId;
 
 #[derive(derive_more::IsVariant)]
@@ -50,16 +51,27 @@ pub struct ServerHandle {
 
     /// The server's graph.
     graph: Arc<Mutex<Graph>>,
+
+    audio_output_node: UniqueId,
 }
 
 impl ServerHandle {
     pub fn new_default_device() -> Result<Self> {
         let backend = AudioOutputServer::new_with_default_device()?;
         let kind = ServerKind::AudioOutput(backend);
-        Ok(ServerHandle {
+        let h = ServerHandle {
             kind: Arc::new(kind),
             graph: Arc::new(Mutex::new(Graph::new())),
-        })
+            audio_output_node: UniqueId::new(),
+        };
+
+        let an = h
+            .kind
+            .allocate(crate::nodes::audio_output::AudioOutputNode::new(
+                crate::channel_format::ChannelFormat::Stereo,
+            ));
+        h.registert_node_impl(h.audio_output_node, an.into());
+        Ok(h)
     }
 
     fn send_command(&self, command: Command) {
@@ -85,7 +97,11 @@ impl ServerHandle {
             // And while behind the graph's mutex, also ensure that the server knows about this node.
             self.send_command(Command::new(
                 &Port::for_server(),
-                ServerCommand::RegisterNode { id, handle },
+                ServerCommand::RegisterNode {
+                    id,
+                    descriptor: handle.describe_erased(),
+                    handle,
+                },
             ));
         });
     }
@@ -95,7 +111,11 @@ impl ServerHandle {
         let node = self
             .kind
             .allocate(crate::nodes::trig::TrigWaveform::new_sin(freq));
-        self.registert_node_impl(UniqueId::new(), node.into());
+        let id = UniqueId::new();
+        self.registert_node_impl(id, node.into());
+        self.mutate_graph(|g| {
+            g.connect(id, 0, self.audio_output_node, 0);
+        });
         Ok(())
     }
 }

@@ -16,9 +16,12 @@ pub const SR: u16 = 44100;
 /// wish to in future, and it makes as good a value as any.
 pub(crate) const MAX_CHANNELS: usize = 16;
 
+pub(crate) const MAX_OUTPUTS: usize = 16;
+pub(crate) const MAX_INPUTS: usize = 16;
+
 pub(crate) const BLOCK_SIZE: usize = 128;
 
 /// This convenience alias will always be a `[f32; BLOCK_SIZE]`.
 ///
 /// We have unsafe code which depends on this always being an f32 array.
-pub(crate) type BlockArray<T> = [T; BLOCK_SIZE];
+pub(crate) type BlockArray = [f32; BLOCK_SIZE];
