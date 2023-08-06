@@ -37,8 +37,8 @@ fn expand_pat(pattern: &syn::Pat) -> Vec<(syn::Pat, Option<syn::ItemConst>)> {
 
     match pattern {
         Pat::Ident(pi) => {
-            let Some((_,maybe_range)) = pi.subpat.as_ref() else {
-                return vec![(pattern.clone(),None)];
+            let Some((_, maybe_range)) = pi.subpat.as_ref() else {
+                return vec![(pattern.clone(), None)];
             };
 
             let Pat::Range(r) = &**maybe_range else {
@@ -46,11 +46,14 @@ fn expand_pat(pattern: &syn::Pat) -> Vec<(syn::Pat, Option<syn::ItemConst>)> {
             };
 
             // If we can get integers off both ends, then we proceed.
-            let Some((lower_int, lower_suffix)) = optional_expr_to_numeric(r.start.as_deref()) else {
-    return vec![(pattern.clone(), None)];
-};
+            let Some((lower_int, lower_suffix)) = optional_expr_to_numeric(r.start.as_deref())
+            else {
+                return vec![(pattern.clone(), None)];
+            };
 
-            let Some((upper_int, upper_suffix)) = optional_expr_to_numeric(r.end.as_deref()) else {return vec![(pattern.clone(),None)];};
+            let Some((upper_int, upper_suffix)) = optional_expr_to_numeric(r.end.as_deref()) else {
+                return vec![(pattern.clone(), None)];
+            };
 
             let suffix = if !lower_suffix.is_empty() {
                 lower_suffix
