@@ -3,8 +3,8 @@ use proc_macro::TokenStream;
 use proc_macro_error::abort;
 use syn::{parse_quote_spanned, spanned::Spanned};
 
-fn expr_to_numeric(expr: &syn::Expr) -> Option<(i64, &str)> {
-    match expr {
+fn optional_expr_to_numeric(expr: Option<&syn::Expr>) -> Option<(i64, &str)> {
+    match expr? {
         syn::Expr::Lit(l_expr) => {
             if let syn::Lit::Int(l) = &l_expr.lit {
                 match l.base10_parse::<i64>() {
@@ -17,7 +17,7 @@ fn expr_to_numeric(expr: &syn::Expr) -> Option<(i64, &str)> {
         }
         syn::Expr::Unary(u) => {
             if let syn::UnOp::Neg(_) = u.op {
-                let (inner_num, inner_suffix) = expr_to_numeric(&u.expr)?;
+                let (inner_num, inner_suffix) = optional_expr_to_numeric(Some(&u.expr))?;
                 let num = match inner_num.checked_mul(-1) {
                     Some(x) => x,
                     None => abort!(expr, "Cannot negate {}", inner_num),
@@ -46,11 +46,11 @@ fn expand_pat(pattern: &syn::Pat) -> Vec<(syn::Pat, Option<syn::ItemConst>)> {
             };
 
             // If we can get integers off both ends, then we proceed.
-            let Some((lower_int, lower_suffix)) = expr_to_numeric(&r.lo) else {
+            let Some((lower_int, lower_suffix)) = optional_expr_to_numeric(r.start.as_deref()) else {
     return vec![(pattern.clone(), None)];
 };
 
-            let Some((upper_int, upper_suffix)) = expr_to_numeric(&r.hi) else {return vec![(pattern.clone(),None)];};
+            let Some((upper_int, upper_suffix)) = optional_expr_to_numeric(r.end.as_deref()) else {return vec![(pattern.clone(),None)];};
 
             let suffix = if !lower_suffix.is_empty() {
                 lower_suffix
@@ -71,7 +71,7 @@ fn expand_pat(pattern: &syn::Pat) -> Vec<(syn::Pat, Option<syn::ItemConst>)> {
 
             let upper_int = match upper_int.checked_sub(upper_offset) {
                 Some(x) => x,
-                None => abort!(r.hi, "This is already i64::MIN"),
+                None => abort!(r.end, "This is already i64::MIN"),
             };
 
             if upper_int < lower_int {
@@ -136,7 +136,7 @@ fn expand_match(what: &syn::ExprMatch) -> syn::ExprMatch {
         ..what.clone()
     };
 
-    out.attrs.retain(|a| !a.path.is_ident("supermatch"));
+    out.attrs.retain(|a| !a.path().is_ident("supermatch"));
     out
 }
 
@@ -154,7 +154,7 @@ pub fn supermatch_fn(_attribute: TokenStream, input: TokenStream) -> TokenStream
 
     impl Fold for SupermatchVisitor {
         fn fold_expr_match(&mut self, i: syn::ExprMatch) -> syn::ExprMatch {
-            let nmatch = if i.attrs.iter().any(|a| a.path.is_ident("supermatch")) {
+            let nmatch = if i.attrs.iter().any(|a| a.path().is_ident("supermatch")) {
                 expand_match(&i)
             } else {
                 i
