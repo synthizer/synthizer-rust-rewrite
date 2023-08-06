@@ -11,11 +11,10 @@ use super::implementation::*;
 
 const MAX_PENDING_COMMANDS: usize = 100000;
 
-struct CommandRecycler;
-
 /// The Option is always [Some], and exists so that we have something which we can clear.  Only currently unused slots
 /// in the queue are [None].
-type CommandQueue = thingbuf::ThingBuf<Option<crate::command::Command>, CommandRecycler>;
+type CommandQueue =
+    thingbuf::ThingBuf<Option<crate::command::Command>, crate::option_recycler::OptionRecycler>;
 
 /// The audio thread (at) part of an audio output server.
 struct AudioOutputServerAT {
@@ -38,7 +37,7 @@ impl AudioOutputServer {
     pub fn new_with_default_device() -> Result<Self> {
         let command_queue = Arc::new(CommandQueue::with_recycle(
             MAX_PENDING_COMMANDS,
-            CommandRecycler,
+            crate::option_recycler::OptionRecycler,
         ));
 
         let mut implementation = ServerImpl::new(
@@ -54,6 +53,7 @@ impl AudioOutputServer {
                 sample_rate: Some(NonZeroU32::new(44100).unwrap()),
             },
             move |_, dest| {
+                crate::background_drop::mark_audio_thread();
                 while let Some(cmd) = command_queue_cloned.pop() {
                     implementation.dispatch_command(cmd.unwrap());
                 }
@@ -85,15 +85,5 @@ impl AudioOutputServer {
         new_val: T,
     ) -> ExclusiveSlabRef<T> {
         self.inner.pool.allocate(new_val)
-    }
-}
-
-impl thingbuf::recycling::Recycle<Option<Command>> for CommandRecycler {
-    fn new_element(&self) -> Option<Command> {
-        None
-    }
-
-    fn recycle(&self, element: &mut Option<Command>) {
-        *element = None;
     }
 }

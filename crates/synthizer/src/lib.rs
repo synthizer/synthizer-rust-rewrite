@@ -3,6 +3,7 @@
 #[macro_use]
 mod variant;
 
+mod background_drop;
 #[doc(hidden)]
 pub mod bench_reexport;
 pub mod biquad;
@@ -19,6 +20,7 @@ pub mod fast_xoroshiro;
 mod math;
 mod maybe_int;
 pub mod nodes;
+mod option_recycler;
 pub(crate) mod server;
 mod unique_id;
 

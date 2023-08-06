@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use ahash::{HashMap, HashMapExt};
 use arrayvec::ArrayVec;
 
+use crate::background_drop::BackgroundDrop;
 use crate::channel_format::ChannelFormat;
 use crate::command::*;
 use crate::config::*;
@@ -86,7 +87,7 @@ pub(crate) enum ServerCommand {
 /// The implementation of a server, which is either executed inline or on an audio thread depending on user preference.
 pub(crate) struct ServerImpl {
     nodes: HashMap<UniqueId, NodeContainer>,
-    root_graph: Graph,
+    root_graph: BackgroundDrop<Graph>,
 
     services: AudioThreadServerServices,
 
@@ -109,7 +110,7 @@ impl ServerImpl {
     pub fn new(output_format: ChannelFormat, opts: ServerOptions) -> Self {
         let mut ret = Self {
             nodes: HashMap::with_capacity(opts.expected_nodes),
-            root_graph: Graph::new(),
+            root_graph: BackgroundDrop::new(Graph::new()),
             output_blocks: ArrayVec::new(),
             output_frames_available: 0,
             interleaved_output_frames: Vec::with_capacity(MAX_CHANNELS * BLOCK_SIZE),
@@ -231,7 +232,7 @@ impl ServerImpl {
             }
             ServerCommand::UpdateGraph { new_graph } => {
                 // todo: this deallocates. We must defer graph freeing to a background thread.
-                self.root_graph = new_graph;
+                self.root_graph = BackgroundDrop::new(new_graph);
             }
         }
     }
