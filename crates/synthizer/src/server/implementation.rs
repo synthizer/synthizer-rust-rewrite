@@ -59,7 +59,7 @@ impl Default for ServerOptions {
 
 /// Holds a node, as well as information needed to execute it.
 struct NodeContainer {
-    node: NodeHandle,
+    node: BackgroundDrop<NodeHandle>,
 
     /// Set to a unique value on every tick to serve as an inline marker as to whether or not this node has yet been
     /// run.
@@ -212,7 +212,7 @@ impl ServerImpl {
                 let old = self.nodes.insert(
                     id,
                     NodeContainer {
-                        node: handle,
+                        node: BackgroundDrop::new(handle),
                         executed_marker: UniqueId::new(),
                     },
                 );
