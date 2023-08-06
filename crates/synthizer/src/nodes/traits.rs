@@ -139,6 +139,8 @@ pub(crate) trait NodeAt: HasNodeDescriptor {
 
             // We will either get some inputs from the hashmap, or we will need to synthesize some zeroed blocks.  We will
             // optimize synthesis of zeroed blocks later.
+            let mut synthesized_input_blocks: ArrayVec<AllocatedBlock, MAX_CHANNELS> =
+                ArrayVec::new();
             let maybe_inputs = context.services.input_data.remove(&context.id);
 
             // To get us off the ground, we pretend there is only at most one input ever.
@@ -150,7 +152,20 @@ pub(crate) trait NodeAt: HasNodeDescriptor {
                     out.push(&x.data[..]);
                     out
                 })
-                .unwrap_or_else(ArrayVec::new);
+                .unwrap_or_else(|| {
+                    let mut out = ArrayVec::new();
+
+                    if !desc.inputs.is_empty() {
+                        for _ in 0..desc.inputs[0].channel_format.get_channel_count().get() {
+                            let mut b = context.services.block_allocator.allocate_block();
+                            b.fill(0.0);
+                            synthesized_input_blocks.push(b);
+                        }
+                    }
+
+                    out.push(&synthesized_input_blocks[..]);
+                    out
+                });
 
             let mut output_dests = ArrayVec::new();
             if !output_blocks.is_empty() {

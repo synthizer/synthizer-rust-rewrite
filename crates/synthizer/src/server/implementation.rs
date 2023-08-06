@@ -285,7 +285,47 @@ mod tests {
             descriptor: output.describe(),
             handle: output.into(),
         });
+        implementation.root_graph.register_node(output_id);
+        implementation.root_graph.register_node(sin_id);
         implementation.root_graph.connect(sin_id, 0, output_id, 0);
+
+        for slice in got[..].chunks_mut(BLOCK_SIZE * 2 + 100) {
+            implementation.fill_slice(slice);
+        }
+
+        for (i, (g, e)) in got.into_iter().zip(expected.into_iter()).enumerate() {
+            assert!(
+                (g - e).abs() < 0.01,
+                "Index {i} is too different: got={g}, expected={e}",
+            );
+        }
+    }
+
+    /// Test that an audio output node with nothing going to it ticks.  This provides coverage over the case of nodes
+    /// which have inputs without connections.
+    #[test]
+    fn inputless_node_ticks() {
+        const SAMPLES: usize = 20 * BLOCK_SIZE;
+
+        let expected = (0..SAMPLES)
+            .flat_map(|_| [0.0f32, 0.0])
+            .collect::<Vec<f32>>();
+
+        // Don't use zero. We want to know it executed.
+        let mut got = vec![1.0f32; SAMPLES * 2];
+
+        let mut implementation = ServerImpl::new(ChannelFormat::Stereo, Default::default());
+        let pool = crate::data_structures::ObjectPool::new();
+        let output = pool.allocate(crate::nodes::audio_output::AudioOutputNode::new(
+            ChannelFormat::Stereo,
+        ));
+        let output_id = UniqueId::new();
+        implementation.run_server_command(ServerCommand::RegisterNode {
+            id: output_id,
+            descriptor: output.describe(),
+            handle: output.into(),
+        });
+        implementation.root_graph.register_node(output_id);
 
         for slice in got[..].chunks_mut(BLOCK_SIZE * 2 + 100) {
             implementation.fill_slice(slice);
