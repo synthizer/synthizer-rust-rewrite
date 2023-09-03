@@ -39,9 +39,8 @@ supermatch_macro = { path = "crates/supermatch_macro" }
 syn = { version = "2", features = ["full", "fold"] }
 synthizer_miniaudio = { path = "./crates/miniaudio" }
 synthizer_protos = { path = "crates/protos" }
-thingbuf = { version = "0.1.3", features = ["static"] }
+thingbuf = { version = "0.1.4", features = ["static"] }
 thiserror = "1.0.37"
-
 
 [profile.bench]
 lto = true

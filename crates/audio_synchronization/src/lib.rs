@@ -9,6 +9,7 @@
 
 pub mod concurrent_slab;
 pub mod fast_thread_id;
+pub mod fixed_size_pool;
 pub mod generational_atomic;
 pub mod optional_atomic_u32;
 pub mod spsc_queue;

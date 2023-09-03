@@ -8,6 +8,7 @@ eye_dropper.workspace = true
 pretty_assertions.workspace = true
 proptest.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+
 [target.'cfg(loom)'.dependencies]
 loom.workspace = true
