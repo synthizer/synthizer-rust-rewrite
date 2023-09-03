@@ -9,6 +9,7 @@ pretty_assertions.workspace = true
 proptest.workspace = true
 
 [dependencies]
+arc-swap.workspace = true
 
 [target.'cfg(loom)'.dependencies]
 loom.workspace = true
