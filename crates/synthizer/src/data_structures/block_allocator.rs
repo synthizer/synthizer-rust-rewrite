@@ -22,7 +22,7 @@ pub struct AllocatedBlock {
 impl BlockAllocator {
     pub fn new(capacity: usize) -> Self {
         BlockAllocator {
-            slab: SlabHandle::new(capacity.try_into().unwrap()),
+            slab: SlabHandle::new(capacity),
         }
     }
 

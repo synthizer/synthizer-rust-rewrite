@@ -20,7 +20,7 @@ pub struct FixedSizePool<T> {
 /// A reference into a [FixedSizePool].
 ///
 /// Dropping this reference will free the element in the pool.
-pub struct ExclusiveFixedSizePoolHandle<T: Send + Sync + 'static> {
+pub struct ExclusiveFixedSizePoolHandle<T: Send + Sync> {
     pool: Arc<FixedSizePool<T>>,
     index: u16,
     data: NonNull<T>,
@@ -101,10 +101,13 @@ impl<T: Send + Sync> FixedSizePool<T> {
         }
     }
 
-    /// Pop an element from the pool, returning a pointer to it.
+    /// Allocate an entry in the pool if possible, otherwise return `Err` with the passed-in value.
     #[cfg(not(loom))]
-    pub fn allocate(self: &Arc<Self>, new_val: T) -> Option<ExclusiveFixedSizePoolHandle<T>> {
-        let index = self.alloc_index()?;
+    pub fn allocate(self: &Arc<Self>, new_val: T) -> Result<ExclusiveFixedSizePoolHandle<T>, T> {
+        let Some(index) = self.alloc_index() else {
+            return Err(new_val);
+        };
+
         let ptr = {
             // fine: immutable ref to immutable ref.
             let r = &self.elements[index as usize];
@@ -115,7 +118,7 @@ impl<T: Send + Sync> FixedSizePool<T> {
         // ptr is uninitialized, so:
         unsafe { ptr.write(new_val) };
 
-        Some(ExclusiveFixedSizePoolHandle {
+        Ok(ExclusiveFixedSizePoolHandle {
             pool: self.clone(),
             index,
             data: NonNull::new(ptr).unwrap(),
@@ -333,6 +336,6 @@ mod tests {
             .map(|x| pool.allocate(x).unwrap())
             .collect::<Vec<_>>();
 
-        assert!(pool.allocate(100).is_none());
+        assert!(pool.allocate(100).is_err());
     }
 }

@@ -7,7 +7,7 @@ use ahash::{HashMap, HashMapExt};
 use audio_synchronization::concurrent_slab::*;
 
 /// Initial capacity for each slab in the pool.
-const INITIAL_CAPACITY: u32 = 100;
+const INITIAL_CAPACITY: usize = 100;
 
 /// Manages a collection of [SlabHandle]s, each for a different kind of object.
 pub(crate) struct ObjectPool {

@@ -261,7 +261,7 @@ impl<T: Node> ErasedNode for T {
     }
 }
 
-impl<T: ErasedNode> ErasedNode for ExclusiveSlabRef<T> {
+impl<T: Send + Sync + ErasedNode> ErasedNode for ExclusiveSlabRef<T> {
     fn describe_erased(&self) -> Cow<'static, NodeDescriptor> {
         self.deref().describe_erased()
     }
