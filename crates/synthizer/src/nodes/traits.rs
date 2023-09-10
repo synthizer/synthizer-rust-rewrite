@@ -270,3 +270,19 @@ impl<T: Send + Sync + ErasedNode> ErasedNode for ExclusiveSlabRef<T> {
         self.deref_mut().execute_erased(context);
     }
 }
+
+mod sealed_node_handle {
+    use super::*;
+
+    pub trait NodeHandleSealed {
+        fn get_id(&self) -> UniqueId;
+    }
+}
+pub(crate) use sealed_node_handle::*;
+
+/// Trait representing a node.
+///
+/// Nodes have a few capabilities, most notably the ability to connect to each other in a graph.  This trait is
+/// implemented for every handle to a node, and allows using them with graph infrastructure and in other palces where
+/// Synthizer wishes to have a node.
+pub trait NodeHandle: Clone + Send + Sync + NodeHandleSealed + 'static {}

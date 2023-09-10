@@ -1,10 +1,15 @@
 use std::borrow::Cow;
-
-use crate::channel_format::ChannelFormat;
+use std::sync::Arc;
 
 use super::descriptor::*;
 use super::traits::*;
 use super::*;
+
+use crate::channel_format::ChannelFormat;
+use crate::error::Result;
+use crate::internal_object_handle::InternalObjectHandle;
+use crate::server::ServerHandle;
+use crate::unique_id::UniqueId;
 
 pub(crate) struct Inputs<'a> {
     input: &'a [AllocatedBlock],
@@ -62,3 +67,26 @@ impl AudioOutputNode {
         AudioOutputNode { format }
     }
 }
+
+#[derive(Clone)]
+pub struct AudioOutputNodeHandle {
+    internal_handle: Arc<InternalObjectHandle>,
+}
+
+impl AudioOutputNodeHandle {
+    pub fn new(server: &ServerHandle, format: ChannelFormat) -> Result<AudioOutputNodeHandle> {
+        let internal_handle = Arc::new(server.register_node(
+            UniqueId::new(),
+            server.allocate(AudioOutputNode::new(format)).into(),
+        )?);
+        Ok(AudioOutputNodeHandle { internal_handle })
+    }
+}
+
+impl super::NodeHandleSealed for AudioOutputNodeHandle {
+    fn get_id(&self) -> UniqueId {
+        self.internal_handle.object_id
+    }
+}
+
+impl super::traits::NodeHandle for AudioOutputNodeHandle {}

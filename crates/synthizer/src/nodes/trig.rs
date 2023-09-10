@@ -1,8 +1,13 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use crate::config::BLOCK_SIZE;
+use crate::error::Result;
+use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
+use crate::server::ServerHandle;
+use crate::unique_id::UniqueId;
 
 /// Kinds of trigonometric waveform to use with [TrigWaveform].
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -13,7 +18,7 @@ pub enum TrigWaveformKind {
 }
 
 /// A node representing a trigonometric waveform.
-pub struct TrigWaveform {
+pub(crate) struct TrigWaveformNode {
     evaluator: TrigWaveformEvaluator,
 }
 
@@ -32,7 +37,7 @@ impl<'a> ToNamedOutputs<'a> for TrigWaveformOutputs<'a> {
     }
 }
 
-impl HasNodeDescriptor for TrigWaveform {
+impl HasNodeDescriptor for TrigWaveformNode {
     type Outputs<'a> = TrigWaveformOutputs<'a>;
     type Inputs<'a> = ();
 
@@ -49,7 +54,7 @@ impl HasNodeDescriptor for TrigWaveform {
     }
 }
 
-impl NodeAt for TrigWaveform {
+impl NodeAt for TrigWaveformNode {
     fn execute(
         &mut self,
         context: &mut crate::nodes::NodeExecutionContext<Self>,
@@ -65,10 +70,32 @@ impl NodeAt for TrigWaveform {
     }
 }
 
-impl TrigWaveform {
+impl TrigWaveformNode {
     pub(crate) fn new_sin(freq: f64) -> Self {
-        TrigWaveform {
+        TrigWaveformNode {
             evaluator: TrigWaveformEvaluator::new_sin(freq, 0.0),
         }
     }
 }
+
+#[derive(Clone)]
+pub struct TrigWaveformNodeHandle {
+    internal_handle: Arc<InternalObjectHandle>,
+}
+
+impl TrigWaveformNodeHandle {
+    pub fn new_sin(server: &ServerHandle, frequency: f64) -> Result<TrigWaveformNodeHandle> {
+        let internal_handle = Arc::new(server.register_node(
+            UniqueId::new(),
+            server.allocate(TrigWaveformNode::new_sin(frequency)).into(),
+        )?);
+        Ok(TrigWaveformNodeHandle { internal_handle })
+    }
+}
+
+impl super::NodeHandleSealed for TrigWaveformNodeHandle {
+    fn get_id(&self) -> UniqueId {
+        self.internal_handle.object_id
+    }
+}
+impl super::NodeHandle for TrigWaveformNodeHandle {}

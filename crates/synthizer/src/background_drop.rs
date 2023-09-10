@@ -39,7 +39,7 @@ macro_rules! decl_variant {
     ($($tys:ident),*)=> {
         mod drop_variant {
             use crate::data_structures::Graph;
-            use crate::nodes::NodeHandle;
+            use crate::nodes::ConcreteNodeHandle;
 
             use super::*;
 
@@ -60,7 +60,7 @@ macro_rules! decl_variant {
     }
 }
 
-decl_variant!(ArcDrop, BoxDrop, Graph, NodeHandle);
+decl_variant!(ArcDrop, BoxDrop, Graph, ConcreteNodeHandle);
 
 /// When background_drop is called, drop the item on the background thread if needed.
 pub(crate) trait BackgroundDroppable {

@@ -59,7 +59,7 @@ impl Default for ServerOptions {
 
 /// Holds a node, as well as information needed to execute it.
 struct NodeContainer {
-    node: BackgroundDrop<NodeHandle>,
+    node: BackgroundDrop<ConcreteNodeHandle>,
 
     /// Set to a unique value on every tick to serve as an inline marker as to whether or not this node has yet been
     /// run.
@@ -71,10 +71,15 @@ struct NodeContainer {
 pub(crate) enum ServerCommand {
     RegisterNode {
         id: UniqueId,
-        handle: NodeHandle,
+        handle: ConcreteNodeHandle,
         descriptor: Cow<'static, NodeDescriptor>,
     },
-    DeregisterNode {
+
+    /// Deregister any kind of object.
+    ///
+    /// The server will iterate over the very few places that this object id might live and get rid of them, so this can
+    /// be type agnostic for now.  Plus we only have nodes for the time bein.
+    DeregisterObject {
         id: UniqueId,
     },
 
@@ -222,7 +227,7 @@ impl ServerImpl {
                 );
                 self.memoized_descriptors.insert(id, descriptor);
             }
-            ServerCommand::DeregisterNode { id } => {
+            ServerCommand::DeregisterObject { id } => {
                 let old = self.nodes.remove(&id);
                 assert!(
                     old.is_some(),
@@ -269,7 +274,7 @@ mod tests {
 
         let mut implementation = ServerImpl::new(ChannelFormat::Stereo, Default::default());
         let pool = crate::data_structures::ObjectPool::new();
-        let node = pool.allocate(crate::nodes::trig::TrigWaveform::new_sin(FREQ));
+        let node = pool.allocate(crate::nodes::trig::TrigWaveformNode::new_sin(FREQ));
         let output = pool.allocate(crate::nodes::audio_output::AudioOutputNode::new(
             ChannelFormat::Stereo,
         ));

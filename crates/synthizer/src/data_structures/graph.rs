@@ -69,6 +69,8 @@ impl Graph {
             let node = self.nodes.get_mut(&id).expect("Node must be present");
             node.outgoing
                 .retain(|x| x.outgoing_node != id && x.incoming_node != id);
+            node.incoming
+                .retain(|x| x.outgoing_node != id && x.incoming_node != id);
         }
     }
 

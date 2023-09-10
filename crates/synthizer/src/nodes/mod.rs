@@ -3,8 +3,10 @@ pub mod descriptor;
 pub mod traits;
 pub mod trig;
 
+pub use audio_output::AudioOutputNodeHandle;
 pub use descriptor::*;
 pub use traits::*;
+pub use trig::TrigWaveformNodeHandle;
 
 use std::borrow::Cow;
 
@@ -31,9 +33,12 @@ pub(crate) type InputsByIndex<'a> = arrayvec::ArrayVec<&'a [AllocatedBlock], MAX
 
 /// This enum holds ExclusiveSlabRefs to all node types we support.
 ///
-/// We don't want to use Box in this case because that would be `Box<ExclusiveSlabRef<T>>` (except erased), which is a double pointer and a heap allocation.
+/// We don't want to use Box in this case because that would be `Box<ExclusiveSlabRef<T>>` (except erased), which is a
+/// double pointer and a heap allocation.
+///
+/// The weird name is because we wish to reserve the name NodeHandle for the external API.
 #[enum_dispatch::enum_dispatch(ErasedNode)]
-pub(crate) enum NodeHandle {
-    TrigWaveform(ExclusiveSlabRef<trig::TrigWaveform>),
+pub(crate) enum ConcreteNodeHandle {
+    TrigWaveform(ExclusiveSlabRef<trig::TrigWaveformNode>),
     AudioOutput(ExclusiveSlabRef<audio_output::AudioOutputNode>),
 }
