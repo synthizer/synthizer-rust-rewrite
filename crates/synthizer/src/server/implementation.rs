@@ -66,6 +66,9 @@ struct NodeContainer {
     ///
     /// This replaces external sets, which require allocation.
     executed_marker: UniqueId,
+
+    /// Set on the first tick, then cleared.
+    is_first_tick: bool,
 }
 
 #[derive(Debug)]
@@ -161,11 +164,13 @@ impl ServerImpl {
             n.node.execute_erased(&mut ErasedExecutionContext {
                 id: *id,
                 services: &mut self.services,
+                is_first_tick: n.is_first_tick,
                 graph: &self.root_graph,
                 speaker_format: &self.runtime_config.output_format,
                 speaker_outputs: &mut self.output_blocks[..],
                 descriptors: &self.memoized_descriptors,
             });
+            n.is_first_tick = false;
         });
 
         self.output_frames_available = BLOCK_SIZE;
@@ -220,6 +225,7 @@ impl ServerImpl {
                     NodeContainer {
                         node: BackgroundDrop::new(handle),
                         executed_marker: UniqueId::new(),
+                        is_first_tick: true,
                     },
                 );
                 assert!(

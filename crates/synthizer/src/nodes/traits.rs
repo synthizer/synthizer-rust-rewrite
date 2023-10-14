@@ -39,6 +39,9 @@ pub(crate) struct NodeExecutionContext<'a, 'b, N: NodeAt + ?Sized> {
     pub(crate) outputs: &'a mut N::Outputs<'b>,
     pub(crate) services: &'a mut AudioThreadServerServices,
 
+    /// Prefer to use NodeAt functions rather than this flag; the flag is translated into methods.
+    pub(crate) is_first_tick: bool,
+
     /// The speakers, or output of the graph, etc.
     ///
     /// Used by nodes which know how to write data to the destination.  This slice is always equal in length to the
@@ -84,6 +87,8 @@ pub(crate) struct ErasedExecutionContext<'a> {
     /// This is *not* necessarily the same as the server's root graph.
     pub(crate) graph: &'a crate::data_structures::Graph,
 
+    pub(crate) is_first_tick: bool,
+
     pub(crate) speaker_outputs: &'a mut [AllocatedBlock],
     pub(crate) speaker_format: &'a crate::channel_format::ChannelFormat,
 }
@@ -121,6 +126,11 @@ pub(crate) trait NodeAt: HasNodeDescriptor {
 
     /// Gather all state needed for this node and execute it.  Implementors of this trait should use the default impl.
     fn gather_and_execute(&mut self, context: &mut ErasedExecutionContext) {
+        use props::PropertyCommandReceiver;
+        if context.is_first_tick {
+            self.get_property_struct().tick_first();
+        }
+
         let desc = context
             .descriptors
             .get(&context.id)
@@ -189,11 +199,15 @@ pub(crate) trait NodeAt: HasNodeDescriptor {
                 inputs: &inputs,
                 outputs: &mut outputs,
                 services: context.services,
+                is_first_tick: context.is_first_tick,
                 speaker_outputs: context.speaker_outputs,
                 speaker_format: context.speaker_format,
             };
 
             self.execute(&mut ctx);
+
+            // Tell properties it's over.
+            self.get_property_struct().tick_ended();
         }
 
         // Now we go through the nodes that we might need to send data to, and downmix them.
