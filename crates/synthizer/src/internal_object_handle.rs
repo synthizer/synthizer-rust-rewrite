@@ -66,3 +66,9 @@ impl InternalObjectHandle {
         self.graph_id == other.graph_id
     }
 }
+
+impl crate::command::CommandSender for InternalObjectHandle {
+    fn send_impl(&self, command: Command) -> Result<()> {
+        self.server_chan.send_command(command)
+    }
+}

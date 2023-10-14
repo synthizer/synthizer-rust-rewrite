@@ -28,6 +28,7 @@ impl<'a> ToNamedInputs<'a> for Inputs<'a> {
 /// lot of remixing work by remixing at the input of this node, then let this node do the final remix to the output.
 pub(crate) struct AudioOutputNode {
     format: ChannelFormat,
+    props: (),
 }
 
 impl HasNodeDescriptor for AudioOutputNode {
@@ -45,6 +46,12 @@ impl HasNodeDescriptor for AudioOutputNode {
 }
 
 impl NodeAt for AudioOutputNode {
+    type Properties = ();
+
+    fn get_property_struct(&mut self) -> &mut Self::Properties {
+        &mut self.props
+    }
+
     fn execute<'a>(
         &'a mut self,
         context: &'a mut NodeExecutionContext<Self>,
@@ -64,7 +71,7 @@ impl NodeAt for AudioOutputNode {
 
 impl AudioOutputNode {
     pub(crate) fn new(format: ChannelFormat) -> AudioOutputNode {
-        AudioOutputNode { format }
+        AudioOutputNode { format, props: () }
     }
 }
 

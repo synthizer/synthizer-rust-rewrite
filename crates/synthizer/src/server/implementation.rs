@@ -68,6 +68,7 @@ struct NodeContainer {
     executed_marker: UniqueId,
 }
 
+#[derive(Debug)]
 pub(crate) enum ServerCommand {
     RegisterNode {
         id: UniqueId,
@@ -243,12 +244,20 @@ impl ServerImpl {
     }
 
     pub(crate) fn dispatch_command(&mut self, command: crate::command::Command) {
-        // Right now all we have are server commands.
-        self.run_server_command(
-            command
-                .extract_payload_as::<ServerCommand>()
-                .unwrap_or_else(|_| panic!("only server commands are supported")),
-        );
+        use crate::command::Port;
+
+        match command.port().kind {
+            PortKind::Server => command
+                .take_call(|c: ServerCommand| self.run_server_command(c))
+                .expect("Server ports should only receive ServerCommand"),
+            PortKind::Node(id) => {
+                let node = self
+                    .nodes
+                    .get_mut(&id)
+                    .expect("Ports should only point at nodes that exist");
+                node.node.command_received_erased(command);
+            }
+        }
     }
 }
 

@@ -12,6 +12,7 @@ arc-swap.workspace = true
 arrayvec.workspace = true
 atomic_refcell.workspace = true
 audio_synchronization.workspace = true
+derivative.workspace = true
 derive_more.workspace = true
 enum_dispatch.workspace = true
 im.workspace = true

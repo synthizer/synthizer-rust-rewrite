@@ -32,8 +32,13 @@ static WORK_QUEUE: StaticThingBuf<
     crate::option_recycler::OptionRecycler,
 > = StaticThingBuf::<Option<DropElement>, BACKLOG, crate::option_recycler::OptionRecycler>::with_recycle(crate::option_recycler::OptionRecycler);
 
-struct ArcDrop(Arc<dyn Any + Send + Sync + 'static>);
-struct BoxDrop(Box<dyn Any + Send + Sync + 'static>);
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
+struct ArcDrop(#[derivative(Debug = "ignore")] Arc<dyn Any + Send + Sync + 'static>);
+
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
+struct BoxDrop(#[derivative(Debug = "ignore")] Box<dyn Any + Send + Sync + 'static>);
 
 macro_rules! decl_variant {
     ($($tys:ident),*)=> {

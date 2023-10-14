@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use crate::command::{CommandSender, Port};
 use crate::config::BLOCK_SIZE;
 use crate::error::Result;
 use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
+use crate::properties::*;
 use crate::server::ServerHandle;
 use crate::unique_id::UniqueId;
 
@@ -20,7 +22,17 @@ pub enum TrigWaveformKind {
 /// A node representing a trigonometric waveform.
 pub(crate) struct TrigWaveformNode {
     evaluator: TrigWaveformEvaluator,
+    props: PropertySlots,
 }
+
+mod sealed_props {
+    use super::*;
+
+    pub struct PropertySlots {
+        pub(super) frequency: Slot<F64X1>,
+    }
+}
+use sealed_props::*;
 
 pub(crate) struct TrigWaveformOutputs<'a> {
     output: OutputDestination<'a>,
@@ -55,11 +67,21 @@ impl HasNodeDescriptor for TrigWaveformNode {
 }
 
 impl NodeAt for TrigWaveformNode {
+    type Properties = PropertySlots;
+
+    fn get_property_struct(&mut self) -> &mut Self::Properties {
+        &mut self.props
+    }
+
     fn execute(
         &mut self,
         context: &mut crate::nodes::NodeExecutionContext<Self>,
     ) -> crate::nodes::NodeExecutionOutcome {
         use crate::nodes::OutputDestination as OD;
+
+        if let Some(f) = self.props.frequency.get_value_if_changed() {
+            self.evaluator.set_frequency(f);
+        }
         match &mut context.outputs.output {
             OD::Block(s) => {
                 self.evaluator
@@ -74,6 +96,9 @@ impl TrigWaveformNode {
     pub(crate) fn new_sin(freq: f64) -> Self {
         TrigWaveformNode {
             evaluator: TrigWaveformEvaluator::new_sin(freq, 0.0),
+            props: PropertySlots {
+                frequency: Slot::new(freq),
+            },
         }
     }
 }
@@ -81,6 +106,39 @@ impl TrigWaveformNode {
 #[derive(Clone)]
 pub struct TrigWaveformNodeHandle {
     internal_handle: Arc<InternalObjectHandle>,
+}
+
+/// Properties for a [TrigWaveformNodeHandle].
+pub struct TrigWaveformProps<'a> {
+    frequency: Property<'a, F64X1>,
+}
+
+impl<'a> TrigWaveformProps<'a> {
+    fn new(sender: &'a dyn CommandSender, port: Port) -> TrigWaveformProps<'a> {
+        TrigWaveformProps {
+            frequency: Property::new(sender, port, 0),
+        }
+    }
+
+    pub fn frequency(&self) -> &Property<'a, F64X1> {
+        &self.frequency
+    }
+}
+
+impl PropertyCommandReceiver for PropertySlots {
+    fn set_property(&mut self, index: usize, value: PropertyValue) {
+        assert_eq!(index, 0);
+        self.frequency
+            .set_from_property_value(value, ChangeState::Other);
+    }
+
+    fn tick_first(&mut self) {
+        self.frequency.mark_first_tick();
+    }
+
+    fn tick_ended(&mut self) {
+        self.frequency.mark_unchanged();
+    }
 }
 
 impl TrigWaveformNodeHandle {
@@ -91,6 +149,13 @@ impl TrigWaveformNodeHandle {
         )?);
         Ok(TrigWaveformNodeHandle { internal_handle })
     }
+
+    pub fn props(&self) -> TrigWaveformProps {
+        TrigWaveformProps::new(
+            &*self.internal_handle,
+            Port::for_node(self.internal_handle.object_id),
+        )
+    }
 }
 
 impl super::NodeHandleSealed for TrigWaveformNodeHandle {
@@ -98,4 +163,5 @@ impl super::NodeHandleSealed for TrigWaveformNodeHandle {
         self.internal_handle.object_id
     }
 }
+
 impl super::NodeHandle for TrigWaveformNodeHandle {}

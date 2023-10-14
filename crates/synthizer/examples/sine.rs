@@ -9,12 +9,13 @@ fn main() -> syz::Result<()> {
     let server = syz::ServerHandle::new_default_device()?;
     let audio_output = syz::nodes::AudioOutputNodeHandle::new(&server, syz::ChannelFormat::Stereo)?;
 
-    for freq in [300.0f64, 400.0, 500.0] {
-        let sin = syz::nodes::TrigWaveformNodeHandle::new_sin(&server, freq)?;
-        server.connect(&sin, 0, &audio_output, 0)?;
-        sleep(Duration::from_secs(3));
-        std::mem::drop(sin);
-        sleep(Duration::from_secs(1));
+    let sin = syz::nodes::TrigWaveformNodeHandle::new_sin(&server, 300.0)?;
+    server.connect(&sin, 0, &audio_output, 0)?;
+    sleep(Duration::from_millis(500));
+
+    for freq in [400.0, 500.0] {
+        sin.props().frequency().set_value(freq)?;
+        sleep(Duration::from_millis(500));
     }
 
     Ok(())

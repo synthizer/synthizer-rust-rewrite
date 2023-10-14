@@ -42,3 +42,17 @@ pub(crate) enum ConcreteNodeHandle {
     TrigWaveform(ExclusiveSlabRef<trig::TrigWaveformNode>),
     AudioOutput(ExclusiveSlabRef<audio_output::AudioOutputNode>),
 }
+
+impl std::fmt::Debug for ConcreteNodeHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConcreteNodeHandle")
+            .field(
+                "pointing_at",
+                &match self {
+                    Self::AudioOutput(_) => "AudioOutput",
+                    Self::TrigWaveform(_) => "TrigWaveform",
+                },
+            )
+            .finish()
+    }
+}

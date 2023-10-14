@@ -6,11 +6,13 @@ use arrayvec::ArrayVec;
 use audio_synchronization::concurrent_slab::ExclusiveSlabRef;
 
 use crate::channel_format::ChannelFormat;
+use crate::command as cmd;
 use crate::config::*;
 use crate::data_structures::AddOnlyBlock;
 use crate::data_structures::{AllocatedBlock, BlockAllocator};
 use crate::nodes::OutputsByIndex;
 use crate::nodes::*;
+use crate::properties as props;
 use crate::server::implementation::AudioThreadServerServices;
 use crate::unique_id::UniqueId;
 
@@ -92,8 +94,8 @@ pub(crate) trait HasNodeDescriptor {
 
     /// Describe this node.
     ///
-    /// This function will be called after node setup.  Nodes should never change their descriptors at runtime.  Will be
-    /// called once after node construction, not on the audio thread.
+    /// This function will be called after node setup.  Nodes should never change their descriptors at runtime.  It will
+    /// be called once after node construction, not on the audio thread.
     fn describe(&self) -> Cow<'static, NodeDescriptor>;
 }
 
@@ -103,11 +105,19 @@ pub(crate) trait HasNodeDescriptor {
 /// piece which holds state for and is executed on the audio thread.  This trait encapsulates the audio thread component
 /// (thus At).
 pub(crate) trait NodeAt: HasNodeDescriptor {
+    /// The struct containing this node's properties.
+    ///
+    /// Use `()` if there are no properties for this node.
+    type Properties: props::PropertyCommandReceiver;
+
     /// Run this node.
     fn execute<'a>(
         &'a mut self,
         context: &'a mut NodeExecutionContext<Self>,
     ) -> NodeExecutionOutcome;
+
+    /// Return a reference to the property struct for sending commands.
+    fn get_property_struct(&mut self) -> &mut Self::Properties;
 
     /// Gather all state needed for this node and execute it.  Implementors of this trait should use the default impl.
     fn gather_and_execute(&mut self, context: &mut ErasedExecutionContext) {
@@ -237,6 +247,38 @@ pub(crate) trait NodeAt: HasNodeDescriptor {
                 }
             });
     }
+
+    /// Execute a command.
+    ///
+    /// This function is called on *all* commands that reach this node, including built-in commands.  It should return
+    /// `Ok(())` if the command was handled, else `Err(unhandled_command)`.  The default implementation does nothing,
+    /// and delegates to built-in processing.
+    fn execute_command(&mut self, cmd: cmd::Command) -> Result<(), cmd::Command> {
+        Err(cmd)
+    }
+
+    /// This function handles built-in commands after giving the node a chance to execute them itself.
+    ///
+    /// Any command we don't understand panics the process. Unfortunately, we don't have `Debug` on the command enum; we
+    /// might like this, but that's infeasible at the current time since commands may contain e.g. audio buffers
+    /// (consider this a todo).  Commands that aren't something to do with nodes should never make it to nodes.
+    fn command_received(&mut self, cmd: cmd::Command) {
+        let Err(cmd) = self.execute_command(cmd) else {
+            // That's fine; it was handled.
+            return;
+        };
+
+        cmd.take_call(|prop: props::PropertyCommand| {
+            use props::PropertyCommandReceiver;
+
+            match prop {
+                props::PropertyCommand::Set { index, value } => {
+                    self.get_property_struct().set_property(index, value);
+                }
+            }
+        })
+        .expect("Should have handled the command");
+    }
 }
 
 pub(crate) trait Node: HasNodeDescriptor + NodeAt {}
@@ -249,6 +291,7 @@ impl<T: HasNodeDescriptor + NodeAt> Node for T {}
 pub(crate) trait ErasedNode {
     fn describe_erased(&self) -> Cow<'static, NodeDescriptor>;
     fn execute_erased(&mut self, context: &mut ErasedExecutionContext);
+    fn command_received_erased(&mut self, cmd: crate::command::Command);
 }
 
 impl<T: Node> ErasedNode for T {
@@ -259,6 +302,10 @@ impl<T: Node> ErasedNode for T {
     fn execute_erased(&mut self, context: &mut ErasedExecutionContext) {
         self.gather_and_execute(context)
     }
+
+    fn command_received_erased(&mut self, cmd: crate::command::Command) {
+        self.command_received(cmd);
+    }
 }
 
 impl<T: Send + Sync + ErasedNode> ErasedNode for ExclusiveSlabRef<T> {
@@ -268,6 +315,10 @@ impl<T: Send + Sync + ErasedNode> ErasedNode for ExclusiveSlabRef<T> {
 
     fn execute_erased(&mut self, context: &mut ErasedExecutionContext) {
         self.deref_mut().execute_erased(context);
+    }
+
+    fn command_received_erased(&mut self, cmd: cmd::Command) {
+        self.deref_mut().command_received_erased(cmd);
     }
 }
 
@@ -283,6 +334,6 @@ pub(crate) use sealed_node_handle::*;
 /// Trait representing a node.
 ///
 /// Nodes have a few capabilities, most notably the ability to connect to each other in a graph.  This trait is
-/// implemented for every handle to a node, and allows using them with graph infrastructure and in other palces where
+/// implemented for every handle to a node, and allows using them with graph infrastructure and in other places where
 /// Synthizer wishes to have a node.
 pub trait NodeHandle: Clone + Send + Sync + NodeHandleSealed + 'static {}
