@@ -19,8 +19,7 @@ pub enum TrigWaveformKind {
     Tan,
 }
 
-/// A node representing a trigonometric waveform.
-pub(crate) struct TrigWaveformNode {
+pub(crate) struct TrigWaveformNodeAt {
     evaluator: TrigWaveformEvaluator,
     props: PropertySlots,
 }
@@ -49,7 +48,7 @@ impl<'a> ToNamedOutputs<'a> for TrigWaveformOutputs<'a> {
     }
 }
 
-impl HasNodeDescriptor for TrigWaveformNode {
+impl HasNodeDescriptor for TrigWaveformNodeAt {
     type Outputs<'a> = TrigWaveformOutputs<'a>;
     type Inputs<'a> = ();
 
@@ -66,7 +65,7 @@ impl HasNodeDescriptor for TrigWaveformNode {
     }
 }
 
-impl NodeAt for TrigWaveformNode {
+impl NodeAt for TrigWaveformNodeAt {
     type Properties = PropertySlots;
 
     fn get_property_struct(&mut self) -> &mut Self::Properties {
@@ -92,9 +91,9 @@ impl NodeAt for TrigWaveformNode {
     }
 }
 
-impl TrigWaveformNode {
+impl TrigWaveformNodeAt {
     pub(crate) fn new_sin(freq: f64) -> Self {
-        TrigWaveformNode {
+        TrigWaveformNodeAt {
             evaluator: TrigWaveformEvaluator::new_sin(freq, 0.0),
             props: PropertySlots {
                 frequency: Slot::new(freq),
@@ -103,8 +102,9 @@ impl TrigWaveformNode {
     }
 }
 
+/// A node representing a trigonometric waveform.
 #[derive(Clone)]
-pub struct TrigWaveformNodeHandle {
+pub struct TrigWaveformNode {
     internal_handle: Arc<InternalObjectHandle>,
 }
 
@@ -141,13 +141,17 @@ impl PropertyCommandReceiver for PropertySlots {
     }
 }
 
-impl TrigWaveformNodeHandle {
-    pub fn new_sin(server: &Server, frequency: f64) -> Result<TrigWaveformNodeHandle> {
-        let internal_handle = Arc::new(server.register_node(
-            UniqueId::new(),
-            server.allocate(TrigWaveformNode::new_sin(frequency)).into(),
-        )?);
-        Ok(TrigWaveformNodeHandle { internal_handle })
+impl TrigWaveformNode {
+    pub fn new_sin(server: &Server, frequency: f64) -> Result<TrigWaveformNode> {
+        let internal_handle = Arc::new(
+            server.register_node(
+                UniqueId::new(),
+                server
+                    .allocate(TrigWaveformNodeAt::new_sin(frequency))
+                    .into(),
+            )?,
+        );
+        Ok(TrigWaveformNode { internal_handle })
     }
 
     pub fn props(&self) -> TrigWaveformProps {
@@ -158,10 +162,10 @@ impl TrigWaveformNodeHandle {
     }
 }
 
-impl super::NodeHandleSealed for TrigWaveformNodeHandle {
+impl super::NodeHandleSealed for TrigWaveformNode {
     fn get_id(&self) -> UniqueId {
         self.internal_handle.object_id
     }
 }
 
-impl super::NodeHandle for TrigWaveformNodeHandle {}
+impl super::NodeHandle for TrigWaveformNode {}

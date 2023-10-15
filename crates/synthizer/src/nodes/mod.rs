@@ -3,10 +3,10 @@ pub mod descriptor;
 pub mod traits;
 pub mod trig;
 
-pub use audio_output::AudioOutputNodeHandle;
+pub use audio_output::AudioOutputNode;
 pub use descriptor::*;
 pub use traits::*;
-pub use trig::TrigWaveformNodeHandle;
+pub use trig::TrigWaveformNode;
 
 use std::borrow::Cow;
 
@@ -39,8 +39,8 @@ pub(crate) type InputsByIndex<'a> = arrayvec::ArrayVec<&'a [AllocatedBlock], MAX
 /// The weird name is because we wish to reserve the name NodeHandle for the external API.
 #[enum_dispatch::enum_dispatch(ErasedNode)]
 pub(crate) enum ConcreteNodeHandle {
-    TrigWaveform(ExclusiveSlabRef<trig::TrigWaveformNode>),
-    AudioOutput(ExclusiveSlabRef<audio_output::AudioOutputNode>),
+    TrigWaveform(ExclusiveSlabRef<trig::TrigWaveformNodeAt>),
+    AudioOutput(ExclusiveSlabRef<audio_output::AudioOutputNodeAt>),
 }
 
 impl std::fmt::Debug for ConcreteNodeHandle {

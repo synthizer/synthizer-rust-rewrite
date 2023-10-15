@@ -7,9 +7,9 @@ fn main() -> syz::Result<()> {
     env_logger::init();
 
     let server = syz::Server::new_default_device()?;
-    let audio_output = syz::nodes::AudioOutputNodeHandle::new(&server, syz::ChannelFormat::Stereo)?;
+    let audio_output = syz::nodes::AudioOutputNode::new(&server, syz::ChannelFormat::Stereo)?;
 
-    let sin = syz::nodes::TrigWaveformNodeHandle::new_sin(&server, 300.0)?;
+    let sin = syz::nodes::TrigWaveformNode::new_sin(&server, 300.0)?;
     server.connect(&sin, 0, &audio_output, 0)?;
     sleep(Duration::from_millis(500));
 

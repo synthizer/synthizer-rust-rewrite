@@ -21,17 +21,12 @@ impl<'a> ToNamedInputs<'a> for Inputs<'a> {
     }
 }
 
-/// A node which copies its input to the audio device's output.
-///
-/// The input format of this node is user-specified. The output format of this node matches the server.  This is useful
-/// because an application that wishes to output stereo which happens to be connected to a 5.1 speaker setup can save a
-/// lot of remixing work by remixing at the input of this node, then let this node do the final remix to the output.
-pub(crate) struct AudioOutputNode {
+pub(crate) struct AudioOutputNodeAt {
     format: ChannelFormat,
     props: (),
 }
 
-impl HasNodeDescriptor for AudioOutputNode {
+impl HasNodeDescriptor for AudioOutputNodeAt {
     type Inputs<'a> = Inputs<'a>;
     type Outputs<'a> = ();
 
@@ -45,7 +40,7 @@ impl HasNodeDescriptor for AudioOutputNode {
     }
 }
 
-impl NodeAt for AudioOutputNode {
+impl NodeAt for AudioOutputNodeAt {
     type Properties = ();
 
     fn get_property_struct(&mut self) -> &mut Self::Properties {
@@ -69,31 +64,36 @@ impl NodeAt for AudioOutputNode {
     }
 }
 
-impl AudioOutputNode {
-    pub(crate) fn new(format: ChannelFormat) -> AudioOutputNode {
-        AudioOutputNode { format, props: () }
+impl AudioOutputNodeAt {
+    pub(crate) fn new(format: ChannelFormat) -> AudioOutputNodeAt {
+        AudioOutputNodeAt { format, props: () }
     }
 }
 
+/// A node which copies its input to the audio device's output.
+///
+/// The input format of this node is user-specified. The output format of this node matches the server.  This is useful
+/// because an application that wishes to output stereo which happens to be connected to a 5.1 speaker setup can save a
+/// lot of remixing work by remixing at the input of this node, then let this node do the final remix to the output.
 #[derive(Clone)]
-pub struct AudioOutputNodeHandle {
+pub struct AudioOutputNode {
     internal_handle: Arc<InternalObjectHandle>,
 }
 
-impl AudioOutputNodeHandle {
-    pub fn new(server: &Server, format: ChannelFormat) -> Result<AudioOutputNodeHandle> {
+impl AudioOutputNode {
+    pub fn new(server: &Server, format: ChannelFormat) -> Result<AudioOutputNode> {
         let internal_handle = Arc::new(server.register_node(
             UniqueId::new(),
-            server.allocate(AudioOutputNode::new(format)).into(),
+            server.allocate(AudioOutputNodeAt::new(format)).into(),
         )?);
-        Ok(AudioOutputNodeHandle { internal_handle })
+        Ok(AudioOutputNode { internal_handle })
     }
 }
 
-impl super::NodeHandleSealed for AudioOutputNodeHandle {
+impl super::NodeHandleSealed for AudioOutputNode {
     fn get_id(&self) -> UniqueId {
         self.internal_handle.object_id
     }
 }
 
-impl super::traits::NodeHandle for AudioOutputNodeHandle {}
+impl super::traits::NodeHandle for AudioOutputNode {}

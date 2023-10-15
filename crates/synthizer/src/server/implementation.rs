@@ -364,8 +364,8 @@ mod tests {
 
         let mut implementation = ServerAt::new(ChannelFormat::Stereo, Default::default());
         let pool = crate::data_structures::ObjectPool::new();
-        let node = pool.allocate(crate::nodes::trig::TrigWaveformNode::new_sin(FREQ));
-        let output = pool.allocate(crate::nodes::audio_output::AudioOutputNode::new(
+        let node = pool.allocate(crate::nodes::trig::TrigWaveformNodeAt::new_sin(FREQ));
+        let output = pool.allocate(crate::nodes::audio_output::AudioOutputNodeAt::new(
             ChannelFormat::Stereo,
         ));
         let sin_id = UniqueId::new();
@@ -411,7 +411,7 @@ mod tests {
 
         let mut implementation = ServerAt::new(ChannelFormat::Stereo, Default::default());
         let pool = crate::data_structures::ObjectPool::new();
-        let output = pool.allocate(crate::nodes::audio_output::AudioOutputNode::new(
+        let output = pool.allocate(crate::nodes::audio_output::AudioOutputNodeAt::new(
             ChannelFormat::Stereo,
         ));
         let output_id = UniqueId::new();
