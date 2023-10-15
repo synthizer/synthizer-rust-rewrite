@@ -11,7 +11,7 @@ use crate::unique_id::UniqueId;
 ///
 /// These are used to hold sampls.
 pub struct BlockAllocator {
-    slab: SlabHandle<MaybeUninit<[f32; BLOCK_SIZE]>>,
+    slab: SlabHandle<MaybeUninit<crate::config::BlockArray>>,
 }
 
 /// An allocated block in a block allocator.
@@ -40,7 +40,7 @@ impl BlockAllocator {
             let mut rgen = crate::fast_xoroshiro::FastXoroshiro128PlusPlus::<1>::new_seeded(123);
             for o in (*ret).iter_mut() {
                 let rval = rgen.gen_u64() as u16;
-                *o = 1.0 - (rval as f32) / (u16::MAX as f32) * 2.0;
+                *o = 1.0 - (rval as f64) / (u16::MAX as f64) * 2.0;
             }
         }
 
@@ -48,7 +48,7 @@ impl BlockAllocator {
     }
 }
 
-// All bit patterns for arrays of f32 are valid, so the following two deref impls get to assume that the array ios
+// All bit patterns for arrays of f64 are valid, so the following two deref impls get to assume that the array is
 // initialized.
 
 impl std::ops::Deref for AllocatedBlock {

@@ -19,8 +19,8 @@ enum TrigFunction {
 macro_rules! eval_impl {
     ($struct_ident:ident, $tf: ident) => {
         impl $struct_ident {
-            fn eval(&self, offset: f64) -> f32 {
-                (offset * 2.0 * std::f64::consts::PI).$tf() as f32
+            fn eval(&self, offset: f64) -> f64 {
+                (offset * 2.0 * std::f64::consts::PI).$tf()
             }
         }
     };
@@ -70,7 +70,7 @@ impl TrigWaveformEvaluator {
     /// Tick this trigonometric waveform some number of times, pushing output values as well as a tick count to the
     /// provided closure.
     #[supermatch::supermatch_fn]
-    pub(crate) fn evaluate_ticks(&mut self, ticks: usize, mut destination: impl FnMut(usize, f32)) {
+    pub(crate) fn evaluate_ticks(&mut self, ticks: usize, mut destination: impl FnMut(usize, f64)) {
         let increment = self.frequency / SR as f64;
 
         #[supermatch]
@@ -101,11 +101,10 @@ mod tests {
         let expected = (0..SAMPLES)
             .map(|x| {
                 (x as f64 * 2.0 * std::f64::consts::PI * FREQ / crate::config::SR as f64).sin()
-                    as f32
             })
-            .collect::<Vec<f32>>();
+            .collect::<Vec<f64>>();
 
-        let mut got = vec![0.0f32; SAMPLES];
+        let mut got = vec![0.0f64; SAMPLES];
 
         let mut evaluator = TrigWaveformEvaluator::new_sin(FREQ, 0.0);
 

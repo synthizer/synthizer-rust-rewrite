@@ -13,7 +13,7 @@ impl<'a> AddOnlyBlock<'a> {
     }
 
     #[inline(always)]
-    pub(crate) fn write(&mut self, index: usize, value: f32) {
+    pub(crate) fn write(&mut self, index: usize, value: f64) {
         (self.0)[index] += value;
     }
 }

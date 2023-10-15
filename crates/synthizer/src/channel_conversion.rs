@@ -10,14 +10,14 @@ struct ChannelMixingMatrix {
     output_format: ChannelFormat,
 
     /// The outer slice is the input channels; the inner slice the weights to the output channels.
-    values: &'static [&'static [f32]],
+    values: &'static [&'static [f64]],
 }
 
 const MIXING_MATRICES: &[ChannelMixingMatrix] = &[
     ChannelMixingMatrix {
         input_format: ChannelFormat::Mono,
         output_format: ChannelFormat::Stereo,
-        values: &[&[1.0f32, 1.0f32]],
+        values: &[&[1.0, 1.0]],
     },
     ChannelMixingMatrix {
         input_format: ChannelFormat::Stereo,
@@ -88,7 +88,7 @@ pub(crate) fn convert_channels(
     truncate_or_expand_fallback(input_buffers, output_buffers);
 }
 
-/// Interleave the given blocks to the given output slice.
+/// Interleave the given blocks to the given output slice, converting from f64 to f32 in the process.
 ///
 /// This is used at the edge of Synthizer, so writes directly instead of adding.
 pub fn interleave_blocks(blocks: &mut [AllocatedBlock], destination: &mut [f32]) {
@@ -99,7 +99,7 @@ pub fn interleave_blocks(blocks: &mut [AllocatedBlock], destination: &mut [f32])
     blocks.iter_mut().enumerate().for_each(|(channel, block)| {
         for (i, x) in block.iter().copied().enumerate() {
             let offset = i * stride + channel;
-            destination[offset] = x;
+            destination[offset] = x as f32;
         }
     });
 }
@@ -127,8 +127,8 @@ mod tests {
             false,
         );
 
-        assert_eq!(&*outputs[0], &[1.0f32; BLOCK_SIZE]);
-        assert_eq!(&*outputs[1], &[1.0f32; BLOCK_SIZE]);
+        assert_eq!(&*outputs[0], &[1.0f64; BLOCK_SIZE]);
+        assert_eq!(&*outputs[1], &[1.0f64; BLOCK_SIZE]);
     }
 
     #[test]
@@ -153,7 +153,7 @@ mod tests {
             false,
         );
 
-        assert_eq!(&*outputs[0], &[0.5f32; BLOCK_SIZE]);
+        assert_eq!(&*outputs[0], &[0.5f64; BLOCK_SIZE]);
     }
 
     #[test]
@@ -218,7 +218,7 @@ mod tests {
 
         assert_eq!(&*outputs[0], &*inputs[0]);
         assert_eq!(&*outputs[1], &*inputs[1]);
-        assert_eq!(&*outputs[2], &[100.0f32; BLOCK_SIZE]);
+        assert_eq!(&*outputs[2], &[100.0f64; BLOCK_SIZE]);
     }
 
     #[test]
@@ -229,8 +229,8 @@ mod tests {
         let mut right = allocator.allocate_block();
 
         for (i, (l, r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
-            *l = (2 * i) as f32;
-            *r = (2 * i + 1) as f32;
+            *l = (2 * i) as f64;
+            *r = (2 * i + 1) as f64;
         }
 
         let mut got = vec![0.0f32; BLOCK_SIZE * 2];

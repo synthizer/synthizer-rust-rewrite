@@ -21,7 +21,7 @@ pub(crate) const MAX_INPUTS: usize = 16;
 
 pub(crate) const BLOCK_SIZE: usize = 128;
 
-/// This convenience alias will always be a `[f32; BLOCK_SIZE]`.
+/// This convenience alias will always be a `[f64; BLOCK_SIZE]`.
 ///
-/// We have unsafe code which depends on this always being an f32 array.
-pub(crate) type BlockArray = [f32; BLOCK_SIZE];
+/// We have unsafe code which depends on this always being a float array.
+pub(crate) type BlockArray = [f64; BLOCK_SIZE];
