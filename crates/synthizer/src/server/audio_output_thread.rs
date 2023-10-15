@@ -27,6 +27,7 @@ impl AudioThread {
                 sample_rate: Some(NonZeroU32::new(44100).unwrap()),
             },
             move |_, dest| {
+                crate::background_drop::mark_audio_thread();
                 callback(dest);
             },
         )?;
