@@ -30,4 +30,4 @@ pub use channel_format::*;
 pub use config::SR;
 pub use db::DbExt;
 pub use error::Result;
-pub use server::ServerHandle;
+pub use server::Server;

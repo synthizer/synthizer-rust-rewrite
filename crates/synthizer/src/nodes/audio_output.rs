@@ -8,7 +8,7 @@ use super::*;
 use crate::channel_format::ChannelFormat;
 use crate::error::Result;
 use crate::internal_object_handle::InternalObjectHandle;
-use crate::server::ServerHandle;
+use crate::server::Server;
 use crate::unique_id::UniqueId;
 
 pub(crate) struct Inputs<'a> {
@@ -81,7 +81,7 @@ pub struct AudioOutputNodeHandle {
 }
 
 impl AudioOutputNodeHandle {
-    pub fn new(server: &ServerHandle, format: ChannelFormat) -> Result<AudioOutputNodeHandle> {
+    pub fn new(server: &Server, format: ChannelFormat) -> Result<AudioOutputNodeHandle> {
         let internal_handle = Arc::new(server.register_node(
             UniqueId::new(),
             server.allocate(AudioOutputNode::new(format)).into(),

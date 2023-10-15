@@ -1,7 +1,10 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt};
 use arrayvec::ArrayVec;
+
+use audio_synchronization::concurrent_slab::ExclusiveSlabRef;
 
 use crate::background_drop::BackgroundDrop;
 use crate::channel_format::ChannelFormat;
@@ -11,6 +14,18 @@ use crate::data_structures::Graph;
 use crate::data_structures::*;
 use crate::nodes::*;
 use crate::unique_id::UniqueId;
+
+const MAX_PENDING_COMMANDS: usize = 100000;
+
+/// The Option is always [Some], and exists so that we have something which we can clear.  Only currently unused slots
+/// in the queue are [None].
+type CommandQueue =
+    thingbuf::ThingBuf<Option<crate::command::Command>, crate::option_recycler::OptionRecycler>;
+
+/// Callback to get a block of audio from the server. Will write (not add) to the given slice.
+///
+/// At the moment, we assume everything is stereo. That won't always hold true, but we take one problem at a time.
+pub(crate) type ServerExecutionCallback = Box<dyn FnMut(&mut [f32]) + Send + 'static>;
 
 /// Services a server may offer to a consumer on the audio thread.
 pub(crate) struct AudioThreadServerServices {
@@ -93,8 +108,8 @@ pub(crate) enum ServerCommand {
     },
 }
 
-/// The implementation of a server, which is either executed inline or on an audio thread depending on user preference.
-pub(crate) struct ServerImpl {
+/// The synthesizing half of a server, which may be executing on an audio thread.
+pub(crate) struct ServerAt {
     nodes: HashMap<UniqueId, NodeContainer>,
     root_graph: BackgroundDrop<Graph>,
 
@@ -115,7 +130,18 @@ pub(crate) struct ServerImpl {
     pub(crate) memoized_descriptors: HashMap<UniqueId, Cow<'static, NodeDescriptor>>,
 }
 
-impl ServerImpl {
+/// A handle to a server, wrapped by [super::Server] when exposed to the user.
+#[derive(Clone)]
+pub(crate) struct ServerHandle {
+    inner: Arc<ServerHandleInner>,
+}
+
+struct ServerHandleInner {
+    command_queue: Arc<CommandQueue>,
+    pool: ObjectPool,
+}
+
+impl ServerAt {
     pub fn new(output_format: ChannelFormat, opts: ServerOptions) -> Self {
         let mut ret = Self {
             nodes: HashMap::with_capacity(opts.expected_nodes),
@@ -267,6 +293,55 @@ impl ServerImpl {
     }
 }
 
+impl ServerHandle {
+    /// Build a handle to a server and, additionally, a callback which will fill an output slice.
+    pub(crate) fn new(
+        output_format: ChannelFormat,
+        opts: ServerOptions,
+    ) -> (Self, ServerExecutionCallback) {
+        let mut server = ServerAt::new(output_format, opts);
+        let command_queue = Arc::new(CommandQueue::with_recycle(
+            MAX_PENDING_COMMANDS,
+            crate::option_recycler::OptionRecycler,
+        ));
+
+        let callback = {
+            let command_queue = command_queue.clone();
+            Box::new(move |dest: &mut [f32]| {
+                while let Some(cmd) = command_queue.pop() {
+                    server.dispatch_command(cmd.unwrap());
+                }
+                server.fill_slice(dest);
+            })
+        };
+
+        let inner = ServerHandleInner {
+            command_queue,
+            pool: crate::data_structures::object_pool::ObjectPool::new(),
+        };
+
+        (
+            ServerHandle {
+                inner: Arc::new(inner),
+            },
+            callback,
+        )
+    }
+
+    pub(crate) fn send_command(&self, mut command: Command) {
+        while let Err(e) = self.inner.command_queue.push(Some(command)) {
+            command = e.into_inner().unwrap();
+        }
+    }
+
+    pub(crate) fn allocate<T: std::any::Any + Send + Sync>(
+        &self,
+        new_val: T,
+    ) -> ExclusiveSlabRef<T> {
+        self.inner.pool.allocate(new_val)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,7 +362,7 @@ mod tests {
 
         let mut got = vec![0.0f32; SAMPLES * 2];
 
-        let mut implementation = ServerImpl::new(ChannelFormat::Stereo, Default::default());
+        let mut implementation = ServerAt::new(ChannelFormat::Stereo, Default::default());
         let pool = crate::data_structures::ObjectPool::new();
         let node = pool.allocate(crate::nodes::trig::TrigWaveformNode::new_sin(FREQ));
         let output = pool.allocate(crate::nodes::audio_output::AudioOutputNode::new(
@@ -334,7 +409,7 @@ mod tests {
         // Don't use zero. We want to know it executed.
         let mut got = vec![1.0f32; SAMPLES * 2];
 
-        let mut implementation = ServerImpl::new(ChannelFormat::Stereo, Default::default());
+        let mut implementation = ServerAt::new(ChannelFormat::Stereo, Default::default());
         let pool = crate::data_structures::ObjectPool::new();
         let output = pool.allocate(crate::nodes::audio_output::AudioOutputNode::new(
             ChannelFormat::Stereo,

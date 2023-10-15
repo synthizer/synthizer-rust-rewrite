@@ -6,7 +6,7 @@ use synthizer as syz;
 fn main() -> syz::Result<()> {
     env_logger::init();
 
-    let server = syz::ServerHandle::new_default_device()?;
+    let server = syz::Server::new_default_device()?;
     let audio_output = syz::nodes::AudioOutputNodeHandle::new(&server, syz::ChannelFormat::Stereo)?;
 
     let sin = syz::nodes::TrigWaveformNodeHandle::new_sin(&server, 300.0)?;

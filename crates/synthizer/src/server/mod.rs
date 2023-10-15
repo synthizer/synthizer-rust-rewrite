@@ -1,10 +1,11 @@
 // We want to reserve this file specifically for the minimal public API of servers, so we put the shared implementation
 // in impl and then put the handles here.
-mod audio_output_server;
+mod audio_output_thread;
 pub(crate) mod implementation;
 
-pub(crate) use audio_output_server::*;
+pub(crate) use audio_output_thread::*;
 pub(crate) use implementation::ServerCommand;
+use implementation::*;
 
 use std::sync::{Arc, Mutex};
 
@@ -18,39 +19,25 @@ use crate::nodes::traits::{NodeAt, NodeHandle, NodeHandleSealed};
 use crate::nodes::*;
 use crate::unique_id::UniqueId;
 
-#[derive(derive_more::IsVariant)]
-enum ServerKind {
-    AudioOutput(AudioOutputServer),
-}
-
-impl ServerKind {
-    fn send_command(&self, command: Command) {
-        match self {
-            ServerKind::AudioOutput(ref s) => s.send_command(command),
-        }
-    }
-
-    fn allocate<T: std::any::Any + Send + Sync>(&self, new_val: T) -> ExclusiveSlabRef<T> {
-        match self {
-            ServerKind::AudioOutput(x) => x.allocate(new_val),
-        }
-    }
-}
-
-/// Part of a server which is behind Arc and which implements ServerChannel.
+/// Part of a server which is behind Arc.
+///
+/// Lets the user clone without cloning a ton of arcs.
 struct ServerInternal {
-    kind: ServerKind,
+    server: ServerHandle,
+
+    /// If there is an audio thread, this is it.
+    audio_thread: Option<AudioThread>,
 
     /// The server's graph.
     graph: Arc<Mutex<Graph>>,
 
     /// Id of the root (server) graph.
     ///
-    /// For now, we only have one graph so this is just created in `fn new` so that there's somehting to put in handles.
+    /// For now, we only have one graph so this is just created in `fn new` so that there's something to put in handles.
     root_graph_id: UniqueId,
 }
 
-/// A handle representing an audio device.
+/// Represents an audio device.
 ///
 /// All objects in Synthizer are associated with a server, and cross-server interactions are not supported.  Audio is
 /// playing as long as the server is alive.
@@ -58,16 +45,21 @@ struct ServerInternal {
 /// Contrary to the name, this does not involve networking.  It is borrowed terminology from other audio APIs
 /// (supercollider, pyo, etc).
 #[derive(Clone)]
-pub struct ServerHandle {
+pub struct Server {
     internal: Arc<ServerInternal>,
 }
 
 impl ServerInternal {
     pub fn new_default_device() -> Result<Self> {
-        let backend = AudioOutputServer::new_with_default_device()?;
-        let kind = ServerKind::AudioOutput(backend);
+        let (server, callback) = ServerHandle::new(
+            crate::channel_format::ChannelFormat::Stereo,
+            Default::default(),
+        );
+        let audio_thread = AudioThread::new_with_default_device(callback)?;
+
         let h = ServerInternal {
-            kind,
+            server,
+            audio_thread: Some(audio_thread),
             graph: Arc::new(Mutex::new(Graph::new())),
             root_graph_id: UniqueId::new(),
         };
@@ -76,11 +68,11 @@ impl ServerInternal {
     }
 
     fn allocate<T: std::any::Any + Send + Sync>(&self, new_val: T) -> ExclusiveSlabRef<T> {
-        self.kind.allocate(new_val)
+        self.server.allocate(new_val)
     }
 
     fn send_command(&self, command: Command) {
-        self.kind.send_command(command);
+        self.server.send_command(command);
     }
 
     /// Mutate the graph behind the graph's mutex, then make sure the server picks that change up.
@@ -140,19 +132,19 @@ impl ServerChannel for ServerInternal {
             g.deregister_node(id);
         });
 
-        self.kind.send_command(Command::new(
+        self.server.send_command(Command::new(
             &Port::for_server(),
             ServerCommand::DeregisterObject { id },
         ));
     }
 
     fn send_command(&self, command: Command) -> Result<()> {
-        self.kind.send_command(command);
+        self.server.send_command(command);
         Ok(())
     }
 }
 
-impl ServerHandle {
+impl Server {
     pub fn new_default_device() -> Result<Self> {
         Ok(Self {
             internal: Arc::new(ServerInternal::new_default_device()?),
@@ -180,6 +172,7 @@ impl ServerHandle {
             graph_id,
         })
     }
+
     /// Connect the nth output of a given node to the nth input of another given node.
     ///
     /// For now both values must be in range and are unvalidated; validation at the type level is pending.

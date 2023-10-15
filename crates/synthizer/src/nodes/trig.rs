@@ -8,7 +8,7 @@ use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
 use crate::properties::*;
-use crate::server::ServerHandle;
+use crate::server::Server;
 use crate::unique_id::UniqueId;
 
 /// Kinds of trigonometric waveform to use with [TrigWaveform].
@@ -142,7 +142,7 @@ impl PropertyCommandReceiver for PropertySlots {
 }
 
 impl TrigWaveformNodeHandle {
-    pub fn new_sin(server: &ServerHandle, frequency: f64) -> Result<TrigWaveformNodeHandle> {
+    pub fn new_sin(server: &Server, frequency: f64) -> Result<TrigWaveformNodeHandle> {
         let internal_handle = Arc::new(server.register_node(
             UniqueId::new(),
             server.allocate(TrigWaveformNode::new_sin(frequency)).into(),
