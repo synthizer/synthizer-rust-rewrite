@@ -10,6 +10,7 @@ audio_synchronization = { path = "crates/audio_synchronization" }
 cc = "1.0.79"
 criterion = "0.4.0"
 crossbeam = "0.8.2"
+darling = "0.20.3"
 derivative = "2.2.0"
 derive_more = "0.99.17"
 enum_dispatch = "0.3.12"
