@@ -8,6 +8,7 @@ arrayvec = "0.7.2"
 atomic_refcell = "0.1.9"
 audio_synchronization = { path = "crates/audio_synchronization" }
 cc = "1.0.79"
+convert_case = "0.6.0"
 criterion = "0.4.0"
 crossbeam = "0.8.2"
 darling = "0.20.3"
@@ -39,6 +40,7 @@ smallvec = "1.10.0"
 supermatch = { path = "crates/supermatch" }
 supermatch_macro = { path = "crates/supermatch_macro" }
 syn = { version = "2", features = ["full", "fold"] }
+synthizer_macros_internal = { path = "crates/synthizer_macros_internal" }
 synthizer_miniaudio = { path = "./crates/miniaudio" }
 synthizer_protos = { path = "crates/protos" }
 thingbuf = { version = "0.1.4", features = ["static"] }

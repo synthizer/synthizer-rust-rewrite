@@ -21,17 +21,13 @@ pub enum TrigWaveformKind {
 
 pub(crate) struct TrigWaveformNodeAt {
     evaluator: TrigWaveformEvaluator,
-    props: PropertySlots,
+    props: TrigWaveformSlots,
 }
 
-mod sealed_props {
-    use super::*;
-
-    pub struct PropertySlots {
-        pub(super) frequency: Slot<F64X1>,
-    }
+#[synthizer_macros_internal::property_slots]
+pub struct TrigWaveformSlots {
+    pub(super) frequency: Slot<F64X1>,
 }
-use sealed_props::*;
 
 pub(crate) struct TrigWaveformOutputs<'a> {
     output: OutputDestination<'a>,
@@ -66,7 +62,7 @@ impl HasNodeDescriptor for TrigWaveformNodeAt {
 }
 
 impl NodeAt for TrigWaveformNodeAt {
-    type Properties = PropertySlots;
+    type Properties = TrigWaveformSlots;
 
     fn get_property_struct(&mut self) -> &mut Self::Properties {
         &mut self.props
@@ -95,7 +91,7 @@ impl TrigWaveformNodeAt {
     pub(crate) fn new_sin(freq: f64) -> Self {
         TrigWaveformNodeAt {
             evaluator: TrigWaveformEvaluator::new_sin(freq, 0.0),
-            props: PropertySlots {
+            props: TrigWaveformSlots {
                 frequency: Slot::new(freq),
             },
         }
@@ -106,39 +102,6 @@ impl TrigWaveformNodeAt {
 #[derive(Clone)]
 pub struct TrigWaveformNode {
     internal_handle: Arc<InternalObjectHandle>,
-}
-
-/// Properties for a [TrigWaveformNodeHandle].
-pub struct TrigWaveformProps<'a> {
-    frequency: Property<'a, F64X1>,
-}
-
-impl<'a> TrigWaveformProps<'a> {
-    fn new(sender: &'a dyn CommandSender, port: Port) -> TrigWaveformProps<'a> {
-        TrigWaveformProps {
-            frequency: Property::new(sender, port, 0),
-        }
-    }
-
-    pub fn frequency(&self) -> &Property<'a, F64X1> {
-        &self.frequency
-    }
-}
-
-impl PropertyCommandReceiver for PropertySlots {
-    fn set_property(&mut self, index: usize, value: PropertyValue) {
-        assert_eq!(index, 0);
-        self.frequency
-            .set_from_property_value(value, ChangeState::Other);
-    }
-
-    fn tick_first(&mut self) {
-        self.frequency.mark_first_tick();
-    }
-
-    fn tick_ended(&mut self) {
-        self.frequency.mark_unchanged();
-    }
 }
 
 impl TrigWaveformNode {

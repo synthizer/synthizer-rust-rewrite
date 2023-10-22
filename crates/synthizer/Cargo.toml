@@ -24,6 +24,7 @@ sharded-slab.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 supermatch.workspace = true
+synthizer_macros_internal.workspace = true
 synthizer_miniaudio.workspace = true
 thingbuf.workspace = true
 
