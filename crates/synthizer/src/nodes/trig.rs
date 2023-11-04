@@ -29,19 +29,9 @@ pub struct TrigWaveformSlots {
     pub(super) frequency: Slot<F64X1>,
 }
 
+#[derive(synthizer_macros_internal::ToNamedOutputs)]
 pub(crate) struct TrigWaveformOutputs<'a> {
     output: OutputDestination<'a>,
-}
-
-// TODO: macro this.
-impl<'a> ToNamedOutputs<'a> for TrigWaveformOutputs<'a> {
-    fn to_named_outputs<'b>(
-        outputs: &'b mut crate::nodes::OutputsByIndex<'a>,
-    ) -> TrigWaveformOutputs<'a> {
-        TrigWaveformOutputs {
-            output: outputs.pop_at(0).unwrap(),
-        }
-    }
 }
 
 impl HasNodeDescriptor for TrigWaveformNodeAt {

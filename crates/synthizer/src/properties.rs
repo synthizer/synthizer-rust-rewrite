@@ -199,11 +199,9 @@ impl<V: PropertyKind> Slot<V> {
 
     /// Try to set this property from a [PropertyValue] and panic if this was not possible.
     pub(crate) fn set_from_property_value(&mut self, val: PropertyValue, why: ChangeState) {
-        let Ok(val): Result<V,_> = val
-            .try_into()
-            else {
-                panic!("Internal error: a property value of the wrong type reached a property slot");
-            };
+        let Ok(val): Result<V, _> = val.try_into() else {
+            panic!("Internal error: a property value of the wrong type reached a property slot");
+        };
 
         self.data = val.extract();
         self.change_state = why;

@@ -8,6 +8,7 @@
 //!
 //! This crate contains dummy forwarders at the root to let us split it into files. See the individual modules for docs
 //! on the macro. Procmacro limitations currently require that they be at the root.
+mod derive_named_inputs_outputs;
 mod property_slots_impl;
 mod utils;
 
@@ -18,4 +19,16 @@ pub fn property_slots(
     body: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     property_slots_impl::property_slots_impl(attrs.into(), body.into()).into()
+}
+
+#[proc_macro_derive(ToNamedInputs)]
+#[proc_macro_error::proc_macro_error]
+pub fn to_named_inputs(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    crate::derive_named_inputs_outputs::derive_to_named_inputs_impl(tokens)
+}
+
+#[proc_macro_derive(ToNamedOutputs)]
+#[proc_macro_error::proc_macro_error]
+pub fn to_named_outputs(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    crate::derive_named_inputs_outputs::derive_to_named_outputs_impl(tokens)
 }

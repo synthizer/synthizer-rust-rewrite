@@ -11,14 +11,9 @@ use crate::internal_object_handle::InternalObjectHandle;
 use crate::server::Server;
 use crate::unique_id::UniqueId;
 
+#[derive(synthizer_macros_internal::ToNamedInputs)]
 pub(crate) struct Inputs<'a> {
     input: &'a [AllocatedBlock],
-}
-
-impl<'a> ToNamedInputs<'a> for Inputs<'a> {
-    fn to_named_inputs<'b>(inputs: &'b mut InputsByIndex<'a>) -> Self {
-        Inputs { input: inputs[0] }
-    }
 }
 
 pub(crate) struct AudioOutputNodeAt {
