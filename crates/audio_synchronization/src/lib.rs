@@ -13,5 +13,5 @@ pub mod fixed_size_pool;
 pub mod generational_atomic;
 pub mod optional_atomic_u32;
 pub mod prepend_only_list;
-pub mod spsc_queue;
+pub mod spsc_ring;
 mod sync;

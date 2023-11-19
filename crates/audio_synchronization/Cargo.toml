@@ -3,13 +3,16 @@ name = "audio_synchronization"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+arc-swap.workspace = true
+bytemuck.workspace = true
+crossbeam.workspace = true
+reciprocal.workspace = true
+
 [dev-dependencies]
 eye_dropper.workspace = true
 pretty_assertions.workspace = true
 proptest.workspace = true
-
-[dependencies]
-arc-swap.workspace = true
 
 [target.'cfg(loom)'.dependencies]
 loom.workspace = true
