@@ -12,6 +12,8 @@ arc-swap.workspace = true
 arrayvec.workspace = true
 atomic_refcell.workspace = true
 audio_synchronization.workspace = true
+crossbeam.workspace = true
+dashmap.workspace = true
 derivative.workspace = true
 derive_more.workspace = true
 enum_dispatch.workspace = true
@@ -33,7 +35,6 @@ criterion.workspace = true
 env_logger.workspace = true
 petgraph.workspace = true
 proptest.workspace = true
-
 
 [build-dependencies]
 primes.workspace = true
