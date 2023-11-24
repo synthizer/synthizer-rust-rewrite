@@ -296,6 +296,21 @@ impl MpscCounter {
 unsafe impl Send for MpscCounter {}
 unsafe impl Sync for MpscCounter {}
 
+impl Drop for MpscCounter {
+    fn drop(&mut self) {
+        let state = State::unpack(*self.state.get_mut());
+        if state.thread_initialized {
+            unsafe {
+                self.thread_handle
+                    .get()
+                    .as_mut()
+                    .unwrap_unchecked()
+                    .assume_init_drop();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
