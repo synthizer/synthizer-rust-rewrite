@@ -26,6 +26,7 @@ pub mod properties;
 pub mod sample_sources;
 pub(crate) mod server;
 mod unique_id;
+mod worker_pool;
 
 pub use channel_format::*;
 pub use config::SR;
