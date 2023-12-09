@@ -20,6 +20,9 @@ pub enum SeekSupport {
     /// This happens primarily with lossy audio formats which cannot seek directly to specific samples, and is generally
     /// rare in practice.  Most lossy formats are lossy only in the frequency domain, and do allow seeks to a specific
     /// timestamp.
+    ///
+    /// Such sources can loop, but cannot loop reliably.  So, for example, trying to construct a musical instrument
+    /// probably won't work.
     Imprecise,
 
     /// This source can seek to a precise sample.
@@ -32,7 +35,7 @@ pub enum SeekSupport {
 /// based on resources it might use.  See the [SampleSource] trait for more information on how reading occurs.
 ///
 /// Specifying a raw value in seconds is not supported because the in-practice latency varies per machine.  Synthizer
-/// will schedule source execution on various thread pools as appropriate, prioritizing sources by their latency and how
+/// will schedule source execution on various background threads as appropriate, prioritizing sources by their latency and how
 /// soon more data from them will be needed.
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub enum Latency {
@@ -219,49 +222,3 @@ trait SampleSource: 'static + Send {
     /// - Otherwise, this function may be called with any value `0..descriptor.duration_in_samples`.
     fn seek(&mut self, destination: u64) -> Result<(), SampleSourceError>;
 }
-
-mod sealed {
-    use super::*;
-
-    /// A sealed trait representing things which may be turned into sources.
-    ///
-    /// For example, a `Vec<f32>` or a buffer of audio data which is decoded in memory can produce low-cost sources
-    /// infallibly, and files may be converted to sources fallibly by just wrapping the file in a decoder.
-    ///
-    /// The point of this trait is that `From` and `Into` are insufficient to tie a server handle to a source, but we need
-    /// that in order to tie thread pools together.  Basically, methods taking `impl ToSampleSourceHandle` can take "what
-    /// you'd expect", e.g. [std::fs::File], and do something sensible.
-    pub trait IntoSampleSourceHandle {
-        type Error: std::error::Error;
-
-        fn to_handle(
-            self,
-            server: &crate::server::Server,
-        ) -> Result<SampleSourceHandle, Self::Error>;
-    }
-
-    /// A source which has been bound to a server and is ready to run.
-    ///
-    /// Also sealed and for internal use, but unfortunately must be public because it is in a sealed trait.
-    pub struct SampleSourceHandle {
-        source: Box<dyn SampleSource>,
-        descriptor: Descriptor,
-    }
-
-    impl<T: SampleSource> IntoSampleSourceHandle for T {
-        type Error = std::convert::Infallible;
-
-        fn to_handle(
-            self,
-            _server: &crate::server::Server,
-        ) -> Result<SampleSourceHandle, Self::Error> {
-            let descriptor = self.get_descriptor();
-            Ok(SampleSourceHandle {
-                source: Box::new(self),
-                descriptor,
-            })
-        }
-    }
-}
-
-pub(crate) use sealed::*;
