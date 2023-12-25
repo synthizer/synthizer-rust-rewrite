@@ -1,7 +1,10 @@
 #![allow(dead_code, unused_imports)]
 
 #[macro_use]
+mod builder_helpers;
+#[macro_use]
 mod variant;
+
 
 mod background_drop;
 #[doc(hidden)]

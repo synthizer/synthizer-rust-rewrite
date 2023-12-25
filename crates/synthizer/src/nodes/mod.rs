@@ -1,10 +1,12 @@
 pub mod audio_output;
 pub mod descriptor;
+pub mod sample_source_player;
 pub mod traits;
 pub mod trig;
 
 pub use audio_output::AudioOutputNode;
 pub use descriptor::*;
+pub use sample_source_player::*;
 pub use traits::*;
 pub use trig::TrigWaveformNode;
 
@@ -41,6 +43,7 @@ pub(crate) type InputsByIndex<'a> = arrayvec::ArrayVec<&'a [AllocatedBlock], MAX
 pub(crate) enum ConcreteNodeHandle {
     TrigWaveform(ExclusiveSlabRef<trig::TrigWaveformNodeAt>),
     AudioOutput(ExclusiveSlabRef<audio_output::AudioOutputNodeAt>),
+    SampleSourcePlayer(ExclusiveSlabRef<SampleSourcePlayerNodeAt>),
 }
 
 impl std::fmt::Debug for ConcreteNodeHandle {
@@ -49,8 +52,9 @@ impl std::fmt::Debug for ConcreteNodeHandle {
             .field(
                 "pointing_at",
                 &match self {
-                    Self::AudioOutput(_) => "AudioOutput",
-                    Self::TrigWaveform(_) => "TrigWaveform",
+                    Self::AudioOutput(_) => "AudioOutputNode",
+                    Self::TrigWaveform(_) => "TrigWaveformNode",
+                    Self::SampleSourcePlayer(_) => "SampleSourcePlayerNode",
                 },
             )
             .finish()

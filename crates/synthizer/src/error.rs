@@ -1,9 +1,14 @@
 use synthizer_miniaudio::Error as MiniaudioError;
 
+use crate::sample_sources::SampleSourceError;
+
 #[derive(Debug, derive_more::Display)]
 enum ErrorPayload {
     #[display(fmt = "Audio backend error: {}", _0)]
     AudioBackend(MiniaudioError),
+
+    #[display(fmt = "Sample source error: {}", _0)]
+    SampleSource(SampleSourceError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -25,5 +30,6 @@ macro_rules! conv {
 }
 
 conv!(AudioBackend, MiniaudioError);
+conv!(SampleSource, SampleSourceError);
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

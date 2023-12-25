@@ -1,3 +1,10 @@
+pub(crate) mod executor;
+mod vec_source;
+
+pub use vec_source::*;
+
+use std::num::NonZeroU64;
+
 /// Kinds of seeking a source of samples may support.
 ///
 /// All internal Synthizer sources are Imprecise or better unless otherwise noted; `None` and `ToBeginning` only
@@ -23,9 +30,13 @@ pub enum SeekSupport {
     ///
     /// Such sources can loop, but cannot loop reliably.  So, for example, trying to construct a musical instrument
     /// probably won't work.
+    ///
+    /// It is required that imprecise sources are able to report their new position.
     Imprecise,
 
     /// This source can seek to a precise sample.
+    ///
+    /// `seek` should return the passed-in value.
     SampleAccurate,
 }
 
@@ -66,21 +77,26 @@ pub enum Latency {
 #[derive(Debug, Clone)]
 pub struct Descriptor {
     /// The sample rate.
-    sample_rate: u64,
+    pub(crate) sample_rate: NonZeroU64,
 
     /// If known, the total duration of this source in samples.
-    duration: Option<u64>,
+    ///
+    /// This must be set for sources which support seeking.
+    pub(crate) duration: Option<u64>,
 
     /// What kind of seeking does this source support?
-    seek_support: SeekSupport,
+    pub(crate) seek_support: SeekSupport,
 
     /// How latent is this source?
-    latency: Latency,
+    pub(crate) latency: Latency,
 
-    channel_format: crate::channel_format::ChannelFormat,
+    pub(crate) channel_format: crate::channel_format::ChannelFormat,
 }
 
 /// Kinds of error a source might experience.
+///
+/// This module deals in an alternative error type because it is critical for some source implementations that they be
+/// able to give errors back on the audio thread.
 ///
 /// Synthizer has two kinds of errors [SampleSource]s may expose.
 ///
@@ -182,6 +198,12 @@ impl std::error::Error for SampleSourceError {
     }
 }
 
+impl From<&'static str> for SampleSourceError {
+    fn from(value: &'static str) -> Self {
+        Self::new_stack(value, None)
+    }
+}
+
 /// Trait representing something which may yield samples.
 ///
 /// This is how audio enters Synthizer.  Helper methods in this module can make sources from various kinds of things.
@@ -189,7 +211,7 @@ impl std::error::Error for SampleSourceError {
 ///
 /// Any method on this trait may be called from an audio thread if and only if the source claims that it only uses the
 /// CPU.  As reiterated a few times in this documentation, be 100% sure capabilities are accurate.
-trait SampleSource: 'static + Send {
+pub trait SampleSource: 'static + Send + Sync {
     /// Get the descriptor describing this source.
     ///
     /// Called exactly once only before any source processing takes place.  This is not fallible and should not block;
@@ -203,6 +225,8 @@ trait SampleSource: 'static + Send {
     ///
     /// As with [std::io], returning `Ok(0)` means end.  Synthizer will never again call this function without first
     /// seeking once it signals the end, and will not seek if the source does not claim seeking is possible.
+    ///
+    /// Should return the number of *frames* written.
     fn read_samples(&mut self, destination: &mut [f32]) -> Result<u64, SampleSourceError>;
 
     /// Return true if this source can never again return samples, no matter what.
@@ -220,5 +244,8 @@ trait SampleSource: 'static + Send {
     /// - If no seek support is signalled, this function is never called.
     /// - If [SeekSupport::ToBeginning] is specified, this function will only be called with 0.
     /// - Otherwise, this function may be called with any value `0..descriptor.duration_in_samples`.
-    fn seek(&mut self, destination: u64) -> Result<(), SampleSourceError>;
+    ///
+    /// Should return the new position in frames; for sources supporting precise seeking this should always be the input
+    /// value.
+    fn seek(&mut self, position_in_frames: u64) -> Result<u64, SampleSourceError>;
 }
