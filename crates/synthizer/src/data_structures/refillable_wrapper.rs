@@ -100,13 +100,15 @@ impl<Buffer: RefillableWrapped> RefillableWrapper<Buffer> {
         self.end - self.start
     }
 
-    /// Return a slice which must be filled, should the buffer currently be unable to service a request of the specified
-    /// length, and record that a refill has begun.
+    /// Return a slice which must be filled, attempting to offer the ability to refill `wanted` or more items.
     ///
-    /// Returns `None` if the request may be serviced as things stand.  If this function returns `Some`, it must be
-    /// matched with a call to `refill_end` before any more requests may be serviced.  The returned slice may be longer
-    /// than `wanted`, but it is okay not to fill it up completely.  `wanted`, primarily, is an internal hint as to when
-    /// to rotate data to the front.
+    /// Returns `None`  when the buffer is completely full.  When there is space in the buffer, returns a slice
+    /// representing that space, of possibly more than `wanted` items (it is safe to call `refill_end` with less).  If
+    /// some value `x` has just been consumed and that value is passed to this function, the slice will be at least `x`
+    /// items long (so, for example, producing and consuming fixed blocks with a buffer which is a multiple of the block
+    /// size works out).
+    ///
+    /// The returned slice is not zeroed, and so shouldn't be read or added to, only written.
     ///
     /// # Panics
     ///
@@ -131,6 +133,10 @@ impl<Buffer: RefillableWrapped> RefillableWrapper<Buffer> {
             self.buffer.copy_to_beginning(self.start..self.end);
             self.end -= self.start;
             self.start = 0;
+        } else if self.start == self.end {
+            // Maybe the buffer is empty. If so, it's a waste to not just write from the beginning.
+            self.start = 0;
+            self.end = 0;
         }
 
         let len = self.buffer.len() - self.end;
@@ -152,8 +158,7 @@ impl<Buffer: RefillableWrapped> RefillableWrapper<Buffer> {
     /// This should only be called if `refill_start` returns `Some(slice)`, the slice should be filled at least for the
     /// first `did` items, and `did <= slice.len()`.
     ///
-    /// If a refill is not complete, that is `did != slice.len()`, then consuming will not return the full amount of
-    /// data requested in the call to `refill_start`.
+    /// The next consumption will return at least `did` items.
     ///
     /// # panics
     ///
@@ -174,7 +179,7 @@ impl<Buffer: RefillableWrapped> RefillableWrapper<Buffer> {
 
     ///  Return all the data in the buffer.
     ///
-    /// `consume_end` must afterwords be called with a value less than the length of the returned slice.
+    /// `consume_end` must afterwords be called with a value no more than the length of the returned slice.
     ///
     /// The returned slice is all valid data currently in the buffer, and so may be much larger than the last refill.
     ///
@@ -236,6 +241,16 @@ impl<Buffer: RefillableWrapped> RefillableWrapper<Buffer> {
     pub(crate) fn get_buffer_mut(&mut self) -> &mut Buffer {
         self.assert_no_refill_consume();
         &mut self.buffer
+    }
+
+    /// Reset this buffer so that it contains no data and no operations are in progress.
+    ///
+    /// The underlying storage is not zeroed or anything along those lines.
+    pub(crate) fn reset(&mut self) {
+        self.start = 0;
+        self.end = 0;
+        self.pending_consume = None;
+        self.pending_refill = None;
     }
 }
 
