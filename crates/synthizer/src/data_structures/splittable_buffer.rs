@@ -15,87 +15,57 @@ type SplitSlices<Slice> = arrayvec::ArrayVec<Slice, MAX_CHANNELS>;
 /// It may be indexed as if it were a vec as well, including slicing.  This enables using the buffer contiguously, e.g.
 /// for already interleaved audio data.
 ///
-/// calling anything but `reserve` and `push` is realtime-safe, as long as mutating `T` is realtime-safe.  Dropping the
-/// buffer is *not* realtime-safe; if this type must exist and drop on the audio thread, it must be deferred via
-/// [crate::background_drop] either directly or (as is the usual case) indirectly as part of something else being
-/// dropped.  If this is part of a node, this is handled; deregistration of nodes already defers dropping of the entire
-/// node.
+/// This is a realtime safe type, save for methods which grow. Dropping it is *not* realtime-safe; if this type must
+/// exist and drop on the audio thread, it must be deferred via [crate::background_drop] either directly or (as is the
+/// usual case) indirectly as part of something else being dropped.  If this is part of a node, this is handled;
+/// deregistration of nodes already defers dropping of the entire node.
 pub(crate) struct SplittableBuffer<T> {
     buffer: Vec<T>,
     channels: NonZeroUsize,
 }
 
 impl<T> SplittableBuffer<T> {
-    /// Create an empty buffer which has not allocated yet.
-    ///
-    /// # panics
-    ///
-    /// Panics if the input channel counter is more than `MAX_CHANNELS`.  Since this is internal, we assume that's a
-    /// logic error.
-    pub(crate) fn new(channels: NonZeroUsize) -> Self {
-        assert!(channels.get() <= MAX_CHANNELS);
+    pub(crate) fn new(channels: NonZeroUsize, capacity_in_frames: usize) -> Self
+    where
+        T: Default + Clone,
+    {
+        Self::new_with_default(channels, capacity_in_frames, Default::default())
+    }
 
-        Self {
-            buffer: vec![],
+    pub(crate) fn new_with_default(
+        channels: NonZeroUsize,
+        capacity_in_frames: usize,
+        default_val: T,
+    ) -> Self
+    where
+        T: Clone,
+    {
+        Self::new_with(channels, capacity_in_frames, |_, _| default_val.clone())
+    }
+
+    /// Create a buffer using a closure which takes the channel and index of the item to insert as `(channel, offset)`.
+    ///
+    /// This closure will be called in the order items are inserted, which means that `channel` varies slowest.
+    pub(crate) fn new_with(
+        channels: NonZeroUsize,
+        capacity_in_frames: usize,
+        mut closure: impl FnMut(usize, usize) -> T,
+    ) -> Self {
+        let mut ret = Self {
             channels,
-        }
-    }
+            buffer: vec![],
+        };
 
-    pub(crate) fn with_capacity(channels: NonZeroUsize, capacity_in_frames: usize) -> Self {
-        let mut ret = Self::new(channels);
-        ret.reserve(capacity_in_frames);
+        let underlying_cap = channels.get() * capacity_in_frames;
+        ret.buffer.reserve(underlying_cap);
+
+        for c in 0..channels.get() {
+            for i in 0..capacity_in_frames {
+                ret.buffer.push(closure(c, i));
+            }
+        }
+
         ret
-    }
-
-    /// Reserve space for up to `frames` in the buffer.
-    ///
-    /// That is, reserved space is `frames * channels`.
-    pub(crate) fn reserve(&mut self, frames: usize) {
-        self.buffer.reserve(frames * self.channels.get());
-    }
-
-    /// Fill the buffer with the specified item, up to the specified number of frames.
-    ///
-    /// Existing data is untouched.
-    fn extend(&mut self, total_frames: usize, item: T)
-    where
-        T: Clone,
-    {
-        self.reserve(total_frames);
-        self.buffer
-            .resize_with(total_frames * self.channels.get(), || item.clone());
-    }
-    /// Push an item to all channels.
-    pub(crate) fn push_broadcast(&mut self, item: T)
-    where
-        T: Clone,
-    {
-        for _ in 0..self.channels.get() {
-            self.buffer.push(item.clone());
-        }
-    }
-
-    /// Push a frame of data.  The frame is an array of any size, but must match the channel count specified at buffer
-    /// creation.  Allows giving direct ownership of items.
-    ///
-    /// # Panics
-    ///
-    /// If `N` isn't exactly one frame of data, panics.
-    pub fn push_array<const N: usize>(&mut self, items: [T; N]) {
-        assert_eq!(N, self.channels.get());
-        for x in items.into_iter() {
-            self.buffer.push(x);
-        }
-    }
-
-    /// Push a frame of default data.
-    pub fn push_default_frame(&mut self)
-    where
-        T: Default,
-    {
-        for _ in 0..self.channels.get() {
-            self.buffer.push(Default::default())
-        }
     }
 
     /// Get the length of this buffer in frames.
@@ -203,17 +173,13 @@ mod tests {
     }
 
     /// Create a SplittableBuffer filled as 0, 1, 2, 3, ... max - 1.
-    fn splitbuf(chans: usize, max: u64) -> SplittableBuffer<u64> {
-        let mut ret =
-            SplittableBuffer::with_capacity(NonZeroUsize::new(chans).unwrap(), max as usize);
-        // We don't really have a way to push one item at a time by design, but that's the easiest way to build this
-        // mock data.
-        assert_eq!(max % chans as u64, 0);
-        for i in 0..max {
-            ret.buffer.push(i);
-        }
+    fn splitbuf(chans: usize, max: usize) -> SplittableBuffer<u64> {
+        let frames = max / chans;
+        assert_eq!(chans * frames, max);
 
-        ret
+        SplittableBuffer::new_with(NonZeroUsize::new(chans).unwrap(), frames, |c, f| {
+            (c * frames + f) as u64
+        })
     }
 
     #[test]
@@ -238,36 +204,5 @@ mod tests {
         assert_eq!(split[0], &seq(0, 3));
         assert_eq!(split[1], &seq(3, 6));
         assert_eq!(split[2], &seq(6, 9));
-    }
-
-    #[test]
-    fn test_push_default() {
-        let mut buf = SplittableBuffer::<u64>::new(NonZeroUsize::new(3).unwrap());
-        buf.push_default_frame();
-        buf.push_default_frame();
-        assert_eq!(&buf.buffer, &vec![0; 6]);
-    }
-
-    #[test]
-    fn test_push_array() {
-        let mut buf = SplittableBuffer::<u64>::new(NonZeroUsize::new(3).unwrap());
-        buf.push_array([0, 1, 2]);
-        buf.push_array([3, 4, 5]);
-        assert_eq!(&buf.buffer, &seq(0, 6));
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_push_array_length_mismatch() {
-        let mut buf = SplittableBuffer::<u64>::new(NonZeroUsize::new(3).unwrap());
-        buf.push_array([0, 1]);
-    }
-
-    #[test]
-    fn test_push_broadcast() {
-        let mut buf = SplittableBuffer::<u64>::new(NonZeroUsize::new(3).unwrap());
-        buf.push_broadcast(0);
-        buf.push_broadcast(1);
-        assert_eq!(buf.buffer, vec![0, 0, 0, 1, 1, 1]);
     }
 }
