@@ -1,14 +1,17 @@
 use super::*;
 use crate::channel_format::ChannelFormat;
 
-/// Knows how to execute a source.
+/// Knows how to read from a source.
 ///
-/// The executing source may or may not be in the audio thread, but calling `read_samples` will always be
-/// audio-thread-safe.
+/// The source may or may not be in the audio thread, but calling `read_samples` will always be audio-thread-safe if the
+/// source is.
+///
+/// This tuype is what supports seeking and looping.  Resampling and where the source runs are built on top as other
+/// types.
 ///
 /// At the moment, we get off the ground by just always running in the audio thread. This is insufficient for the
 /// finished implementation, which will need to call this logic in a background thread and funnel the samples across.
-pub(crate) struct SampleSourceExecutor {
+pub(crate) struct SampleSourceReader {
     source: Box<dyn SampleSource>,
     descriptor: Descriptor,
 
@@ -26,7 +29,7 @@ enum SourceState {
     DoneForever,
 }
 
-impl SampleSourceExecutor {
+impl SampleSourceReader {
     pub(crate) fn new(source: Box<dyn SampleSource>) -> Result<Self, SampleSourceError> {
         let descriptor = source.get_descriptor();
 
@@ -43,7 +46,7 @@ impl SampleSourceExecutor {
 
     /// Write interleaved audio data to the given slice.
     ///
-    /// This function is called on the audio thread, and then un-interleaved into blocks by the nodes themselves.
+    /// This function maty be called on the audio thread.  Un-interleaving is handled elsewhere.
     ///
     /// Returns the number of *frames* written.
     pub fn read_samples(&mut self, destination: &mut [f32]) -> Result<u64, SampleSourceError> {
