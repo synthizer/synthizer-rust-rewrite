@@ -54,6 +54,17 @@ impl<T> SplittableBuffer<T> {
         self.buffer.reserve(frames * self.channels.get());
     }
 
+    /// Fill the buffer with the specified item, up to the specified number of frames.
+    ///
+    /// Existing data is untouched.
+    fn extend(&mut self, total_frames: usize, item: T)
+    where
+        T: Clone,
+    {
+        self.reserve(total_frames);
+        self.buffer
+            .resize_with(total_frames * self.channels.get(), || item.clone());
+    }
     /// Push an item to all channels.
     pub(crate) fn push_broadcast(&mut self, item: T)
     where
@@ -149,6 +160,35 @@ where
 {
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         self.buffer.index_mut(index)
+    }
+}
+
+impl<T: Copy + 'static> super::RefillableWrapped for SplittableBuffer<T> {
+    type Sliced<'a> = SplitSlices<&'a [T]>;
+    type SlicedMut<'a> = SplitSlices<&'a mut [T]>;
+
+    fn len(&self) -> usize {
+        self.len_frames()
+    }
+
+    fn slice(&self, range: std::ops::Range<usize>) -> Self::Sliced<'_> {
+        self.split()
+            .into_iter()
+            .map(|x| &x[range.clone()])
+            .collect()
+    }
+
+    fn slice_mut(&mut self, range: std::ops::Range<usize>) -> Self::SlicedMut<'_> {
+        self.split_mut()
+            .into_iter()
+            .map(|x| &mut x[range.clone()])
+            .collect()
+    }
+
+    fn copy_to_beginning(&mut self, range: std::ops::Range<usize>) {
+        for s in self.split_mut().into_iter() {
+            s.copy_within(range.clone(), 0);
+        }
     }
 }
 
