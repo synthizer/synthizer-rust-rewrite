@@ -1,4 +1,4 @@
-use rubato::{Resampler, SincFixedOut, SincInterpolationParameters};
+use rubato::{Resampler as RubatoResampler, SincFixedOut, SincInterpolationParameters};
 
 use crate::config::*;
 use crate::data_structures::{RefillableWrapper, SplittableBuffer};
@@ -20,7 +20,7 @@ use super::buffered::BufferedSourceReader;
 /// sentover a ringbuffer.  In future, if pitch bending is added, it is probable that this will be done generically and
 /// on the audio thread.  In that world, the case of non-looping sources can be handled by pumping it with zeros, since
 /// pitch bending zeros is still zeros.
-pub(crate) struct SampleSourceResampler {
+pub(crate) struct Resampler {
     reader: BufferedSourceReader,
 
     /// Rubato is not `Sync` (why?) so we must use a mutex to wrap it.
@@ -37,7 +37,7 @@ pub(crate) struct SampleSourceResampler {
     uninterleaved_buffer: SplittableBuffer<Vec<f32>>,
 }
 
-impl SampleSourceResampler {
+impl Resampler {
     /// Given a wrapped source, create a resampler which will resample to Synthizer's hardcoded sample rate.
     pub(crate) fn new(reader: BufferedSourceReader) -> Result<Self, SampleSourceError> {
         let src_sr = reader.descriptor().sample_rate.get();

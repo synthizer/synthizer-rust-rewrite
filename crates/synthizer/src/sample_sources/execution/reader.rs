@@ -12,7 +12,7 @@ use crate::sample_sources::*;
 ///
 /// At the moment, we get off the ground by just always running in the audio thread. This is insufficient for the
 /// finished implementation, which will need to call this logic in a background thread and funnel the samples across.
-pub(crate) struct SampleSourceReader {
+pub(crate) struct SourceReader {
     source: Box<dyn SampleSource>,
     descriptor: Descriptor,
 
@@ -30,7 +30,7 @@ enum SourceState {
     DoneForever,
 }
 
-impl SampleSourceReader {
+impl SourceReader {
     pub(crate) fn new(source: Box<dyn SampleSource>) -> Result<Self, SampleSourceError> {
         let descriptor = source.get_descriptor();
 

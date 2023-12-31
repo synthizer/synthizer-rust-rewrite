@@ -8,12 +8,12 @@ use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
 use crate::properties::*;
-use crate::sample_sources::{execution::SampleSourceDriver, SampleSource};
+use crate::sample_sources::{execution::Driver, SampleSource};
 use crate::server::Server;
 use crate::unique_id::UniqueId;
 
 pub(crate) struct SampleSourcePlayerNodeAt {
-    executor: SampleSourceDriver,
+    executor: Driver,
     props: (),
 }
 
@@ -99,7 +99,7 @@ impl NodeAt for SampleSourcePlayerNodeAt {
 }
 
 impl SampleSourcePlayerNodeAt {
-    fn new(executor: SampleSourceDriver) -> Self {
+    fn new(executor: Driver) -> Self {
         Self {
             executor,
             props: (),
@@ -116,7 +116,7 @@ pub struct SampleSourcePlayerNode {
 impl SampleSourcePlayerNode {
     pub fn new<S: SampleSource>(server: &Server, source: S) -> Result<Self> {
         let id = UniqueId::new();
-        let executor = SampleSourceDriver::new(source)?;
+        let executor = Driver::new(source)?;
 
         let at = SampleSourcePlayerNodeAt::new(executor);
 

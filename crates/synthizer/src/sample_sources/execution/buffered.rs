@@ -1,6 +1,6 @@
 use crate::data_structures::RefillableWrapper;
 
-use super::reader::SampleSourceReader;
+use super::reader::SourceReader;
 use crate::sample_sources::{Descriptor, SampleSourceError};
 
 /// Un-tunable size of a buffered source's buffer, in frames.
@@ -13,12 +13,12 @@ const BUFSIZE: usize = 8192;
 ///
 /// The buffer is of fixed size, see [BUFSIZE].
 pub(crate) struct BufferedSourceReader {
-    reader: SampleSourceReader,
+    reader: SourceReader,
     buffer: RefillableWrapper<Vec<f32>>,
 }
 
 impl BufferedSourceReader {
-    pub(crate) fn new(reader: SampleSourceReader) -> Self {
+    pub(crate) fn new(reader: SourceReader) -> Self {
         let desc = reader.descriptor();
         let chans = desc.channel_format.get_channel_count().get();
         let backing = vec![0.0f32; chans * BUFSIZE];
@@ -27,11 +27,11 @@ impl BufferedSourceReader {
         Self { reader, buffer }
     }
 
-    pub(crate) fn get_reader(&self) -> &SampleSourceReader {
+    pub(crate) fn get_reader(&self) -> &SourceReader {
         &self.reader
     }
 
-    pub(crate) fn get_reader_mut(&mut self) -> &mut SampleSourceReader {
+    pub(crate) fn get_reader_mut(&mut self) -> &mut SourceReader {
         &mut self.reader
     }
 

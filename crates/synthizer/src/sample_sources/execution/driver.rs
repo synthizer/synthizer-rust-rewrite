@@ -4,27 +4,27 @@ use crate::config::*;
 use crate::data_structures::SplittableBuffer;
 
 use super::buffered::BufferedSourceReader;
-use super::reader::SampleSourceReader;
-use super::resampler::SampleSourceResampler;
+use super::reader::SourceReader;
+use super::resampler::Resampler;
 use crate::sample_sources::{SampleSource, SampleSourceError};
 
 /// Drive a source of samples.
 ///
 /// This type handles things like optional resampling.
-pub(crate) struct SampleSourceDriver {
+pub(crate) struct Driver {
     kind: SampleSourceDriverKind,
 }
 
 #[allow(clippy::large_enum_variant)]
 enum SampleSourceDriverKind {
     Buffered(BufferedSourceReader),
-    Resampled(SampleSourceResampler),
+    Resampled(Resampler),
 }
 
-impl SampleSourceDriver {
+impl Driver {
     pub(crate) fn new<S: SampleSource>(source: S) -> Result<Self, SampleSourceError> {
         // There is always a reader.
-        let reader = SampleSourceReader::new(Box::new(source))?;
+        let reader = SourceReader::new(Box::new(source))?;
 
         // There is also always a buffer.
         let buffered = BufferedSourceReader::new(reader);
@@ -35,7 +35,7 @@ impl SampleSourceDriver {
         let kind = if src_sr == crate::config::SR as u64 {
             SampleSourceDriverKind::Buffered(buffered)
         } else {
-            let resampled = SampleSourceResampler::new(buffered)?;
+            let resampled = Resampler::new(buffered)?;
             SampleSourceDriverKind::Resampled(resampled)
         };
 
