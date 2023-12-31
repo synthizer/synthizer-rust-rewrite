@@ -186,7 +186,7 @@ impl<Buffer: RefillableWrapped> RefillableWrapper<Buffer> {
     /// # Panics
     ///
     /// Panics if a refill operation is in progress.
-    fn consume_start(&mut self) -> Buffer::Sliced<'_> {
+    pub(crate) fn consume_start(&mut self) -> Buffer::Sliced<'_> {
         if self.pending_refill.is_some() {
             panic!("It is not possible to consume while refilling");
         }
