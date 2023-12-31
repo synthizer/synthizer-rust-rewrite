@@ -8,7 +8,7 @@ use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
 use crate::properties::*;
-use crate::sample_sources::{SampleSource, SampleSourceDriver};
+use crate::sample_sources::{execution::SampleSourceDriver, SampleSource};
 use crate::server::Server;
 use crate::unique_id::UniqueId;
 

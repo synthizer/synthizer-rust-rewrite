@@ -1,5 +1,6 @@
-use super::*;
 use crate::channel_format::ChannelFormat;
+
+use crate::sample_sources::*;
 
 /// Knows how to read from a source.
 ///

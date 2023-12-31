@@ -6,7 +6,7 @@ use crate::data_structures::SplittableBuffer;
 use super::buffered::BufferedSourceReader;
 use super::reader::SampleSourceReader;
 use super::resampler::SampleSourceResampler;
-use super::{SampleSource, SampleSourceError};
+use crate::sample_sources::{SampleSource, SampleSourceError};
 
 /// Drive a source of samples.
 ///
@@ -99,7 +99,7 @@ impl SampleSourceDriver {
         }
     }
 
-    pub(crate) fn descriptor(&self) -> &super::Descriptor {
+    pub(crate) fn descriptor(&self) -> &crate::sample_sources::Descriptor {
         match &self.kind {
             SampleSourceDriverKind::Resampled(r) => r.descriptor(),
             SampleSourceDriverKind::Buffered(r) => r.descriptor(),

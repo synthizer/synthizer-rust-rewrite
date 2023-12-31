@@ -2,9 +2,9 @@ use rubato::{Resampler, SincFixedOut, SincInterpolationParameters};
 
 use crate::config::*;
 use crate::data_structures::{RefillableWrapper, SplittableBuffer};
+use crate::sample_sources::SampleSourceError;
 
 use super::buffered::BufferedSourceReader;
-use super::SampleSourceError;
 
 /// A resampler wrapper that knows how to pull data through a backing implementation, currently Rubato, and yield it as
 /// outputs.
@@ -160,7 +160,7 @@ impl SampleSourceResampler {
         Ok(())
     }
 
-    pub(crate) fn descriptor(&self) -> &super::Descriptor {
+    pub(crate) fn descriptor(&self) -> &crate::sample_sources::Descriptor {
         self.reader.descriptor()
     }
 }

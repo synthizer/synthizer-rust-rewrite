@@ -1,7 +1,7 @@
 use crate::data_structures::RefillableWrapper;
 
 use super::reader::SampleSourceReader;
-use super::{Descriptor, SampleSourceError};
+use crate::sample_sources::{Descriptor, SampleSourceError};
 
 /// Un-tunable size of a buffered source's buffer, in frames.
 const BUFSIZE: usize = 8192;

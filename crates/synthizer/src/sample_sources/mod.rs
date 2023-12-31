@@ -1,10 +1,6 @@
-mod buffered;
-pub(crate) mod driver;
-pub(crate) mod reader;
-mod resampler;
+pub(crate) mod execution;
 mod vec_source;
 
-pub(crate) use driver::*;
 pub use vec_source::*;
 
 use std::num::NonZeroU64;
