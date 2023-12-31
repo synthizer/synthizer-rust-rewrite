@@ -1,12 +1,15 @@
 use std::num::NonZeroUsize;
 
 use crate::config::*;
+
 /// Type representing some slices split from [SplittableBuffer]
 ///
 /// generic over the slice type, so this can work for both shared and mutable; `Slice` is `&[T]` or `&mut [T]`.
 type SplitSlices<Slice> = arrayvec::ArrayVec<Slice, MAX_CHANNELS>;
 
-/// A heap-allocated buffer which may be split into up to `MAX_CHANNELS` subslices.
+/// A buffer which may be split into up to `MAX_CHANNELS` subslices.
+///
+/// The `Storage` type is the backing storage, supplied by the user.
 ///
 /// This is useful because Rust makes splitting slices up tricky especially in a realtime context.  This buffer is
 /// always a multiple of the specified channel count at creation in length and calling `.split()` returns exactly
@@ -19,88 +22,67 @@ type SplitSlices<Slice> = arrayvec::ArrayVec<Slice, MAX_CHANNELS>;
 /// exist and drop on the audio thread, it must be deferred via [crate::background_drop] either directly or (as is the
 /// usual case) indirectly as part of something else being dropped.  If this is part of a node, this is handled;
 /// deregistration of nodes already defers dropping of the entire node.
-pub(crate) struct SplittableBuffer<T> {
-    buffer: Vec<T>,
+pub(crate) struct SplittableBuffer<Storage> {
+    storage: Storage,
     channels: NonZeroUsize,
 }
 
-impl<T> SplittableBuffer<T> {
-    pub(crate) fn new(channels: NonZeroUsize, capacity_in_frames: usize) -> Self
-    where
-        T: Default + Clone,
-    {
-        Self::new_with_default(channels, capacity_in_frames, Default::default())
-    }
+pub(crate) trait SplittableBufferStorage {
+    type ElementType;
 
-    pub(crate) fn new_with_default(
-        channels: NonZeroUsize,
-        capacity_in_frames: usize,
-        default_val: T,
-    ) -> Self
-    where
-        T: Clone,
-    {
-        Self::new_with(channels, capacity_in_frames, |_, _| default_val.clone())
-    }
+    fn len(&self) -> usize;
+    fn slice_all(&self) -> &[Self::ElementType];
+}
 
-    /// Create a buffer using a closure which takes the channel and index of the item to insert as `(channel, offset)`.
-    ///
-    /// This closure will be called in the order items are inserted, which means that `channel` varies slowest.
-    pub(crate) fn new_with(
-        channels: NonZeroUsize,
-        capacity_in_frames: usize,
-        mut closure: impl FnMut(usize, usize) -> T,
-    ) -> Self {
-        let mut ret = Self {
-            channels,
-            buffer: vec![],
-        };
+pub(crate) trait SplittableBufferStorageMut: SplittableBufferStorage {
+    fn slice_all_mut(&mut self) -> &mut [Self::ElementType];
+}
 
-        let underlying_cap = channels.get() * capacity_in_frames;
-        ret.buffer.reserve(underlying_cap);
-
-        for c in 0..channels.get() {
-            for i in 0..capacity_in_frames {
-                ret.buffer.push(closure(c, i));
-            }
-        }
-
-        ret
+impl<Storage: SplittableBufferStorage> SplittableBuffer<Storage>
+where
+    Storage: SplittableBufferStorage,
+{
+    pub(crate) fn new(storage: Storage, channels: NonZeroUsize) -> Self {
+        assert_eq!(storage.len() % channels.get(), 0);
+        Self { storage, channels }
     }
 
     /// Get the length of this buffer in frames.
     pub(crate) fn len_frames(&self) -> usize {
-        self.buffer.len() / self.channels.get()
+        self.storage.len() / self.channels.get()
     }
 
     /// Get the length of this buffer in items.
     pub(crate) fn len_items(&self) -> usize {
-        self.buffer.len()
+        self.storage.len()
     }
 
     /// Split this buffer into `channels` subslices.
-    pub(crate) fn split(&self) -> SplitSlices<&[T]> {
-        let mut out = SplitSlices::<&[T]>::new();
+    pub(crate) fn split(&self) -> SplitSlices<&[Storage::ElementType]> {
+        let mut out = SplitSlices::<&[Storage::ElementType]>::new();
 
         // This is the simpler case, where we can just directly push and return. Mutable slices are harder.
         let frames = self.len_frames();
 
         for i in 0..self.channels.get() {
-            out.push(&self.buffer[i * frames..(i + 1) * frames]);
+            out.push(&self.storage.slice_all()[i * frames..(i + 1) * frames]);
         }
 
         out
     }
 
     /// Split this buffer into `channels` mutable slices.
-    pub fn split_mut(&mut self) -> SplitSlices<&mut [T]> {
-        let mut out = SplitSlices::<&mut [T]>::new();
+    pub fn split_mut(&mut self) -> SplitSlices<&mut [Storage::ElementType]>
+    where
+        Storage: SplittableBufferStorageMut,
+    {
+        let mut out = SplitSlices::<&mut [Storage::ElementType]>::new();
 
         // The way this works is as follows.  Rust is happy to give us one giant slice and to also let us split that
         // slice in two, but will not allow us to mutably slice multiple times.  To make this work, slice once and then
         // repeatedly split off the front.
         let frames = self.len_frames();
-        let mut remaining = &mut self.buffer[..];
+        let mut remaining = self.storage.slice_all_mut();
 
         for _ in 0..self.channels.get() {
             let (front, rest) = remaining.split_at_mut(frames);
@@ -113,29 +95,33 @@ impl<T> SplittableBuffer<T> {
     }
 }
 
-impl<T, I> std::ops::Index<I> for SplittableBuffer<T>
+impl<Storage, I> std::ops::Index<I> for SplittableBuffer<Storage>
 where
-    Vec<T>: std::ops::Index<I>,
+    Storage: std::ops::Index<I>,
 {
-    type Output = <Vec<T> as std::ops::Index<I>>::Output;
+    type Output = Storage::Output;
 
     fn index(&self, index: I) -> &Self::Output {
-        self.buffer.index(index)
+        self.storage.index(index)
     }
 }
 
-impl<T, I> std::ops::IndexMut<I> for SplittableBuffer<T>
+impl<Storage, I> std::ops::IndexMut<I> for SplittableBuffer<Storage>
 where
-    Vec<T>: std::ops::IndexMut<I>,
+    Storage: std::ops::IndexMut<I>,
 {
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
-        self.buffer.index_mut(index)
+        self.storage.index_mut(index)
     }
 }
 
-impl<T: Copy + 'static> super::RefillableWrapped for SplittableBuffer<T> {
-    type Sliced<'a> = SplitSlices<&'a [T]>;
-    type SlicedMut<'a> = SplitSlices<&'a mut [T]>;
+impl<Storage> super::RefillableWrapped for SplittableBuffer<Storage>
+where
+    Storage: SplittableBufferStorage + SplittableBufferStorageMut + 'static,
+    Storage::ElementType: Copy + Default + 'static,
+{
+    type Sliced<'a> = SplitSlices<&'a [Storage::ElementType]>;
+    type SlicedMut<'a> = SplitSlices<&'a mut [Storage::ElementType]>;
 
     fn len(&self) -> usize {
         self.len_frames()
@@ -162,6 +148,54 @@ impl<T: Copy + 'static> super::RefillableWrapped for SplittableBuffer<T> {
     }
 }
 
+impl<T> SplittableBufferStorage for Vec<T> {
+    type ElementType = T;
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn slice_all(&self) -> &[Self::ElementType] {
+        &self[..]
+    }
+}
+
+impl<T> SplittableBufferStorageMut for Vec<T> {
+    fn slice_all_mut(&mut self) -> &mut [Self::ElementType] {
+        &mut self[..]
+    }
+}
+
+impl<'a, T> SplittableBufferStorage for &'a [T] {
+    type ElementType = T;
+
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    fn slice_all(&self) -> &[Self::ElementType] {
+        self
+    }
+}
+
+impl<'a, T> SplittableBufferStorage for &'a mut [T] {
+    type ElementType = T;
+
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    fn slice_all(&self) -> &[Self::ElementType] {
+        self
+    }
+}
+
+impl<'a, T> SplittableBufferStorageMut for &'a mut [T] {
+    fn slice_all_mut(&mut self) -> &mut [Self::ElementType] {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,13 +207,13 @@ mod tests {
     }
 
     /// Create a SplittableBuffer filled as 0, 1, 2, 3, ... max - 1.
-    fn splitbuf(chans: usize, max: usize) -> SplittableBuffer<u64> {
+    fn splitbuf(chans: usize, max: usize) -> SplittableBuffer<Vec<u64>> {
         let frames = max / chans;
         assert_eq!(chans * frames, max);
 
-        SplittableBuffer::new_with(NonZeroUsize::new(chans).unwrap(), frames, |c, f| {
-            (c * frames + f) as u64
-        })
+        let storage = (0..max as u64).collect::<Vec<u64>>();
+
+        SplittableBuffer::new(storage, NonZeroUsize::new(chans).unwrap())
     }
 
     #[test]
