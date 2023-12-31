@@ -8,12 +8,12 @@ use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
 use crate::properties::*;
-use crate::sample_sources::{reader::SampleSourceReader, SampleSource};
+use crate::sample_sources::{SampleSource, SampleSourceDriver};
 use crate::server::Server;
 use crate::unique_id::UniqueId;
 
 pub(crate) struct SampleSourcePlayerNodeAt {
-    executor: SampleSourceReader,
+    executor: SampleSourceDriver,
     props: (),
 }
 
@@ -76,13 +76,16 @@ impl NodeAt for SampleSourcePlayerNodeAt {
             let dest_slice = &mut tmp[..BLOCK_SIZE * chans];
             let frames_done = self.executor.read_samples(dest_slice).unwrap_or(0) as usize;
 
+            // Note that the implementation gives us already uninterleaved blocks.  One more level from now, this will
+            // be because they're coming directly from a ring, thus allowing out-of-thread sources to handle all ogic on
+            // their thread.
             match &mut context.outputs.output {
                 OD::Block(o) => {
                     for ch in 0..chans {
                         let cur_block = &mut o[ch];
 
                         for i in 0..frames_done {
-                            let index = ch + chans * i;
+                            let index = ch * BLOCK_SIZE + i;
                             let sample = tmp[index];
                             cur_block.write(i, sample as f64);
                         }
@@ -96,7 +99,7 @@ impl NodeAt for SampleSourcePlayerNodeAt {
 }
 
 impl SampleSourcePlayerNodeAt {
-    fn new(executor: SampleSourceReader) -> Self {
+    fn new(executor: SampleSourceDriver) -> Self {
         Self {
             executor,
             props: (),
@@ -113,7 +116,7 @@ pub struct SampleSourcePlayerNode {
 impl SampleSourcePlayerNode {
     pub fn new<S: SampleSource>(server: &Server, source: S) -> Result<Self> {
         let id = UniqueId::new();
-        let executor = SampleSourceReader::new(Box::new(source))?;
+        let executor = SampleSourceDriver::new(source)?;
 
         let at = SampleSourcePlayerNodeAt::new(executor);
 

@@ -24,13 +24,15 @@ num.workspace = true
 rand.workspace = true
 rand_xoshiro.workspace = true
 rayon.workspace = true
+rubato.workspace = true
 sharded-slab.workspace = true
 smallvec.workspace = true
-thiserror.workspace = true
+spin.workspace = true
 supermatch.workspace = true
 synthizer_macros_internal.workspace = true
 synthizer_miniaudio.workspace = true
 thingbuf.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

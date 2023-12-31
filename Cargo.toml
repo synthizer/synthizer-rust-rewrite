@@ -40,8 +40,10 @@ rand = "0.8.5"
 rand_xoshiro = "0.6.0"
 rayon = "1.8.0"
 reciprocal = "0.1.2"
+rubato = "0.14.1"
 sharded-slab = "0.1.4"
 smallvec = "1.10.0"
+spin = "0.9.8"
 supermatch = { path = "crates/supermatch" }
 supermatch_macro = { path = "crates/supermatch_macro" }
 syn = { version = "2", features = ["full", "fold"] }

@@ -1,6 +1,10 @@
+mod buffered;
+pub(crate) mod driver;
 pub(crate) mod reader;
+mod resampler;
 mod vec_source;
 
+pub(crate) use driver::*;
 pub use vec_source::*;
 
 use std::num::NonZeroU64;
@@ -91,6 +95,12 @@ pub struct Descriptor {
     pub(crate) latency: Latency,
 
     pub(crate) channel_format: crate::channel_format::ChannelFormat,
+}
+
+impl Descriptor {
+    pub(crate) fn get_channel_count(&self) -> usize {
+        self.channel_format.get_channel_count().get()
+    }
 }
 
 /// Kinds of error a source might experience.
