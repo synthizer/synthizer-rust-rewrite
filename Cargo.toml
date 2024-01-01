@@ -46,6 +46,7 @@ smallvec = "1.10.0"
 spin = "0.9.8"
 supermatch = { path = "crates/supermatch" }
 supermatch_macro = { path = "crates/supermatch_macro" }
+symphonia = { version = "0.5.3", features = ["all-codecs"] }
 syn = { version = "2", features = ["full", "fold"] }
 synthizer_macros_internal = { path = "crates/synthizer_macros_internal" }
 synthizer_miniaudio = { path = "./crates/miniaudio" }

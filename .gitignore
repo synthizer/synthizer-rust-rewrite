@@ -6,3 +6,4 @@
 **/*.rs.bk
 
 proptest-regressions/
+/corpus

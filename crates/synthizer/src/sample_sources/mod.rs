@@ -1,6 +1,8 @@
+mod encoded;
 pub(crate) mod execution;
 mod vec_source;
 
+pub use encoded::create_encoded_source;
 pub use vec_source::*;
 
 use std::num::NonZeroU64;
@@ -250,8 +252,23 @@ pub trait SampleSource: 'static + Send + Sync {
     /// - If no seek support is signalled, this function is never called.
     /// - If [SeekSupport::ToBeginning] is specified, this function will only be called with 0.
     /// - Otherwise, this function may be called with any value `0..descriptor.duration_in_samples`.
-    ///
-    /// Should return the new position in frames; for sources supporting precise seeking this should always be the input
-    /// value.
-    fn seek(&mut self, position_in_frames: u64) -> Result<u64, SampleSourceError>;
+    fn seek(&mut self, position_in_frames: u64) -> Result<(), SampleSourceError>;
+}
+
+impl<T: SampleSource + ?Sized> SampleSource for Box<T> {
+    fn get_descriptor(&self) -> Descriptor {
+        (**self).get_descriptor()
+    }
+
+    fn is_permanently_finished(&mut self) -> bool {
+        (**self).is_permanently_finished()
+    }
+
+    fn read_samples(&mut self, destination: &mut [f32]) -> Result<u64, SampleSourceError> {
+        (**self).read_samples(destination)
+    }
+
+    fn seek(&mut self, position_in_frames: u64) -> Result<(), SampleSourceError> {
+        (**self).seek(position_in_frames)
+    }
 }

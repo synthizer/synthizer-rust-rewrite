@@ -75,10 +75,10 @@ impl SampleSource for VecSource {
         }
     }
 
-    fn seek(&mut self, position_in_frames: u64) -> Result<u64, SampleSourceError> {
+    fn seek(&mut self, position_in_frames: u64) -> Result<(), SampleSourceError> {
         assert!(position_in_frames < self.frame_count as u64);
         self.position_in_frames = position_in_frames as usize;
-        Ok(self.position_in_frames as u64)
+        Ok(())
     }
 
     fn read_samples(&mut self, destination: &mut [f32]) -> Result<u64, SampleSourceError> {
