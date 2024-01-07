@@ -3,7 +3,7 @@
 //! These handles are wrapped by concrete named structs, and are how objects internally communicate to audio threads.
 use std::sync::Arc;
 
-use crate::command::Command;
+use crate::command::*;
 use crate::error::Result;
 use crate::unique_id::UniqueId;
 
@@ -58,8 +58,11 @@ impl Drop for InternalObjectHandle {
 }
 
 impl InternalObjectHandle {
-    pub(crate) fn send_command(&self, command: impl Into<Command>) -> Result<()> {
-        self.server_chan.send_command(command.into())
+    pub(crate) fn send_command_node(&self, command: impl Into<CommandKind>) -> Result<()> {
+        self.server_chan.send_command(Command::new(
+            &Port::for_node(self.object_id),
+            command.into(),
+        ))
     }
 
     pub(crate) fn is_same_graph(&self, other: &InternalObjectHandle) -> bool {

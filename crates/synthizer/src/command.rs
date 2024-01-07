@@ -51,7 +51,7 @@ mod cmdkind {
 
     variant!(pub(crate) CommandKind, ServerCommand, PropertyCommand);
 }
-use cmdkind::*;
+pub(crate) use cmdkind::*;
 
 #[derive(Debug)]
 pub(crate) struct Command {
