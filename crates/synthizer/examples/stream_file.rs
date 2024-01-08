@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use synthizer as syz;
 
 fn main() -> syz::Result<()> {
@@ -14,6 +16,11 @@ fn main() -> syz::Result<()> {
     let source: Box<dyn syz::sample_sources::SampleSource> =
         syz::sample_sources::create_encoded_source(file).unwrap();
     let player = syz::nodes::SampleSourcePlayerNode::new(&server, source)?;
+
+    player.config_looping(syz::LoopSpec::timestamps(
+        Duration::from_secs(1),
+        Some(Duration::from_secs(3)),
+    ))?;
 
     server.connect(&player, 0, &audio_output, 0)?;
 
