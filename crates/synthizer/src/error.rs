@@ -13,6 +13,9 @@ enum ErrorPayload {
 
     #[display(fmt = "Loop specification error: {}", _0)]
     LoopSpec(crate::loop_spec::LoopSpecError),
+
+    #[display(fmt = "Validation error: {}", _0)]
+    Validation(&'static str),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -38,6 +41,12 @@ conv!(SampleSource, SampleSourceError);
 conv!(LoopSpec, LoopSpecError);
 
 impl Error {
+    pub(crate) fn new_validation(message: &'static str) -> Self {
+        Self {
+            payload: ErrorPayload::Validation(message),
+        }
+    }
+
     /// Does this error represent an invalid [crate::LoopSpec]?
     pub fn is_invalid_loop(&self) -> bool {
         self.payload.is_loop_spec()
