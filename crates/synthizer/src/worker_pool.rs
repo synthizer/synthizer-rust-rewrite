@@ -85,7 +85,7 @@ struct WorkerPoolImpl {
 impl WorkerPoolHandle {
     /// Spawn a worker pool with the given number of background threads.
     ///
-    /// If `runs_inline` is true, then this pool is assumed to be for synthewsis that is producing samples consumed by
+    /// If `runs_inline` is true, then this pool is assumed to be for synthesis that is producing samples consumed by
     /// the user on a non-audio thread, and no scheduling thread will be spawned.
     pub(crate) fn new(threads: NonZeroUsize, runs_inline: bool) -> Self {
         let (command_sender, command_receiver) = chan::unbounded();
@@ -122,11 +122,11 @@ impl WorkerPoolHandle {
         self.implementation.signal_audio_tick_complete_impl()
     }
 
-    /// Tick this therad pool, running work inline.
+    /// Tick this thread pool, running work inline.
     ///
     /// This function should not be called on more than one thread at once, nor should it be called if a schedule thread
     /// is running. It is exposed to other modules in this crate so that it is possible for a user who is using
-    /// Synthizer to generate samples can have work happen at an appropriate time.  Violating this requirement probably
+    /// Synthizer to generate samples have work happen at an appropriate time.  Violating this requirement probably
     /// either causes a deadlock, but the absolute best case is double-execution of work.
     pub(crate) fn tick_work(&self) {
         self.implementation.tick_work_impl()
@@ -173,7 +173,7 @@ impl WorkerPoolImpl {
             work
         };
 
-        // For now, we assume all work will execute and, consequently, that all work will be "late" if an audioi tick is
+        // For now, we assume all work will execute and, consequently, that all work will be "late" if an audio tick is
         // missed. We will be smarter about this in the future if that is required.
         self.thread_pool.install(move || {
             work.into_par_iter()
@@ -207,14 +207,21 @@ enum Command {
 /// Scheduling thread for the worker pool.
 fn scheduling_thread(pool: Weak<WorkerPoolImpl>) {
     let mut audio_tick_prev = 0;
+    let mut audio_tick_new = 0;
+    let mut first = true;
 
     log::info!("Started background scheduling thread");
     while let Some(pool) = pool.upgrade() {
         let deadline = Instant::now() + SHUTDOWN_CHECK_INTERVAL;
 
-        pool.tick_work_impl();
+        // Only do something if the audio tick advanced. Also, be careful that we do work for the first tick.
+        if audio_tick_prev != audio_tick_new || first {
+            pool.tick_work_impl();
+            audio_tick_prev = audio_tick_new;
+            first = false;
+        }
 
-        audio_tick_prev = pool
+        audio_tick_new = pool
             .audio_tick_counter
             .wait_deadline(audio_tick_prev, deadline)
             .unwrap_or(audio_tick_prev);
@@ -237,7 +244,7 @@ mod tests {
         /// This is what is returned from execute; used in the tests to make sure tasks will stop.
         execute_ret: Arc<AtomicBool>,
 
-        /// Thhis is set when the task drops, so that we can test dropping as opposed to just not executing.
+        /// This is set when the task drops, so that we can test dropping as opposed to just not executing.
         is_alive: Arc<AtomicBool>,
     }
 
