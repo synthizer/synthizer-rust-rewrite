@@ -105,4 +105,15 @@ impl Driver {
             SampleSourceDriverKind::Buffered(r) => r.descriptor(),
         }
     }
+
+    /// Config the underlying source to loop.
+    ///
+    /// This assumes that the spec has already been validated. Furthermore, the sample rate of the loop endpoints are in
+    /// the sample rate of the ultimately underlying source, not that of Synthizer.
+    pub(crate) fn config_looping(&mut self, spec: crate::LoopSpec) {
+        match &mut self.kind {
+            SampleSourceDriverKind::Buffered(x) => x.config_looping(spec),
+            SampleSourceDriverKind::Resampled(x) => x.config_looping(spec),
+        }
+    }
 }

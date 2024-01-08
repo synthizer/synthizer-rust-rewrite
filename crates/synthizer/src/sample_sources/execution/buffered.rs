@@ -1,7 +1,8 @@
 use crate::data_structures::RefillableWrapper;
+use crate::loop_spec::LoopSpec;
+use crate::sample_sources::{Descriptor, SampleSourceError};
 
 use super::reader::SourceReader;
-use crate::sample_sources::{Descriptor, SampleSourceError};
 
 /// Un-tunable size of a buffered source's buffer, in frames.
 const BUFSIZE: usize = 8192;
@@ -115,5 +116,10 @@ impl BufferedSourceReader {
 
     pub(crate) fn descriptor(&self) -> &Descriptor {
         self.get_reader().descriptor()
+    }
+
+    /// Set the underlying source to loop.
+    pub(crate) fn config_looping(&mut self, spec: LoopSpec) {
+        self.reader.config_looping(spec);
     }
 }

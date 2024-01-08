@@ -163,4 +163,8 @@ impl Resampler {
     pub(crate) fn descriptor(&self) -> &crate::sample_sources::Descriptor {
         self.reader.descriptor()
     }
+
+    pub(crate) fn config_looping(&mut self, spec: crate::LoopSpec) {
+        self.reader.config_looping(spec);
+    }
 }

@@ -48,8 +48,9 @@ mod cmdkind {
     use crate::server::implementation::ServerCommand;
 
     use super::*;
+    use crate::common_commands::*;
 
-    variant!(pub(crate) CommandKind, ServerCommand, PropertyCommand);
+    variant!(pub(crate) CommandKind, ServerCommand, PropertyCommand, SetLoopConfigCommand);
 }
 pub(crate) use cmdkind::*;
 
