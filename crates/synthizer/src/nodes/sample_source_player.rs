@@ -2,13 +2,14 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::command::{CommandSender, Port};
+use crate::common_commands::*;
 use crate::config::BLOCK_SIZE;
 use crate::error::Result;
 use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
 use crate::properties::*;
-use crate::sample_sources::{execution::Driver, SampleSource};
+use crate::sample_sources::{execution::Driver, Descriptor as SDescriptor, SampleSource};
 use crate::server::Server;
 use crate::unique_id::UniqueId;
 
@@ -96,6 +97,15 @@ impl NodeAt for SampleSourcePlayerNodeAt {
 
         NodeExecutionOutcome::SentAudio
     }
+
+    fn execute_command(
+        &mut self,
+        cmd: crate::command::Command,
+    ) -> std::prelude::v1::Result<(), crate::command::Command> {
+        cmd.take_call(|cmd: SetLoopConfigCommand| {
+            self.executor.config_looping(cmd.0);
+        })
+    }
 }
 
 impl SampleSourcePlayerNodeAt {
@@ -111,17 +121,40 @@ impl SampleSourcePlayerNodeAt {
 #[derive(Clone)]
 pub struct SampleSourcePlayerNode {
     internal_handle: Arc<InternalObjectHandle>,
+    descriptor: SDescriptor,
 }
 
 impl SampleSourcePlayerNode {
     pub fn new<S: SampleSource>(server: &Server, source: S) -> Result<Self> {
         let id = UniqueId::new();
         let executor = Driver::new(source)?;
+        let descriptor = executor.descriptor().clone();
+
+        if descriptor.duration == Some(0) {
+            return Err(crate::error::Error::new_validation(
+                "It is not possible to create nodes wrapping sources whose duration is 0",
+            ));
+        }
 
         let at = SampleSourcePlayerNodeAt::new(executor);
 
         let internal_handle = Arc::new(server.register_node(id, server.allocate(at).into())?);
-        Ok(Self { internal_handle })
+        Ok(Self {
+            internal_handle,
+            descriptor,
+        })
+    }
+
+    /// Configure this node to loop.
+    ///
+    /// See node-level documentation for specific behaviors and guarantees as to what does and doesn't work,
+    /// particularly as regards streams with unknown duration and streams which cannot seek accurately.
+    pub fn config_looping(&self, specification: crate::LoopSpec) -> Result<()> {
+        specification.validate(self.descriptor.sample_rate.get(), self.descriptor.duration)?;
+
+        self.internal_handle
+            .send_command_node(SetLoopConfigCommand(specification))?;
+        Ok(())
     }
 }
 
