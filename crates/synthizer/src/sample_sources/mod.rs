@@ -21,7 +21,8 @@ pub enum SeekSupport {
 
     /// This source may seek to the beginning, and only to the beginning.
     ///
-    /// This is the minimum required to enable looping.  Seeks to sample 0 and only seeks to sample 0 are valid.
+    /// This is the minimum required to enable looping.  Seeks to sample 0 and only seeks to sample 0 are valid.  Seeks
+    /// to sample 0 must be precise.
     ToBeginning,
 
     /// This source supports seeking, but it is not sample-accurate.
@@ -33,12 +34,24 @@ pub enum SeekSupport {
     /// Such sources can loop, but cannot loop reliably.  So, for example, trying to construct a musical instrument
     /// probably won't work.
     ///
-    /// It is required that imprecise sources are able to report their new position.
+    /// Seeking imprecisely must uphold two requirements:
+    ///
+    /// - Seeks to sample 0 are accurate.
+    /// - Seeks always land at a sample <= the requested value, mnever later.
+    ///
+    /// Violating either of these will break looping support, so sources that cannot guarantee it should likely not
+    /// claim to support seeking.
+    ///
+    /// If the source's duration in samples is also provided, then seeks will never be performed past the end.  If this
+    /// isn't provided, seeks past the end may occur.  In this case, erroring is appropriate but at the cost that the
+    /// user will end up with a silent source thereafter.  An attempt should be made to seek to the end in such cases if
+    /// possible, because seeking has to happen on an audio thread and cannot be validated early.
     Imprecise,
 
     /// This source can seek to a precise sample.
     ///
-    /// `seek` should return the passed-in value.
+    /// This is the same as `Imprecise`, except that it is assumed that seeks are always accurate.  All other comments
+    /// about `Imprecise` apply, including seeks past the end if the total length of the source is not known.
     SampleAccurate,
 }
 
@@ -60,15 +73,21 @@ pub enum Latency {
     /// - Decoding the source is lightweight enough that it is always faster than realtime.
     ///
     /// Synthizer does not guarantee that such sources will be run on the audio thread, but it will do so when possible.
-    /// Be careful: if this source takes too long, audio will glitch globally.  Even if a source is audio-thread-safe,
-    /// consider whether it is fast enough to run on the audio thread before marking it as such.  These sorts of sources
-    /// will be asked for incredibly small amounts of data frequently, which may also pose a problem for some
-    /// implementations.
+    /// If this source takes too long, audio will glitch globally.  Even if a source is audio-thread-safe, consider
+    /// whether it is fast enough to run on the audio thread before marking it as such.  Note that such sources will be
+    /// asked for large amounts of data infrequently, so "is as fast as realtime" is not a sufficient criteria.
+    ///
+    /// A good example of an audio threadsafe source would be a vector of floats (available internally), something
+    /// evaluating a mathematical function such as sin, or something decrypting an already-decoded audio stream with a
+    /// small overhead per sample (for example ChaCha or hardware-accelerated RSA).
+    ///
+    /// be careful: most decoding libraries are not realtime-safe and will feel free to allocate internally.
     AudioThreadSafe,
 
     /// This source is as latent as reading memory and performing CPU work to decode.
     ///
-    /// That is, it does not use the FS or other "devices".  It may or may not allocate.
+    /// That is, it does not use the FS or other "devices".  It may or may not allocate, or perform other "memory-level"
+    /// operations such as short-lived mutex acquisitions.
     Memory,
 
     /// This source is as latent as reading from the filesystem.
@@ -76,6 +95,8 @@ pub enum Latency {
 }
 
 /// Describes the characteristics of a source.
+///
+/// This type is temporarily sealed, and so also seals the [SampleSource] trait.
 #[derive(Debug, Clone)]
 pub struct Descriptor {
     /// The sample rate.
@@ -219,6 +240,9 @@ impl From<&'static str> for SampleSourceError {
 ///
 /// Any method on this trait may be called from an audio thread if and only if the source claims that it only uses the
 /// CPU.  As reiterated a few times in this documentation, be 100% sure capabilities are accurate.
+///
+/// This trait is temporarily sealed, because [Descriptor] is sealed.  The plan is to lift this restriction in the near
+/// future, but it is important that we are sure we have things right so for now you cannot implement custom sources.
 pub trait SampleSource: 'static + Send + Sync {
     /// Get the descriptor describing this source.
     ///
@@ -251,7 +275,11 @@ pub trait SampleSource: 'static + Send + Sync {
     ///
     /// - If no seek support is signalled, this function is never called.
     /// - If [SeekSupport::ToBeginning] is specified, this function will only be called with 0.
-    /// - Otherwise, this function may be called with any value `0..descriptor.duration_in_samples`.
+    /// - Otherwise, this function may be called with any value `0..descriptor.duration_in_samples` if the duration is
+    ///   known, or if not any u64 value.
+    ///
+    /// Inaccurate sources should always seek before the provided position, not after.  Sources which do not know their
+    /// duration should make a best effort to seek to the end rather than erroring.
     fn seek(&mut self, position_in_frames: u64) -> Result<(), SampleSourceError>;
 }
 
