@@ -16,7 +16,7 @@
 //!
 //! No special optimization applies to powers of 2. We use the [reciprocal] crate for optimized division instead which
 //! is more than fast enough provided that users use the slice-based methods.
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc_zeroed, Layout};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -60,7 +60,12 @@ impl<T: AnyBitPattern> Ring<T> {
     fn new(capacity: usize) -> *mut Self {
         assert!(capacity != 0);
         let (layout, _) = layout_for_ring::<T>(capacity);
-        let full_ptr = unsafe { alloc(layout) };
+        // What we really want is "initialized to random bytes".  What Rust provides is with `alloc` is "may or may not
+        // be initialized".  the closest we have without, e.g., going to C FFI is unfortunately zeroing which, with
+        // bytemuck's additional guarantees, means initialized memory valid for `t`s.  Fortunately, zeroing on modern
+        // operating systems is fast and lazy and this is also on slow paths anyhow (as a general statement, allocating
+        // huge rings can't ever be on a fast path in any reasonable program).
+        let full_ptr = unsafe { alloc_zeroed(layout) };
         let ret = full_ptr as *mut Self;
         unsafe {
             ret.write(Ring {
