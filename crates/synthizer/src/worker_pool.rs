@@ -266,6 +266,11 @@ fn scheduling_thread(pool: Weak<WorkerPoolImpl>) {
         let deadline = Instant::now() + SHUTDOWN_CHECK_INTERVAL;
 
         // Only do something if the audio tick advanced. Also, be careful that we do work for the first tick.
+        //
+        // This is required because (1) our timeout may expire before a tick, and (2) just checking the version will
+        // skip the first one.  If it weren't for tests we wouldn't have to care about thi, but we need a strict
+        // guarantee that n signals means n iterations in order to test.  Otherwise slower CI setups such as GitHub
+        // actions start seeing spurious failures.
         if audio_tick_prev != audio_tick_new || first {
             pool.tick_work_impl();
             audio_tick_prev = audio_tick_new;
