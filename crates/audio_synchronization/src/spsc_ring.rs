@@ -5,7 +5,8 @@
 //! simply fil out the available space, and only take the penalty of some atomic reads and writes at the beginning/end
 //! of processing.
 //!
-//! After u64::MAX items are passed through this ring, it will panic.
+//! After u64::MAX items are passed through this ring, it will panic.  At a sampling rate of 44100 HZ, that's around 500
+//! billion years of audio data.
 //!
 //! This ring intentionally allocates uninitialized memory, and will hand out slices to such.  To deal with this, it is
 //! only possible to get a slice if the element implements [bytemuck::AnyBitPattern].
@@ -108,7 +109,6 @@ impl<T: AnyBitPattern> Ring<T> {
     }
 
     fn data_ptr(&self) -> *mut T {
-        // safety: &self is the ring, we are returning a mutable pointer to *after* the reference.
         let (_, off) = layout_for_ring::<T>(self.capacity());
         let ptr = self as *const Self as *mut Self as *mut u8;
         unsafe { ptr.add(off) as *mut T }
@@ -129,8 +129,11 @@ impl<T: AnyBitPattern> Ring<T> {
     unsafe fn read_one(&self) -> Option<T> {
         // We must synchronize with the write pointer, maintained by the writer.
         //
-        // Also, we cannot go through available_for_read; we must not fetch-add the read pointer until the read is
-        // completed.  Consequently, we must prepare both here and will simply do the computations ourself.
+        // We do not want to go through available_for_read because that adds extra atomic accesses, also of the wrong
+        // ordering.  The first read we must do here is an acquire on the write pointer.
+        //
+        // It is very important that the read pointer only advance *after* the read. Otherwise, a race can result when
+        // the writer tries to write this cell.
         let write_ptr = self.write_pointer.load(Ordering::Acquire);
         let read_ptr = self.read_pointer.load(Ordering::Relaxed);
 
@@ -218,11 +221,11 @@ impl<T: AnyBitPattern> Ring<T> {
 
     unsafe fn write_slices(&self) -> (Option<&mut [T]>, Option<&mut [T]>) {
         // This is almost the same as read_slices, but with two differences. First, we do not need to synchronize with
-        // the reader, which does no reads. Second, the returned slices are mutable.
+        // the reader, which does no writes.  Second, the returned slices are mutable.
         let write_ptr = self.write_pointer.load(Ordering::Relaxed);
         let read_ptr = self.read_pointer.load(Ordering::Relaxed);
         let avail_for_read = write_ptr - read_ptr;
-        // Ok, but we can write the leftover bit.
+        // What we can write is the part of the ring we can't read.
         let avail_for_write = self.capacity() - avail_for_read as usize;
 
         if avail_for_write == 0 {
@@ -295,7 +298,7 @@ impl<T: AnyBitPattern + Copy + Send + 'static> RingReader<T> {
     ///
     /// Returns either `Some(item)` or `None`. Does not block.
     ///
-    /// This method is considerably slow.  Consider [RingReader::read_slices] instead.
+    /// This method is considerably slow.  Consider [RingReader::read_slices] instead for high volume situations.
     ///
     /// # Panics
     ///
@@ -395,7 +398,8 @@ impl<T: AnyBitPattern + Copy + Send + 'static> RingWriter<T> {
     ///
     /// Returns true if the item was written.
     ///
-    /// This function is considerably slow.  Consider [RingWriter::write_slices] instead.
+    /// This function is considerably slow in comparison to working with slices.  Consider [RingWriter::write_slices]
+    /// instead for high volume situations, and reserve this method for uses such as command queues.
     ///
     /// # Panics
     ///
@@ -461,6 +465,7 @@ impl<T: AnyBitPattern + Copy + Send + 'static> RingWriter<T> {
         unsafe { self.ring.as_ref().available_for_write() }
     }
 
+    /// Convenience method to efficiently write a slice of data.
     pub fn write_from_slice(&mut self, slice: &[T]) -> usize {
         self.write_slices(|slices| {
             let Some((first, second)) = slices else {
