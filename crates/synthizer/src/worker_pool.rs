@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
+use atomic_refcell::AtomicRefCell;
+
 use audio_synchronization::mpsc_counter::MpscCounter;
 use crossbeam::channel as chan;
 use rayon::prelude::*;
@@ -23,21 +25,43 @@ pub(crate) enum TaskPriority {
 }
 
 /// trait representing tasks which may be scheduled to a pool.
-pub(crate) trait Task: Send + 'static {
+pub(crate) trait Task: Send + Sync + 'static {
     /// What is the priority of this task?
     ///
     /// Tasks with lower priorities are ticked less often.
+    ///
+    /// This is permitted to change between runs.
     fn priority(&self) -> TaskPriority;
 
     /// Execute this task.
     ///
     /// If this function returns true, the task is given a chance to run again approximately at the next audio tick.
+    /// Otherwise, it is assumed to be a one-off task and will be dropped from further processing.
     ///
     /// Tasks are not guaranteed to be ticked every audio update.  In particular, low priority tasks are ticked less
     /// often if work is running behind. Consequently, this should do as much work as it can, not just enough work for
     /// one audio tick.  That said, this scheduler is somewhat aware of the requirements, e.g. that if we tick a
     /// streaming source lesss than every 50 ms glitching happens.
     fn execute(&mut self) -> bool;
+}
+
+/// This is an internal trait which is implemented for `AtomicRefCell` to let tasks be mutable, while exposing immutable
+/// interfaces for `Arc`.
+///
+/// It works by "unwrapping" and then calling into the inner trait, and lets us avoid having to double-box.
+trait TaskImmutable: Send + Sync + 'static {
+    fn priority(&self) -> TaskPriority;
+    fn execute(&self) -> bool;
+}
+
+impl<T: Task> TaskImmutable for AtomicRefCell<T> {
+    fn priority(&self) -> TaskPriority {
+        self.borrow().priority()
+    }
+
+    fn execute(&self) -> bool {
+        self.borrow_mut().execute()
+    }
 }
 
 /// A pool of work to be done.
@@ -54,7 +78,8 @@ pub(crate) trait Task: Send + 'static {
 /// server directly.
 ///
 /// The only operation which may safely be performed from a real audio thread is `signal_audio_tick_complete`.  All
-/// other operations may block indefinitely.
+/// other operations may block, primarily due to memory allocation and secondarily due to our choice to use dependencies
+/// we don't control.
 ///
 /// Note that all queues are unbounded by design. If they were bounded, then it would be possible to end up blocking in
 /// various high-priority places or on the user's thread.  The bound is implicit instead, in that each task is only
@@ -68,7 +93,10 @@ pub(crate) struct WorkerPoolHandle {
 }
 
 struct WorkerPoolImpl {
-    tasks: Mutex<HashMap<UniqueId, Box<dyn Task>>>,
+    /// Only touched from the worker thread(s).
+    ///
+    /// By design, tasks are not tuched from other threads.
+    tasks: Mutex<HashMap<UniqueId, Weak<dyn TaskImmutable>>>,
 
     command_sender: chan::Sender<Command>,
     command_receiver: chan::Receiver<Command>,
@@ -80,6 +108,18 @@ struct WorkerPoolImpl {
 
     /// Used to wake this worker pool up as audio ticks advance.
     audio_tick_counter: MpscCounter,
+}
+
+/// A task is alive as long as the handle to it is.
+///
+/// When this handle is dropped, the task on the pool is likewise cancelled.  That is:
+///
+/// - If the task ever returns false in [Task::execute] it will not be re-scheduled but the object is kept alive.
+/// - If this handle is dropped, the task will be cancelled and the underlying object will likewise go away.
+///
+/// because [Task::execute] allows mutable self access, tasks should work out their own methods of communication.
+pub(crate) struct TaskHandle {
+    task_strong: Arc<dyn TaskImmutable>,
 }
 
 impl WorkerPoolHandle {
@@ -135,8 +175,11 @@ impl WorkerPoolHandle {
     /// Register a task with this thread pool.
     ///
     /// This function will allocate.
-    pub(crate) fn register_task<T: Task>(&self, task: T) {
-        self.implementation.register_work_impl(task);
+    ///
+    /// The returned handle must not be dropped for as long as the task should be running.
+    #[must_use = "Dropping task handles immediately cancels tasks, so they will likely never run unless the first run is fast enough to race this drop"]
+    pub(crate) fn register_task<T: Task>(&self, task: T) -> TaskHandle {
+        self.implementation.register_work_impl(task)
     }
 }
 
@@ -165,8 +208,9 @@ impl WorkerPoolImpl {
             //
             // We can optimize this later to not re-allocate all the time, but in the grand scheme of things this is nothing
             // compared to file I/O.
-            let mut work: Vec<(UniqueId, Box<dyn Task>)> = Vec::with_capacity(work_map.len());
-            work.extend(work_map.drain());
+            let mut work: Vec<(UniqueId, Arc<dyn TaskImmutable>)> =
+                Vec::with_capacity(work_map.len());
+            work.extend(work_map.drain().filter_map(|x| Some((x.0, x.1.upgrade()?))));
 
             // Sort our work by priority.
             work.sort_unstable_by_key(|w| w.1.priority());
@@ -177,7 +221,7 @@ impl WorkerPoolImpl {
         // missed. We will be smarter about this in the future if that is required.
         self.thread_pool.install(move || {
             work.into_par_iter()
-                .filter_map(|(id, mut task)| {
+                .filter_map(|(id, task)| {
                     if task.execute() {
                         Some((id, task))
                     } else {
@@ -185,23 +229,30 @@ impl WorkerPoolImpl {
                     }
                 })
                 .for_each(|(id, work)| {
-                    self.tasks.lock().unwrap().insert(id, work);
+                    self.tasks.lock().unwrap().insert(id, Arc::downgrade(&work));
                 });
         });
     }
 
-    pub(crate) fn register_work_impl<T: Task>(&self, task: T) {
+    pub(crate) fn register_work_impl<T: Task>(&self, task: T) -> TaskHandle {
+        let task_strong: Arc<dyn TaskImmutable> = Arc::new(AtomicRefCell::new(task));
+
         self.command_sender
             .send(Command::NewWork {
                 id: UniqueId::new(),
-                work: Box::new(task),
+                work: Arc::downgrade(&task_strong),
             })
             .expect("This channel is neither bounded nor closed");
+
+        TaskHandle { task_strong }
     }
 }
 
 enum Command {
-    NewWork { id: UniqueId, work: Box<dyn Task> },
+    NewWork {
+        id: UniqueId,
+        work: Weak<dyn TaskImmutable>,
+    },
 }
 
 /// Scheduling thread for the worker pool.
@@ -347,8 +398,9 @@ mod tests {
 
         // Register the tasks, signal some work, then wait for a little bit; if this pool is truly inline, no tasks will
         // run.
+        let mut handles = vec![];
         for i in std::mem::take(&mut context.tasks) {
-            context.pool.register_task(i);
+            handles.push(context.pool.register_task(i));
         }
 
         context.pool.signal_audio_tick_complete();
@@ -370,9 +422,9 @@ mod tests {
         context.pool.signal_audio_tick_complete();
         context.pool.tick_work();
         assert_eq!(context.counter_vec(), vec![3, 2, 3]);
-        assert_eq!(context.alive_flags_vec(), vec![true, false, true]);
 
-        // In the case of an inline pool, dropping the pool should be sufficient to immediately drop all tasks it contains.
+        // Dropping all task handles should immediately drop tasks, regardless what the pool thinks.
+        std::mem::drop(handles);
         std::mem::drop(context.pool);
         let avec = context
             .alive_flags
@@ -398,8 +450,9 @@ mod tests {
         //
         // The first registered task--if it registers fast enough--may run twice because the pool is careful to run for
         // the zeroth tick, so we have to unfortunately check that too.
+        let mut handles = vec![];
         for t in std::mem::take(&mut context.tasks) {
-            context.pool.register_task(t);
+            handles.push(context.pool.register_task(t));
             context.pool.signal_audio_tick_complete();
             // Now we must sleep a little bit so that the pool has a chance to pick it up and run it.
             sleep(Duration::from_millis(100));
