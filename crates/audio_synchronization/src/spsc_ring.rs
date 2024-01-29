@@ -509,6 +509,10 @@ impl<T: AnyBitPattern + Copy + Send + 'static> Drop for RingWriter<T> {
 unsafe impl<T: AnyBitPattern + Send + 'static> Send for RingReader<T> {}
 unsafe impl<T: AnyBitPattern + Send + 'static> Send for RingWriter<T> {}
 
+// We ensure the syncness by using `&mut Self` for anything spsc.
+unsafe impl<T: AnyBitPattern + Send + 'static> Sync for RingReader<T> {}
+unsafe impl<T: AnyBitPattern + Send + 'static> Sync for RingWriter<T> {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
