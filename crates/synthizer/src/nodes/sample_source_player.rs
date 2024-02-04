@@ -9,12 +9,12 @@ use crate::internal_object_handle::InternalObjectHandle;
 use crate::math::trig_waveforms::TrigWaveformEvaluator;
 use crate::nodes::*;
 use crate::properties::*;
-use crate::sample_sources::{execution::Driver, Descriptor as SDescriptor, SampleSource};
+use crate::sample_sources::{execution::Executor, Descriptor as SDescriptor, SampleSource};
 use crate::server::Server;
 use crate::unique_id::UniqueId;
 
 pub(crate) struct SampleSourcePlayerNodeAt {
-    executor: Driver,
+    executor: Executor,
     props: (),
 }
 
@@ -75,11 +75,10 @@ impl NodeAt for SampleSourcePlayerNodeAt {
         BUFFER.with(|tmp_refcell| {
             let mut tmp = tmp_refcell.borrow_mut();
             let dest_slice = &mut tmp[..BLOCK_SIZE * chans];
-            let frames_done = self.executor.read_samples(dest_slice).unwrap_or(0) as usize;
+            let frames_done = self.executor.read_block(dest_slice).unwrap_or(0) as usize;
 
-            // Note that the implementation gives us already uninterleaved blocks.  One more level from now, this will
-            // be because they're coming directly from a ring, thus allowing out-of-thread sources to handle all ogic on
-            // their thread.
+
+            // Note that the implementation gives us already uninterleaved blocks.
             match &mut context.outputs.output {
                 OD::Block(o) => {
                     for ch in 0..chans {
@@ -109,7 +108,7 @@ impl NodeAt for SampleSourcePlayerNodeAt {
 }
 
 impl SampleSourcePlayerNodeAt {
-    fn new(executor: Driver) -> Self {
+    fn new(executor: Executor) -> Self {
         Self {
             executor,
             props: (),
@@ -127,7 +126,8 @@ pub struct SampleSourcePlayerNode {
 impl SampleSourcePlayerNode {
     pub fn new<S: SampleSource>(server: &Server, source: S) -> Result<Self> {
         let id = UniqueId::new();
-        let executor = Driver::new(source)?;
+        let worker_pool = server.worker_pool();
+        let executor = Executor::new(worker_pool, source)?;
         let descriptor = executor.descriptor().clone();
 
         if descriptor.duration == Some(0) {

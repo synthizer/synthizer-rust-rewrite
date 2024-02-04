@@ -14,6 +14,7 @@ use crate::data_structures::Graph;
 use crate::data_structures::*;
 use crate::nodes::*;
 use crate::unique_id::UniqueId;
+use crate::worker_pool::WorkerPoolHandle;
 
 const MAX_PENDING_COMMANDS: usize = 100000;
 
@@ -298,6 +299,7 @@ impl ServerHandle {
     pub(crate) fn new(
         output_format: ChannelFormat,
         opts: ServerOptions,
+        worker_pool: WorkerPoolHandle,
     ) -> (Self, ServerExecutionCallback) {
         let mut server = ServerAt::new(output_format, opts);
         let command_queue = Arc::new(CommandQueue::with_recycle(
@@ -312,6 +314,7 @@ impl ServerHandle {
                     server.dispatch_command(cmd.unwrap());
                 }
                 server.fill_slice(dest);
+                worker_pool.signal_audio_tick_complete();
             })
         };
 

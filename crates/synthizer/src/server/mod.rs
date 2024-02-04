@@ -18,12 +18,15 @@ use crate::internal_object_handle::{InternalObjectHandle, ServerChannel};
 use crate::nodes::traits::{NodeAt, NodeHandle, NodeHandleSealed};
 use crate::nodes::*;
 use crate::unique_id::UniqueId;
+use crate::worker_pool::WorkerPoolHandle;
 
 /// Part of a server which is behind Arc.
 ///
 /// Lets the user clone without cloning a ton of arcs.
 struct ServerInternal {
     server: ServerHandle,
+
+    worker_pool: WorkerPoolHandle,
 
     /// If there is an audio thread, this is it.
     audio_thread: Option<AudioThread>,
@@ -51,14 +54,17 @@ pub struct Server {
 
 impl ServerInternal {
     pub fn new_default_device() -> Result<Self> {
+        let worker_pool = WorkerPoolHandle::new(std::num::NonZeroUsize::new(1).unwrap(), false);
         let (server, callback) = ServerHandle::new(
             crate::channel_format::ChannelFormat::Stereo,
             Default::default(),
+            worker_pool.clone(),
         );
         let audio_thread = AudioThread::new_with_default_device(callback)?;
 
         let h = ServerInternal {
             server,
+            worker_pool,
             audio_thread: Some(audio_thread),
             graph: Arc::new(Mutex::new(Graph::new())),
             root_graph_id: UniqueId::new(),
@@ -171,6 +177,10 @@ impl Server {
             object_id: id,
             graph_id,
         })
+    }
+
+    pub(crate) fn worker_pool(&self) -> &WorkerPoolHandle {
+        &self.internal.worker_pool
     }
 
     /// Connect the nth output of a given node to the nth input of another given node.

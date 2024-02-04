@@ -116,6 +116,11 @@ pub struct Descriptor {
     pub(crate) channel_format: crate::channel_format::ChannelFormat,
 }
 
+impl Latency {
+    pub(crate) fn is_audio_thread_safe(&self) -> bool {
+        self == &Latency::AudioThreadSafe
+    }
+}
 impl Descriptor {
     pub(crate) fn get_channel_count(&self) -> usize {
         self.channel_format.get_channel_count().get()

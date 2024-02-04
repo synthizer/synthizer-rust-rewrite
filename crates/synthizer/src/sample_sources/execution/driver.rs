@@ -11,6 +11,9 @@ use crate::sample_sources::{SampleSource, SampleSourceError};
 /// Drive a source of samples.
 ///
 /// This type handles things like optional resampling.
+///
+/// Callers want to go one more level up and use the executor, which is capable of also handling background thread
+/// management.  There are no really good names for these, sadly.
 pub(crate) struct Driver {
     kind: SampleSourceDriverKind,
 }
@@ -48,8 +51,8 @@ impl Driver {
     /// source isn't looping.
     ///
     /// Returns how many frames were written.  Due to internal implementation details this can only be less than
-    /// `BLOCK_SIZE` in the case that no resampling is going on, so the value is only particularly useful for underflow
-    /// detection; in any case, the block is always either valid data or zeroed frames.
+    /// `BLOCK_SIZE` in the case that no resampling is going on or the source is at the end.  Any unwritten data is
+    /// filled with zeros.
     pub(crate) fn read_samples(
         &mut self,
         destination: &mut [f32],
