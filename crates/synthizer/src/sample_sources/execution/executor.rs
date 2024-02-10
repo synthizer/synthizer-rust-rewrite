@@ -51,6 +51,13 @@ impl Executor {
         }
     }
 
+    pub(crate) fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
+        match &mut self.location {
+            ExecutionLocation::Inline(d) => d.seek(new_pos),
+            ExecutionLocation::CrossThread(c) => c.seek(new_pos),
+        }
+    }
+
     pub(crate) fn descriptor(&self) -> &Descriptor {
         match self.location {
             ExecutionLocation::Inline(ref d) => d.descriptor(),

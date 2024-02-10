@@ -35,6 +35,6 @@ mod worker_pool;
 pub use channel_format::*;
 pub use config::SR;
 pub use db::DbExt;
-pub use error::Result;
+pub use error::{Error, Result};
 pub use loop_spec::*;
 pub use server::Server;

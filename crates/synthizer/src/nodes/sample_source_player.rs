@@ -1,6 +1,3 @@
-use std::borrow::Cow;
-use std::sync::Arc;
-
 use crate::command::{CommandSender, Port};
 use crate::common_commands::*;
 use crate::config::BLOCK_SIZE;
@@ -12,6 +9,9 @@ use crate::properties::*;
 use crate::sample_sources::{execution::Executor, Descriptor as SDescriptor, SampleSource};
 use crate::server::Server;
 use crate::unique_id::UniqueId;
+use std::borrow::Cow;
+use std::sync::Arc;
+use std::time::Duration;
 
 pub(crate) struct SampleSourcePlayerNodeAt {
     executor: Executor,
@@ -77,7 +77,6 @@ impl NodeAt for SampleSourcePlayerNodeAt {
             let dest_slice = &mut tmp[..BLOCK_SIZE * chans];
             let frames_done = self.executor.read_block(dest_slice).unwrap_or(0) as usize;
 
-
             // Note that the implementation gives us already uninterleaved blocks.
             match &mut context.outputs.output {
                 OD::Block(o) => {
@@ -103,6 +102,12 @@ impl NodeAt for SampleSourcePlayerNodeAt {
     ) -> std::prelude::v1::Result<(), crate::command::Command> {
         cmd.take_call(|cmd: SetLoopConfigCommand| {
             self.executor.config_looping(cmd.0);
+        })
+        .or_else(|x| {
+            x.take_call::<SeekCommand>(|seek| {
+                let _ = self.executor.seek(seek.0);
+                // We can't log just yet. We need to do a small logging framework first.
+            })
         })
     }
 }
@@ -155,6 +160,54 @@ impl SampleSourcePlayerNode {
         self.internal_handle
             .send_command_node(SetLoopConfigCommand(specification))?;
         Ok(())
+    }
+
+    /// Seek to a given position in the underlying source given as a sample in the sampling rate of the source.
+    ///
+    /// This desugars to a direct seek call on the source.  Note that this function returning `Ok` doesn't mean the seek
+    /// went through, only that Synthizer believes that the seek is to a valid position.  The actual seek happens later
+    /// on another thread.
+    pub fn seek_sample(&self, new_pos: u64) -> Result<()> {
+        use crate::sample_sources::SeekSupport;
+
+        // We validate here because this is the only place that happens on a thread controlled by the user, so we
+        // unfortunately can't abstract this into our internal module much.
+        match self.descriptor.seek_support {
+            SeekSupport::None => {
+                return Err(crate::Error::new_validation(
+                    "Seeking is not supported for the underlying source",
+                ))
+            }
+            SeekSupport::ToBeginning => {
+                if new_pos != 0 {
+                    return Err(crate::Error::new_validation(
+                        "This source only supports seeking to time 0",
+                    ));
+                }
+            }
+            SeekSupport::Imprecise | SeekSupport::SampleAccurate => {
+                if let Some(max) = self.descriptor.duration {
+                    if new_pos >= max {
+                        return Err(crate::Error::new_validation(
+                            "Attempt to seek past the end of the source",
+                        ));
+                    }
+                }
+            }
+        };
+
+        self.internal_handle
+            .send_command_node(SeekCommand(new_pos))?;
+        Ok(())
+    }
+
+    /// Convenience function to seek to a given duration in seconds.
+    ///
+    /// This function works by converting the duration passed in to samples, then calling [Self::seek_sample] for you.
+    pub fn seek(&self, dur: Duration) -> Result<()> {
+        let secs = dur.as_secs_f64();
+        let samples = secs * self.descriptor.sample_rate.get() as f64;
+        self.seek_sample(samples as u64)
     }
 }
 

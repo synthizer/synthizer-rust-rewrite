@@ -61,11 +61,11 @@ fn merge_opts<T>(first: Option<T>, second: Option<T>) -> Option<T> {
 }
 
 /// A patch to apply to the background thread.
-///
-/// TODO: seeking is next, we're handling loops first.
+
 #[derive(Clone, Debug, Default)]
 struct ConfigPatch {
     loop_spec: Option<LoopSpec>,
+    seek_to: Option<u64>,
 }
 
 impl ConfigPatch {
@@ -74,6 +74,7 @@ impl ConfigPatch {
     fn merge_newer(self, newer: ConfigPatch) -> Self {
         Self {
             loop_spec: merge_opts(self.loop_spec, newer.loop_spec),
+            seek_to: merge_opts(self.seek_to, newer.seek_to),
         }
     }
 }
@@ -130,6 +131,11 @@ impl Task {
         if let Some(loop_spec) = patch.loop_spec {
             self.driver.config_looping(loop_spec);
         }
+
+        if let Some(seek_to) = patch.seek_to {
+            self.driver.seek(seek_to)?;
+        }
+
         Ok(())
     }
 
@@ -279,6 +285,11 @@ impl BackgroundSourceHandle {
 
     pub(super) fn config_looping(&mut self, loop_spec: LoopSpec) {
         self.get_next_patch_mut().loop_spec = Some(loop_spec);
+    }
+
+    pub(super) fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
+        self.get_next_patch_mut().seek_to = Some(new_pos);
+        Ok(())
     }
 
     pub(crate) fn descriptor(&self) -> &Descriptor {

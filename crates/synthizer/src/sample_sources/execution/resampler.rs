@@ -167,4 +167,9 @@ impl Resampler {
     pub(crate) fn config_looping(&mut self, spec: crate::LoopSpec) {
         self.reader.config_looping(spec);
     }
+
+    /// Seek the source to a new position where `new_pos` is in the sampling rate of the source.
+    pub(crate) fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
+        self.reader.seek(new_pos)
+    }
 }

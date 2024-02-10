@@ -122,4 +122,14 @@ impl BufferedSourceReader {
     pub(crate) fn config_looping(&mut self, spec: LoopSpec) {
         self.reader.config_looping(spec);
     }
+
+    /// Try to seek the underlying source.
+    ///
+    /// if successful, this clears the buffer.  The underlying driver knows how to end sources forever on seek errors,
+    /// so we needn't handle that here.
+    pub(crate) fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
+        self.reader.seek(new_pos)?;
+        self.buffer.reset();
+        Ok(())
+    }
 }

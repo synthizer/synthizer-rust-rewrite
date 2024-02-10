@@ -119,4 +119,11 @@ impl Driver {
             SampleSourceDriverKind::Resampled(x) => x.config_looping(spec),
         }
     }
+
+    pub(crate) fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
+        match &mut self.kind {
+            SampleSourceDriverKind::Buffered(b) => b.seek(new_pos),
+            SampleSourceDriverKind::Resampled(r) => r.seek(new_pos),
+        }
+    }
 }

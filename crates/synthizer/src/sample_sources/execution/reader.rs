@@ -137,7 +137,7 @@ impl SourceReader {
     }
 
     /// seek to the given sample, capped above by the descriptor's eof if any.
-    fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
+    pub(crate) fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
         let new_pos = self
             .descriptor
             .duration
