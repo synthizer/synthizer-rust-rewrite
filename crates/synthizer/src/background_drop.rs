@@ -4,15 +4,17 @@
 //! operations.  It lags slightly, and will drop on the audio thread as a last resort should a (large) internal buffer
 //! fill up.
 //!
-//! Audio threads must call into this module to mark themselves.  This is a reasonably cheap operation.  If they don't,
-//! they will drop on the audio thread.  This is done so that the queues won't experience pressure from non-audio
-//! threads which wish to drop things that are sometimes on the audio thread.  As an example, it is important never to
-//! drop an Arc from the audio thread, but the Arc may have another reference on a non-audio thread.
+//! Audio threads must mark themselves with [crate::audio_thread::mark_audio_thread]. If they don't, they will drop on
+//! the audio thread.  This is done so that the queues won't experience pressure from non-audio threads which wish to
+//! drop things that are sometimes on the audio thread.  As an example, it is important never to drop an Arc from the
+//! audio thread, but the Arc may have another reference on a non-audio thread.
 use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
 use thingbuf::StaticThingBuf;
+
+use crate::is_audio_thread::is_audio_thread;
 
 /// The number of items allowed to be pending a drop.
 const BACKLOG: usize = 10 * 1024;
@@ -114,22 +116,6 @@ impl<T: BackgroundDroppable> Drop for BackgroundDrop<T> {
         let inner = unsafe { self.inner.take().unwrap_unchecked() };
         inner.background_drop();
     }
-}
-
-thread_local! {
-    static IS_AUDIO_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-fn is_audio_thread() -> bool {
-    IS_AUDIO_THREAD.with(|x| x.get())
-}
-
-/// Mark this thread as being an audio thread.
-///
-/// This is a very cheap function.  It's called from the audio-output implementation of the server.
-#[inline(always)]
-pub(crate) fn mark_audio_thread() {
-    IS_AUDIO_THREAD.with(|x| x.replace(true));
 }
 
 /// called when a server facing the audio device is created, to make sure that the background thread is running.
@@ -246,7 +232,7 @@ mod tests {
 
         // This must all happen in another thread.  If not, then the test threads become audio threads.
         std::thread::spawn(|| {
-            mark_audio_thread();
+            crate::is_audio_thread::mark_audio_thread();
             let boxed = Box::new(Dropping(5));
             let wrapped = BackgroundDrop::new(boxed);
             std::mem::drop(wrapped);

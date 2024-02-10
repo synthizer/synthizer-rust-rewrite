@@ -42,7 +42,7 @@ rayon = "1.8.0"
 reciprocal = "0.1.2"
 rubato = "0.14.1"
 sharded-slab = "0.1.4"
-smallvec = "1.10.0"
+smallvec = { version = "1.10.0", features = ["write"] }
 spin = "0.9.8"
 supermatch = { path = "crates/supermatch" }
 supermatch_macro = { path = "crates/supermatch_macro" }

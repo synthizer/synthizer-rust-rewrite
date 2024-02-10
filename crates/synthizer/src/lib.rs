@@ -4,6 +4,8 @@
 mod builder_helpers;
 #[macro_use]
 mod variant;
+#[macro_use]
+mod logging;
 
 mod background_drop;
 #[doc(hidden)]
@@ -21,6 +23,7 @@ mod db;
 mod error;
 pub mod fast_xoroshiro;
 mod internal_object_handle;
+mod is_audio_thread;
 mod loop_spec;
 mod math;
 mod maybe_int;

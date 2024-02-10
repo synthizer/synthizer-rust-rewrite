@@ -144,6 +144,10 @@ struct ServerHandleInner {
 
 impl ServerAt {
     pub fn new(output_format: ChannelFormat, opts: ServerOptions) -> Self {
+        // We need the logging system up before anything can go to the audio thread, and all the construction paths
+        // ultimately converge here.
+        crate::logging::ensure_log_ctx();
+
         let mut ret = Self {
             nodes: HashMap::with_capacity(opts.expected_nodes),
             root_graph: BackgroundDrop::new(Graph::new()),
@@ -278,6 +282,8 @@ impl ServerAt {
 
     pub(crate) fn dispatch_command(&mut self, command: crate::command::Command) {
         use crate::command::Port;
+
+        rt_trace!("Dispatching command {:?}", command);
 
         match command.port().kind {
             PortKind::Server => command
