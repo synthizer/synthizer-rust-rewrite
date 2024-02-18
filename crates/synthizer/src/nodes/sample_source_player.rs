@@ -135,8 +135,8 @@ impl SampleSourcePlayerNode {
         let descriptor = executor.descriptor().clone();
 
         if descriptor.duration == Some(0) {
-            return Err(crate::error::Error::new_validation(
-                "It is not possible to create nodes wrapping sources whose duration is 0",
+            return Err(crate::error::Error::new_validation_static(
+                "It is not possible to create sources whose duration is 0",
             ));
         }
 
@@ -173,13 +173,13 @@ impl SampleSourcePlayerNode {
         // unfortunately can't abstract this into our internal module much.
         match self.descriptor.seek_support {
             SeekSupport::None => {
-                return Err(crate::Error::new_validation(
-                    "Seeking is not supported for the underlying source",
+                return Err(crate::Error::new_validation_static(
+                    "Seeking is not supported for this source",
                 ))
             }
             SeekSupport::ToBeginning => {
                 if new_pos != 0 {
-                    return Err(crate::Error::new_validation(
+                    return Err(crate::Error::new_validation_static(
                         "This source only supports seeking to time 0",
                     ));
                 }
@@ -187,8 +187,8 @@ impl SampleSourcePlayerNode {
             SeekSupport::Imprecise | SeekSupport::SampleAccurate => {
                 if let Some(max) = self.descriptor.duration {
                     if new_pos >= max {
-                        return Err(crate::Error::new_validation(
-                            "Attempt to seek past the end of the source",
+                        return Err(crate::Error::new_validation_static(
+                            "Attempt to seek past the end of this source",
                         ));
                     }
                 }

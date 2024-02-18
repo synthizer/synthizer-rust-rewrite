@@ -20,6 +20,12 @@ use crate::nodes::*;
 use crate::unique_id::UniqueId;
 use crate::worker_pool::WorkerPoolHandle;
 
+/// Servers are either sending audio to a device or waiting on the user to get it by hand.
+enum ServerDestination {
+    AudioDevice(AudioThread),
+    Inline(Mutex<ServerExecutionCallback>),
+}
+
 /// Part of a server which is behind Arc.
 ///
 /// Lets the user clone without cloning a ton of arcs.
@@ -28,8 +34,7 @@ struct ServerInternal {
 
     worker_pool: WorkerPoolHandle,
 
-    /// If there is an audio thread, this is it.
-    audio_thread: Option<AudioThread>,
+    destination: ServerDestination,
 
     /// The server's graph.
     graph: Arc<Mutex<Graph>>,
@@ -47,13 +52,34 @@ struct ServerInternal {
 ///
 /// Contrary to the name, this does not involve networking.  It is borrowed terminology from other audio APIs
 /// (supercollider, pyo, etc).
+///
+/// In addition to pushing data to an audio device, it is possible to pull data to your own code as f32 samples at the
+/// server's internal sampling rate, [Server::get_sr].  if resampling is required, you must currently handle that
+/// yourself.
 #[derive(Clone)]
 pub struct Server {
     internal: Arc<ServerInternal>,
 }
 
 impl ServerInternal {
-    pub fn new_default_device() -> Result<Self> {
+    /// Part of new common to all servers.
+    fn new_common(
+        server: ServerHandle,
+        worker_pool: WorkerPoolHandle,
+        destination: ServerDestination,
+    ) -> Result<Self> {
+        let h = ServerInternal {
+            server,
+            worker_pool,
+            destination,
+            graph: Arc::new(Mutex::new(Graph::new())),
+            root_graph_id: UniqueId::new(),
+        };
+
+        Ok(h)
+    }
+
+    fn new_default_device() -> Result<Self> {
         let worker_pool = WorkerPoolHandle::new_threaded(std::num::NonZeroUsize::new(1).unwrap());
         let (server, callback) = ServerHandle::new(
             crate::channel_format::ChannelFormat::Stereo,
@@ -61,16 +87,20 @@ impl ServerInternal {
             worker_pool.clone(),
         );
         let audio_thread = AudioThread::new_with_default_device(callback)?;
+        let destination = ServerDestination::AudioDevice(audio_thread);
+        Self::new_common(server, worker_pool, destination)
+    }
 
-        let h = ServerInternal {
-            server,
-            worker_pool,
-            audio_thread: Some(audio_thread),
-            graph: Arc::new(Mutex::new(Graph::new())),
-            root_graph_id: UniqueId::new(),
-        };
+    pub fn new_inline() -> Result<Self> {
+        let worker_pool = WorkerPoolHandle::new_inline();
+        let (server, callback) = ServerHandle::new(
+            crate::channel_format::ChannelFormat::Stereo,
+            Default::default(),
+            worker_pool.clone(),
+        );
 
-        Ok(h)
+        let destination = ServerDestination::Inline(Mutex::new(callback));
+        Self::new_common(server, worker_pool, destination)
     }
 
     fn allocate<T: std::any::Any + Send + Sync>(&self, new_val: T) -> ExclusiveSlabRef<T> {
@@ -130,6 +160,39 @@ impl ServerInternal {
         });
         Ok(())
     }
+
+    /// Synthesize some data.  Currently corresponds to the public `synthesize_stereo` method and requires the channel
+    /// format be fixed to stereo to match server implementation assumptions.
+    ///
+    /// Panics if this is called from more than one thread simultaneously; errors if the server is actually for audio
+    /// output.
+    fn synthesize_data(&self, format: crate::ChannelFormat, destination: &mut [f32]) -> Result<()> {
+        assert_eq!(format, crate::ChannelFormat::Stereo);
+
+        if destination.len() % format.get_channel_count() != 0 {
+            return Err(Error::new_validation_cow(format!(
+                "Got a slice of length {} which must be a multiple of the frame size {}",
+                destination.len(),
+                format.get_channel_count()
+            )));
+        }
+
+        match &self.destination {
+            ServerDestination::AudioDevice(_) => {
+                return Err(Error::new_validation_cow(
+                    "This server is for audio devices, not inline synthesis",
+                ));
+            }
+            ServerDestination::Inline(cb) => {
+                let mut cb = cb
+                    .try_lock()
+                    .expect("Server synthesis should only ever happen on one thread");
+                (*cb)(destination);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl ServerChannel for ServerInternal {
@@ -154,6 +217,15 @@ impl Server {
     pub fn new_default_device() -> Result<Self> {
         Ok(Self {
             internal: Arc::new(ServerInternal::new_default_device()?),
+        })
+    }
+
+    /// Create a server which is intended to be run to retrieve samples from Synthizer.
+    ///
+    /// This server may have data pulled from it with [Server::get_block].
+    pub fn new_inline() -> Result<Self> {
+        Ok(Self {
+            internal: Arc::new(ServerInternal::new_inline()?),
         })
     }
 
@@ -195,5 +267,28 @@ impl Server {
     ) -> Result<()> {
         self.internal
             .connect(output_node, output_index, input_node, input_index)
+    }
+
+    /// Get the sampling rate of this server.
+    ///
+    /// This is the sampling rate which will be used when calling [Server::synthesize_data].
+    pub fn get_sr(&self) -> u64 {
+        crate::config::SR as u64
+    }
+
+    /// get Synthizer to synthesize a block of stereo data.
+    ///
+    /// This function will perform synthesis on the current thread, writing to the given output slice in the server's
+    /// sampling rate.  Note that this includes things such as running streaming sources.
+    ///
+    /// If this function is called from multiple threads, a panic results.  Since Synthizer has chosen to provide
+    /// Arc-like handles, this can't be defended against at the type level.
+    ///
+    /// # Panics
+    ///
+    /// If this is called from more than one thread simultaneously for the same server, even if those calls come from different handles.
+    pub fn synthesize_stereo(&self, destination: &mut [f32]) -> Result<()> {
+        self.internal
+            .synthesize_data(crate::ChannelFormat::Stereo, destination)
     }
 }

@@ -109,7 +109,7 @@ pub(crate) enum ServerCommand {
     },
 }
 
-/// The synthesizing half of a server, which may be executing on an audio thread.
+/// The synthesizing half of a server, which may or may not be executing on an audio thread.
 pub(crate) struct ServerAt {
     nodes: HashMap<UniqueId, NodeContainer>,
     root_graph: BackgroundDrop<Graph>,

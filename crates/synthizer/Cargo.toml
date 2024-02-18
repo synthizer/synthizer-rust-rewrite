@@ -37,8 +37,10 @@ thingbuf.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
 criterion.workspace = true
 env_logger.workspace = true
+hound.workspace = true
 petgraph.workspace = true
 proptest.workspace = true
 
