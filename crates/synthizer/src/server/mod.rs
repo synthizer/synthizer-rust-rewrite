@@ -54,7 +54,7 @@ pub struct Server {
 
 impl ServerInternal {
     pub fn new_default_device() -> Result<Self> {
-        let worker_pool = WorkerPoolHandle::new(std::num::NonZeroUsize::new(1).unwrap(), false);
+        let worker_pool = WorkerPoolHandle::new_threaded(std::num::NonZeroUsize::new(1).unwrap());
         let (server, callback) = ServerHandle::new(
             crate::channel_format::ChannelFormat::Stereo,
             Default::default(),
