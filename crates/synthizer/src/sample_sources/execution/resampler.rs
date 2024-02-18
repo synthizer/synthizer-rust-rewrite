@@ -1,7 +1,7 @@
 use rubato::{Resampler as RubatoResampler, SincFixedOut, SincInterpolationParameters};
 
 use crate::config::*;
-use crate::data_structures::{RefillableWrapper, SplittableBuffer};
+use crate::data_structures::SplittableBuffer;
 use crate::sample_sources::SampleSourceError;
 
 use super::buffered::BufferedSourceReader;

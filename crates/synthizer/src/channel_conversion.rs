@@ -1,8 +1,6 @@
-use arrayvec::ArrayVec;
+use crate::config::BLOCK_SIZE;
 
-use crate::config::{BLOCK_SIZE, MAX_CHANNELS};
-
-use crate::data_structures::block_allocator::{AllocatedBlock, BlockAllocator};
+use crate::data_structures::block_allocator::AllocatedBlock;
 use crate::ChannelFormat;
 
 struct ChannelMixingMatrix {
@@ -107,6 +105,8 @@ pub fn interleave_blocks(blocks: &mut [AllocatedBlock], destination: &mut [f32])
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::data_structures::BlockAllocator;
 
     #[test]
     fn test_mono_stereo() {

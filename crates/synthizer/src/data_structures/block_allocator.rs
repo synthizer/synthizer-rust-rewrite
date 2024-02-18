@@ -1,11 +1,8 @@
-use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
-use std::rc::Rc;
 
 use audio_synchronization::concurrent_slab::{ExclusiveSlabRef, SlabHandle};
 
-use crate::config::{BlockArray, BLOCK_SIZE};
-use crate::unique_id::UniqueId;
+use crate::config::BlockArray;
 
 /// Knows how to allocate blocks of f32 data for callers.
 ///

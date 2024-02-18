@@ -7,7 +7,6 @@ use symphonia::core::{
     errors::Result as SResult,
     formats::FormatReader,
     io::{MediaSource, MediaSourceStream},
-    probe::ProbedMetadata,
 };
 
 use crate::config::*;

@@ -5,7 +5,7 @@ pub mod traits;
 pub mod trig;
 
 pub use audio_output::AudioOutputNode;
-pub use descriptor::*;
+pub(crate) use descriptor::*;
 pub use sample_source_player::*;
 pub use traits::*;
 pub use trig::TrigWaveformNode;

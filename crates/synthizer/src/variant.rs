@@ -126,7 +126,6 @@ macro_rules! variant {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[derive(Debug)]
     struct TestCmd1;

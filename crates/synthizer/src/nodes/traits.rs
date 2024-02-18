@@ -9,7 +9,7 @@ use crate::channel_format::ChannelFormat;
 use crate::command as cmd;
 use crate::config::*;
 use crate::data_structures::AddOnlyBlock;
-use crate::data_structures::{AllocatedBlock, BlockAllocator};
+use crate::data_structures::AllocatedBlock;
 use crate::nodes::OutputsByIndex;
 use crate::nodes::*;
 use crate::properties as props;

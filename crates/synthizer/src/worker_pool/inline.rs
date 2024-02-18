@@ -4,17 +4,10 @@
 //! uses mutexes and is not realtime-safe because it is intended for the use case of users which are trying to use
 //! Synthizer as a synthesizer that just gives out samples.
 use std::collections::HashMap;
-use std::num::{NonZeroU64, NonZeroUsize};
-use std::sync::atomic::{AtomicUsize, Ordering};
+
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant};
 
 use atomic_refcell::AtomicRefCell;
-
-use audio_synchronization::mpsc_counter::MpscCounter;
-use crossbeam::channel as chan;
-use rayon::prelude::*;
-use rayon::ThreadPool;
 
 use crate::unique_id::UniqueId;
 
@@ -107,8 +100,7 @@ impl InlinePoolImpl {
 mod tests {
     use super::*;
 
-    use std::sync::atomic::{AtomicBool, AtomicU64};
-    use std::thread::sleep;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     /// A task which works by incrementing a counter every time it runs.
     struct CounterTask {

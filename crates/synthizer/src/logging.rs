@@ -36,8 +36,6 @@ use std::time::{Duration, Instant};
 use arrayvec::ArrayString;
 use thingbuf::{recycling::Recycle, ThingBuf};
 
-use crate::is_audio_thread::is_audio_thread;
-
 // The following two values reserve around `LOG_LENGTH_LIMIT * LOG_QUEUE_LENGTH` bytes for the log queue.
 
 const LOG_LENGTH_LIMIT: usize = 512;

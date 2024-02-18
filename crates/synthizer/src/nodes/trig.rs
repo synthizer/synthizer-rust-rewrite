@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::command::{CommandSender, Port};
+use crate::command::Port;
 use crate::config::BLOCK_SIZE;
 use crate::error::Result;
 use crate::internal_object_handle::InternalObjectHandle;

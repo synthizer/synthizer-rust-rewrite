@@ -15,7 +15,7 @@ use crate::command::*;
 use crate::data_structures::Graph;
 use crate::error::*;
 use crate::internal_object_handle::{InternalObjectHandle, ServerChannel};
-use crate::nodes::traits::{NodeAt, NodeHandle, NodeHandleSealed};
+use crate::nodes::traits::NodeHandle;
 use crate::nodes::*;
 use crate::unique_id::UniqueId;
 use crate::worker_pool::WorkerPoolHandle;

@@ -281,8 +281,6 @@ impl ServerAt {
     }
 
     pub(crate) fn dispatch_command(&mut self, command: crate::command::Command) {
-        use crate::command::Port;
-
         rt_trace!("Dispatching command {:?}", command);
 
         match command.port().kind {

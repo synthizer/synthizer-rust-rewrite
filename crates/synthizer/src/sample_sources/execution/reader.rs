@@ -1,5 +1,3 @@
-use crate::channel_format::ChannelFormat;
-
 use crate::sample_sources::*;
 use crate::LoopSpec;
 

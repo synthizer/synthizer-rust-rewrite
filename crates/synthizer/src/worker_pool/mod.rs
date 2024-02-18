@@ -2,20 +2,11 @@
 mod inline;
 mod threaded;
 
-use std::collections::HashMap;
-use std::num::{NonZeroU64, NonZeroUsize};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant};
+use std::num::NonZeroUsize;
+
+use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-
-use audio_synchronization::mpsc_counter::MpscCounter;
-use crossbeam::channel as chan;
-use rayon::prelude::*;
-use rayon::ThreadPool;
-
-use crate::unique_id::UniqueId;
 
 use threaded::*;
 

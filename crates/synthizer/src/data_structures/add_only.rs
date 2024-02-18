@@ -1,5 +1,3 @@
-use crate::config::*;
-
 use super::*;
 
 /// A wrapper around [AllocatedBlock] which disables reading and forces the caller to only add to the output.

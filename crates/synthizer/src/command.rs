@@ -1,7 +1,5 @@
 use std::any::Any;
 
-use arrayvec::ArrayVec;
-
 use crate::error::Result;
 use crate::unique_id::UniqueId;
 
