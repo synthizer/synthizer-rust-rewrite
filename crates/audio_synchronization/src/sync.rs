@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 #[cfg(not(loom))]
 mod not_loom {
     pub use std::sync::atomic::*;

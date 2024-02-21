@@ -139,7 +139,7 @@ pub(crate) trait NodeAt: HasNodeDescriptor {
         // For simplicity we also currently assume at most one output.
         let needed_output_channels = desc
             .outputs
-            .get(0)
+            .first()
             .map(|x| x.channel_format.get_channel_count().get())
             .unwrap_or(0);
 
