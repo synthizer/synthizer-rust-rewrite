@@ -46,7 +46,7 @@ pub enum TestOutcome {
     Indeterminate,
 
     /// The test failed because some validator did.
-    ValidatorsFailed(ValidatorsFailed),
+    ValidatorsFailed(ValidatorsFailedResponse),
 
     /// The process panicked.  Could be an assert or an actual problem.
     Panicked(PanicOutcome),
@@ -64,7 +64,7 @@ pub struct FailedValidatorEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidatorsFailed {
+pub struct ValidatorsFailedResponse {
     pub entries: Vec<FailedValidatorEntry>,
 }
 

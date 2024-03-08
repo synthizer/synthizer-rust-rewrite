@@ -75,4 +75,8 @@ impl IntoValidator for RangeValidator {
             current_index: 0,
         })
     }
+
+    fn get_tag(&self) -> &str {
+        "RangeValidator"
+    }
 }

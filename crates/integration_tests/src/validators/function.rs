@@ -42,4 +42,8 @@ where
     fn build_validator(self: Box<Self>, _context: &TestContext) -> Box<dyn super::Validator> {
         Box::new(FunctionValidator::KeepGoing(*self))
     }
+
+    fn get_tag(&self) -> &str {
+        "Closure"
+    }
 }

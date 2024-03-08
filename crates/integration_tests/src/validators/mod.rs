@@ -13,8 +13,9 @@ pub use range::*;
 /// Reasons a validator may fail.
 ///
 /// Some validators are able to provide more semantic information than a string. This enum allows capturing that.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, derive_more::Display, Serialize, Deserialize)]
 pub enum ValidatorFailure {
+    #[display(fmt = "{}", _0)]
     SimpleMessage(String),
 }
 
@@ -68,4 +69,9 @@ pub trait Validator: Send + Sync + 'static {
 /// when the exact sequence is known to some tolerance.
 pub trait IntoValidator: 'static {
     fn build_validator(self: Box<Self>, context: &TestContext) -> Box<dyn Validator>;
+
+    /// The tag of a validator is the name, e.g. "golden", "closure".
+    ///
+    /// Used for printing test results.
+    fn get_tag(&self) -> &str;
 }

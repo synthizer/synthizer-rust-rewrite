@@ -58,6 +58,7 @@ mod context;
 mod environment;
 mod process_coordination;
 mod registry;
+mod reporter;
 mod test_config;
 mod test_filtering;
 mod test_runner;

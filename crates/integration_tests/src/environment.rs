@@ -51,3 +51,13 @@ pub const RESPONSE_GOOD_FILE: &str = "response.json";
 
 /// File to which a response is written if a test panics.
 pub const RESPONSE_PANIC_FILE: &str = "response-panic.json";
+
+impl<T: AsRef<Path>> Environment<T> {
+    pub fn artifacts_dir_for(&self, test_name: &str) -> PathBuf {
+        self.temp_artifacts_dir.as_ref().join(test_name)
+    }
+
+    pub fn panic_response_file_for(&self, test_name: &str) -> PathBuf {
+        self.artifacts_dir_for(test_name).join(RESPONSE_PANIC_FILE)
+    }
+}

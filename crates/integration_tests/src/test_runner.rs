@@ -38,7 +38,7 @@ pub fn run_single_test_in_subprocess(name: &str) -> Result<protocol::SubprocessR
     // If any validator failed, tel the parent.
     if !validator_failures.is_empty() {
         return Ok(protocol::SubprocessResponse {
-            outcome: protocol::TestOutcome::ValidatorsFailed(protocol::ValidatorsFailed {
+            outcome: protocol::TestOutcome::ValidatorsFailed(protocol::ValidatorsFailedResponse {
                 entries: validator_failures,
             }),
         });
@@ -91,10 +91,13 @@ pub fn run_single_test_in_parent(name: &str) -> Result<protocol::SubprocessRespo
 
 /// Filter down the tests with the provided filter and run them all.  Then, report the outcome to stderr.
 ///
-/// On unrecoverable error, exits the process.
+/// This function never returns, and exits the process with the appropriate error code.
 pub fn run_tests(filter: &crate::cli_args::FilterArgs) {
     for test in crate::test_filtering::get_tests_filtered(filter) {
         let name = test.name();
-        eprintln!("{name}: {:?}", run_single_test_in_parent(test.name()));
+        let res = run_single_test_in_parent(test.name())
+            .expect("Running tests themselves should always work unless the harness is bugged or the environment is bad");
+        let reported = crate::reporter::report_test(name, &(test.config_fn)(), &res.outcome);
+        eprintln!("{reported}");
     }
 }

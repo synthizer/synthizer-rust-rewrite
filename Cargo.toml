@@ -27,6 +27,7 @@ eye_dropper = { path = "crates/eye_dropper" }
 globset = "0.4.14"
 hound = "3.5.1"
 im = "15.1.0"
+indenter = { version = "0.3.3", features = ["std"] }
 inventory = "0.3.15"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
