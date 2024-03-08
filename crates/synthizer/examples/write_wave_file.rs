@@ -20,10 +20,8 @@ fn main() -> Result<()> {
     let sine = syz::nodes::TrigWaveformNode::new_sin(&server, 261f64)?;
     server.connect(&sine, 0, &audio_output, 0)?;
 
-    // A real app would want to stream data, but we will just use an in-memory buffer since this is only an example.
-    let sr = server.get_sr() as usize;
     // A buffer of stereo data.
-    let mut buffer = vec![0.0f32; sr * 2];
+    let mut buffer = vec![0.0f32; syz::SR as usize * 2];
 
     server.synthesize_stereo(&mut buffer[..])?;
 
@@ -34,7 +32,7 @@ fn main() -> Result<()> {
         // These are the settings for 32-bit float, what we get from Synthizer.
         sample_format: hound::SampleFormat::Float,
         bits_per_sample: 32,
-        sample_rate: sr as u32,
+        sample_rate: syz::SR,
     };
     let mut writer = hound::WavWriter::create(file_path, spec)?;
 

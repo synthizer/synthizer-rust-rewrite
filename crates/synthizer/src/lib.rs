@@ -36,7 +36,7 @@ mod unique_id;
 mod worker_pool;
 
 pub use channel_format::*;
-pub use config::SR;
+pub use config::{BLOCK_SIZE, SR};
 pub use db::DbExt;
 pub use error::{Error, Result};
 pub use loop_spec::*;

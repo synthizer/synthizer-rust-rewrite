@@ -54,7 +54,7 @@ struct ServerInternal {
 /// (supercollider, pyo, etc).
 ///
 /// In addition to pushing data to an audio device, it is possible to pull data to your own code as f32 samples at the
-/// server's internal sampling rate, [Server::get_sr].  if resampling is required, you must currently handle that
+/// server's internal sampling rate, [crate::SR].  if resampling is required, you must currently handle that
 /// yourself.
 #[derive(Clone)]
 pub struct Server {
@@ -269,14 +269,8 @@ impl Server {
             .connect(output_node, output_index, input_node, input_index)
     }
 
-    /// Get the sampling rate of this server.
-    ///
-    /// This is the sampling rate which will be used when calling [Server::synthesize_data].
-    pub fn get_sr(&self) -> u64 {
-        crate::config::SR as u64
-    }
-
     /// get Synthizer to synthesize a block of stereo data.
+    ///
     ///
     /// This function will perform synthesis on the current thread, writing to the given output slice in the server's
     /// sampling rate.  Note that this includes things such as running streaming sources.
