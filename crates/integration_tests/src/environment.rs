@@ -60,4 +60,8 @@ impl<T: AsRef<Path>> Environment<T> {
     pub fn panic_response_file_for(&self, test_name: &str) -> PathBuf {
         self.artifacts_dir_for(test_name).join(RESPONSE_PANIC_FILE)
     }
+
+    pub fn good_response_file_for(&self, test_name: &str) -> PathBuf {
+        self.artifacts_dir_for(test_name).join(RESPONSE_GOOD_FILE)
+    }
 }

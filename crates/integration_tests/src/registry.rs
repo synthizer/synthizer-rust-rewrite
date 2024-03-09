@@ -65,6 +65,9 @@ fn build_test_cache() -> Vec<&'static TestRegistryEntry> {
     ret
 }
 
+pub fn get_test_by_name(test_name: &str) -> Option<&'static TestRegistryEntry> {
+    get_tests().find(|x| x.name() == test_name)
+}
 impl TestRegistryEntry {
     pub fn name(&self) -> &str {
         self.name

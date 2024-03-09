@@ -80,9 +80,7 @@ pub fn run_single_test_in_parent(name: &str) -> Result<protocol::SubprocessRespo
     }
 
     let outcome = crate::process_coordination::parent_process::parent_process(name)?;
-    if matches!(&outcome.outcome, protocol::TestOutcome::Passed)
-        && !config.keep_artifacts_on_success
-    {
+    if outcome.outcome.is_passed() && !config.keep_artifacts_on_success {
         std::fs::remove_dir_all(&artifacts_directory).context(format!("While trying to clean up the artifacts directory after a successful test name={name}: {}", artifacts_directory.display()))?;
     }
 
@@ -93,11 +91,17 @@ pub fn run_single_test_in_parent(name: &str) -> Result<protocol::SubprocessRespo
 ///
 /// This function never returns, and exits the process with the appropriate error code.
 pub fn run_tests(filter: &crate::cli_args::FilterArgs) {
+    let mut all_passed = true;
+
     for test in crate::test_filtering::get_tests_filtered(filter) {
         let name = test.name();
         let res = run_single_test_in_parent(test.name())
             .expect("Running tests themselves should always work unless the harness is bugged or the environment is bad");
         let reported = crate::reporter::report_test(name, &(test.config_fn)(), &res.outcome);
+        all_passed &= matches!(res.outcome, protocol::TestOutcome::Passed);
         eprintln!("{reported}");
     }
+
+    let exit_code = (!all_passed) as _;
+    std::process::exit(exit_code);
 }

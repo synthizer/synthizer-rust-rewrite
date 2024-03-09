@@ -43,23 +43,30 @@ fn report_test_fallible(
     write!(dest, "{test_name} ")?;
 
     match outcome {
-        proto::TestOutcome::Passed => write!(dest, "passed"),
+        proto::TestOutcome::Passed => write!(dest, "passed")?,
         proto::TestOutcome::Panicked(p) => {
             writeln!(dest, "panicked")?;
-            report_panic(&mut indented(&mut dest).ind(2), test_name, p)
+            report_panic(&mut indented(&mut dest).with_str("  "), test_name, p)?;
         }
         proto::TestOutcome::RunnerFailed(r) => {
             writeln!(dest, "Runner Failed")?;
-            report_runner_failed(&mut indented(&mut dest).ind(2), r)
+            report_runner_failed(&mut indented(&mut dest).with_str("  "), r)?;
         }
         proto::TestOutcome::ValidatorsFailed(v) => {
             writeln!(dest, "Validators failed")?;
-            report_validators_failed(&mut indented(&mut dest).ind(2), test_config, v)
+            report_validators_failed(&mut indented(&mut dest).with_str("  "), test_config, v)?;
         }
         proto::TestOutcome::Indeterminate => {
-            write!(dest, "Ended with an indeterminate result")
+            writeln!(dest, "Ended with an indeterminate result")?;
         }
     }
+
+    if !outcome.is_passed() {
+        // Mind the double spaces at the beginning of this string.
+        writeln!(dest, "  More information may be available. Try cargo run --bin synthizer_integration_tests -- view-response {test_name}")?;
+    }
+
+    Ok(())
 }
 
 fn report_panic(dest: &mut dyn Write, test_name: &str, info: &proto::PanicOutcome) -> Result {
@@ -86,8 +93,8 @@ fn report_validators_failed(
     for v in info.entries.iter() {
         let mut ind_fmt = indented(&mut dest);
         let tag = test_config.validators[v.index].get_tag();
-        write!(&mut ind_fmt, "Validator {} (a {tag}): ", v.index)?;
-        writeln!(ind_fmt.ind(2), "{}", v.payload)?;
+        writeln!(&mut ind_fmt, "Validator {} (a {tag}): ", v.index)?;
+        writeln!(ind_fmt.with_str("  "), "{}", v.payload)?;
     }
     Ok(())
 }

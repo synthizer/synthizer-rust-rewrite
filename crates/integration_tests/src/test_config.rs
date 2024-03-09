@@ -11,6 +11,7 @@ pub struct TestConfig {
     ///
     /// This is used basically only for the self test where we have a test that does nothing to make sure the framework
     /// works.  Other tests shouldn't have it, save while debugging weirdness, since the framework writes large files.
+    #[builder(default)]
     pub keep_artifacts_on_success: bool,
 }
 

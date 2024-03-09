@@ -17,6 +17,11 @@ pub enum Command {
     /// List all tests.
     List(ListArgs),
 
+    /// Given the name of a test, pretty print the response.json or response-panic.json
+    ///
+    /// Figures out whichever is appropriate, and then shows that.
+    ViewResponse(ViewResponseArgs),
+
     /// Private command used as an entrypoint to subprocesses.
     SubprocessEntryPoint(SubprocessArgs),
 }
@@ -46,4 +51,9 @@ pub struct SubprocessArgs {
 pub struct ListArgs {
     #[command(flatten)]
     pub filter: FilterArgs,
+}
+
+#[derive(Debug, Parser)]
+pub struct ViewResponseArgs {
+    pub test_name: String,
 }

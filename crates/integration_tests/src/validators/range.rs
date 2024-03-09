@@ -14,7 +14,7 @@ enum State {
     Failed {
         index: u64,
         location: &'static Location<'static>,
-        value: f64,
+        value: f32,
         channel: u64,
     },
 }
@@ -30,7 +30,7 @@ impl Validator for RangeImpl {
         &mut self,
         _context: &TestContext,
         location: &'static Location<'static>,
-        frame: &[f64],
+        frame: &[f32],
     ) {
         if !self.state.is_good() {
             return;

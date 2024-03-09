@@ -32,7 +32,7 @@ pub struct SubprocessResponse {
 }
 
 /// The outcome of a test.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, derive_more::IsVariant)]
 pub enum TestOutcome {
     /// Test passed this time.  If there are further runs, cancel them.
     Passed,

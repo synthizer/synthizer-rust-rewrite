@@ -10,13 +10,13 @@ enum FunctionValidator<F> {
 
 impl<F> super::Validator for FunctionValidator<F>
 where
-    F: FnMut(&TestContext, &[f64]) -> Result<(), String> + Send + Sync + 'static,
+    F: FnMut(&TestContext, &[f32]) -> Result<(), String> + Send + Sync + 'static,
 {
     fn validate_frame(
         &mut self,
         context: &TestContext,
         location: &'static Location<'static>,
-        frame: &[f64],
+        frame: &[f32],
     ) {
         if let FunctionValidator::KeepGoing(ref mut cb) = self {
             if let Err(msg) = cb(context, frame) {
@@ -37,7 +37,7 @@ where
 
 impl<F> super::IntoValidator for F
 where
-    F: FnMut(&TestContext, &[f64]) -> Result<(), String> + Send + Sync + 'static,
+    F: FnMut(&TestContext, &[f32]) -> Result<(), String> + Send + Sync + 'static,
 {
     fn build_validator(self: Box<Self>, _context: &TestContext) -> Box<dyn super::Validator> {
         Box::new(FunctionValidator::KeepGoing(*self))

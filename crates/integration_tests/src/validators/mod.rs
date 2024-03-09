@@ -29,7 +29,7 @@ pub trait Validator: Send + Sync + 'static {
         &mut self,
         context: &TestContext,
         location: &'static Location<'static>,
-        frame: &[f64],
+        frame: &[f32],
     );
 
     /// If this validator has failed, return `Err` explaining why.
@@ -46,7 +46,7 @@ pub trait Validator: Send + Sync + 'static {
         &mut self,
         context: &TestContext,
         location: &'static Location<'static>,
-        data: &[f64],
+        data: &[f32],
     ) {
         let chancount = context.channel_format.get_channel_count().get();
 
