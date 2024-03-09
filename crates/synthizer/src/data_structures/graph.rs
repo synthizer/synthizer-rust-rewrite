@@ -64,7 +64,7 @@ impl Graph {
             // The outgoing set points at unique incoming nodes.
             .map(|x| x.incoming_node)
             // The incoming set points at unique outgoing nodes.
-            .chain(node.incoming.into_iter().map(|x| x.incoming_node))
+            .chain(node.incoming.into_iter().map(|x| x.outgoing_node))
         {
             let node = self.nodes.get_mut(&id).expect("Node must be present");
             node.outgoing
