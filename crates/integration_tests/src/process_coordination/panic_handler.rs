@@ -8,7 +8,7 @@ use super::protocol::*;
 /// Installs a panic handler which will write the panic response from [super::protocol] to the file specified.
 ///
 /// This is slightly fragile in the sense that it will not handle (for example) C segfaults.  It also won't handle
-/// anything which puts the process in such a bad state that it can no longer use serde_json and write a file (which, is
+/// anything which puts the process in such a bad state that it can no longer use serde_yaml and write a file (which, is
 /// standard syscalls and the allocator).
 ///
 /// This creates the file up front and keeps it open by moving it into the panic handler.
@@ -41,7 +41,7 @@ pub fn install_panic_handler(response_destination: &Path) {
 
         // We will permit a double panic here.  If that happens, things are probably screwed up enough that it wasn't
         // going to go well anyway.
-        serde_json::to_writer(file, &response).expect("Should serialize and write");
+        serde_yaml::to_writer(file, &response).expect("Should serialize and write");
     });
 
     stdp::set_hook(handler);

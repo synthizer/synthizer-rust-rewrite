@@ -7,7 +7,7 @@ use super::protocol as proto;
 ///
 /// We do the following things here:
 ///
-/// - Set a panic handler which will write to "response-panic.json".
+/// - Set a panic handler which will write to "response-panic.yml".
 /// - Set a logger which will write to `TESTROOT/logs/level.txt`.
 /// - Delegate to the runner at the root of the crate which has a clue on how to actually do the thing.
 ///
@@ -39,5 +39,5 @@ pub fn subprocess_entrypoint(args: &crate::cli_args::SubprocessArgs) {
     let out_file =
         std::fs::File::create(artifacts_root.join(crate::environment::RESPONSE_GOOD_FILE))
             .expect("Could not create response file");
-    serde_json::to_writer(out_file, &response).expect("Could not write the JSON response");
+    serde_yaml::to_writer(out_file, &response).expect("Could not write the yaml response");
 }

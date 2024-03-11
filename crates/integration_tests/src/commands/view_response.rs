@@ -40,9 +40,6 @@ pub fn view_response(_top_args: &CliArgs, cmd_args: &ViewResponseArgs) {
         "Unable to find a response file in the artifacts directory. Manual examination is required",
     );
 
-    // Converting to yaml gets us nice pretty printing of multiline strings.
-    let json: serde_json::Value = serde_json::from_str(&response).unwrap();
-    let yaml = serde_yaml::to_string(&json).unwrap();
     println!("Response for {}", cmd_args.test_name);
-    println!("{yaml}");
+    println!("{response}");
 }

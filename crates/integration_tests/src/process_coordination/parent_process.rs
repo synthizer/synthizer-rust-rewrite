@@ -32,5 +32,5 @@ pub fn parent_process(test_name: &str) -> Result<protocol::SubprocessResponse> {
     }
     let resp_file = maybe_resp_file?;
 
-    Ok(serde_json::from_reader(resp_file)?)
+    Ok(serde_yaml::from_reader(resp_file)?)
 }

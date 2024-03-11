@@ -47,10 +47,10 @@ pub fn get_env() -> Environment<&'static Path> {
 }
 
 /// File to which test responses are written when the subprocess exits successfully.
-pub const RESPONSE_GOOD_FILE: &str = "response.json";
+pub const RESPONSE_GOOD_FILE: &str = "response.yml";
 
 /// File to which a response is written if a test panics.
-pub const RESPONSE_PANIC_FILE: &str = "response-panic.json";
+pub const RESPONSE_PANIC_FILE: &str = "response-panic.yml";
 
 impl<T: AsRef<Path>> Environment<T> {
     pub fn artifacts_dir_for(&self, test_name: &str) -> PathBuf {

@@ -1,9 +1,12 @@
 //! Defines the protocol (serde types) which are used to talk between subprocesses.
 //!
-//! Each test corresponds to one subprocess invocation which receives a JSON blob on the command line.  Tests are then
-//! expected to write a `response.json` in their artifacts directory saying how the test went, or a
-//! `response_panic.json` if they panic (the latter is a different file so that the panic handler may hold the file open
-//! from process start).
+//! Each test corresponds to one subprocess invocation which receives a json blob on the command line.  Tests are then
+//! expected to write a `response.yml` in their artifacts directory saying how the test went, or a `response_panic.yml`
+//! if they panic (the latter is a different file so that the panic handler may hold the file open from process start).
+//!
+//! The reason requests are JSON is that yaml is a multiline format. In order to make it easy to play with this at the
+//! shell, we use yaml for the responses since that is easy to read, and JSON for the input since that is easier to
+//! type.
 //!
 //! This file just defines the types, which are consumed by other modules.
 use serde::{Deserialize, Serialize};
