@@ -46,8 +46,8 @@
 //! integration tests themselves work.
 //!
 //! This must be built and run with `cargo run` in the Synthizer workspace, and cannot run outside Synthizer's workspace
-//! because of the above directories.  It is also written assuming `panic = abort`, configured in the workspace root, so
-//! that we never fail to catch a panic on a thread we're not monitoring.
+//! because of the above directories.  Also, tests effectively run with `panic = abort` always, even if the Cargo
+//! profile specifies otherwise.
 //!
 //! # Environment Variables
 //!

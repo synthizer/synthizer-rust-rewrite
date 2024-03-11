@@ -13,8 +13,8 @@ use super::protocol::*;
 ///
 /// This creates the file up front and keeps it open by moving it into the panic handler.
 pub fn install_panic_handler(response_destination: &Path) {
-    // This mutex is uncontended because we use panic=abort, and panic handlers are called only once per process.  That
-    // doesn't stop Rust from assuming that this is panic = unwind.
+    // allows for the panic handler to close the file, by setting the guard to None.
+    // This mutex ensures that we only run one panic handler total. The handler aborts explicitrly.  Being an option
     let file = Mutex::new(Some(
         File::create(response_destination).expect("Unable to open file for the panic handler"),
     ));
@@ -25,11 +25,9 @@ pub fn install_panic_handler(response_destination: &Path) {
         // This should always at least display something.
         old_handler(p_info);
 
-        let file = file
-            .lock()
-            .unwrap()
-            .take()
-            .expect("Panic handlers are only called once");
+        let mut file_guard = file.lock().unwrap();
+        // We know this is Some because no other thread may acquire the lock first; the process is about to abort.
+        let mut file = file_guard.take().unwrap();
 
         let response = SubprocessResponse {
             outcome: TestOutcome::Panicked(PanicOutcome {
@@ -41,7 +39,12 @@ pub fn install_panic_handler(response_destination: &Path) {
 
         // We will permit a double panic here.  If that happens, things are probably screwed up enough that it wasn't
         // going to go well anyway.
-        serde_yaml::to_writer(file, &response).expect("Should serialize and write");
+        serde_yaml::to_writer(&mut file, &response).expect("Should serialize and write");
+
+        // Close the file.  We could in theory do this by passing the file directly to serde_yaml, but it is important
+        // that this happen and being explicit ensures that we can't miss it.
+        std::mem::drop(file);
+        std::process::abort();
     });
 
     stdp::set_hook(handler);
