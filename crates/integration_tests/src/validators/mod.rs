@@ -61,9 +61,9 @@ pub trait Validator: Send + Sync + 'static {
 /// This trait exists so that configuration may be built in a generic way.  The various validator builders implement it
 /// and build their validators into boxes.
 ///
-/// In addition to the specific structs in this crate, this trait is also implemented for `FnMut(u64, &TestContext,
-/// &[f64]) ->Result<(), String>`, which will stop the first time the given callback returns an error.  This is useful
-/// when the exact sequence is known to some tolerance.
+/// In addition to the specific structs in this crate, this trait is also implemented for `FnMut(&TestContext, frame:
+/// u64, frame_samples: &[f64]) ->Result<(), String>`, which will stop the first time the given callback returns an
+/// error.  This is useful when the exact sequence is known to some tolerance.
 pub trait IntoValidator: 'static {
     fn build_validator(self: Box<Self>, context: &TestContext) -> Box<dyn Validator>;
 
