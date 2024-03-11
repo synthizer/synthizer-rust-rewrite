@@ -1,5 +1,4 @@
 mod function;
-mod golden;
 mod range;
 
 use std::panic::Location;
@@ -33,8 +32,6 @@ pub trait Validator: Send + Sync + 'static {
     );
 
     /// If this validator has failed, return `Err` explaining why.
-    ///
-    /// Validators are permitted to write to disk here, e.g. for [golden].
     fn finalize(&mut self, context: &TestContext) -> Result<(), ValidatorFailure>;
 
     /// Batched validator tick.

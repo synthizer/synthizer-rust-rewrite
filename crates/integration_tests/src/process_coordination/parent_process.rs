@@ -9,7 +9,6 @@ use anyhow::{Context, Result};
 pub fn parent_process(test_name: &str) -> Result<protocol::SubprocessResponse> {
     let request = protocol::SubprocessRequest {
         test_name: test_name.to_string(),
-        pass: 0,
     };
 
     let testroot = crate::environment::get_env()

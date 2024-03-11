@@ -14,15 +14,14 @@
 //! - The test sets things up, then drives the context forward by calling `.run_until` with one of a few different types
 //!   to push the test forward.
 //! - The test is separately registered via inventory, which isn't as convenient as the Rust test attribute but is the
-//!   only way to let us do configuration.
+//!   only way to let us do configuration without having to maintain annoying central registries.
 //! - When a test is registerd, validators are connected to it, and compare the sequence to the validator.
 //!
 //! Some example validators are these:
 //!
 //! - Any `Fn(u64, &mut[f64])` and other similar function signatures capable of generating frames of data from a sample
 //!   index can be used to check exactly.  For example, this can check basic trigonometric waveforms.
-//! - The [validators::golden] module can be used to take a fingerprint which is saved to the `golden` directory, and
-//!   then compared on the next test run.  See module documentation for how fingerprinting works.
+//! - The [validators::RangeValidator] verifies that all audio samples are between -1.0 and 1.0.
 //!
 //! Multiple validators may be added to a test.
 //!

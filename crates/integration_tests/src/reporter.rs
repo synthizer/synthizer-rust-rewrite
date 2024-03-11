@@ -56,9 +56,6 @@ fn report_test_fallible(
             writeln!(dest, "Validators failed")?;
             report_validators_failed(&mut indented(&mut dest).with_str("  "), test_config, v)?;
         }
-        proto::TestOutcome::Indeterminate => {
-            writeln!(dest, "Ended with an indeterminate result")?;
-        }
     }
 
     if !outcome.is_passed() {

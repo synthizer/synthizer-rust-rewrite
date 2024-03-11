@@ -21,12 +21,6 @@ pub struct SubprocessRequest {
     ///
     /// This is then looked up in the registry.
     pub test_name: String,
-
-    /// The number of the pass.
-    ///
-    /// Some tests are run more than once, primarily to validate determinism.  We almost never run one more than twice.
-    /// For single-run tests this is always 0, but for the nth run of multi-run tests it is `n - 1`.
-    pub pass: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,11 +36,6 @@ pub enum TestOutcome {
 
     /// The test runner function failed.
     RunnerFailed(RunnerFailedResponse),
-
-    /// The test was configured to need more than one pass and does not yet know what the outcome is.
-    ///
-    /// If this is the nth pass of an n-pass test, this is a failure.
-    Indeterminate,
 
     /// The test failed because some validator did.
     ValidatorsFailed(ValidatorsFailedResponse),
