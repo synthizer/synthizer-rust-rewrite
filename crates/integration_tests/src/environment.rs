@@ -52,6 +52,9 @@ pub const RESPONSE_GOOD_FILE: &str = "response.yml";
 /// File to which a response is written if a test panics.
 pub const RESPONSE_PANIC_FILE: &str = "response-panic.yml";
 
+/// Environment variable which tells the test framework not to clear artifacts of passing tests.
+pub const KEEP_ARTIFACTS_ENV_VAR: &str = "SYZ_TESTING_KEEP_ARTIFACTS";
+
 impl<T: AsRef<Path>> Environment<T> {
     pub fn artifacts_dir_for(&self, test_name: &str) -> PathBuf {
         self.temp_artifacts_dir.as_ref().join(test_name)

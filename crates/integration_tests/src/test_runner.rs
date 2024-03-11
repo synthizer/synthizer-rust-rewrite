@@ -80,7 +80,10 @@ pub fn run_single_test_in_parent(name: &str) -> Result<protocol::SubprocessRespo
     }
 
     let outcome = crate::process_coordination::parent_process::parent_process(name)?;
-    if outcome.outcome.is_passed() && !config.keep_artifacts_on_success {
+    if outcome.outcome.is_passed()
+        && !config.keep_artifacts_on_success
+        && std::env::var_os(crate::environment::KEEP_ARTIFACTS_ENV_VAR).is_none()
+    {
         std::fs::remove_dir_all(&artifacts_directory).context(format!("While trying to clean up the artifacts directory after a successful test name={name}: {}", artifacts_directory.display()))?;
     }
 

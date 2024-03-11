@@ -48,6 +48,11 @@
 //! This must be built and run with `cargo run` in the Synthizer workspace, and cannot run outside Synthizer's workspace
 //! because of the above directories.  It is also written assuming `panic = abort`, configured in the workspace root, so
 //! that we never fail to catch a panic on a thread we're not monitoring.
+//!
+//! # Environment Variables
+//!
+//! - `SYZ_TESTING_KEEP_ARTIFACTS`: if set to any value, keep the artifacts of passing tests around.  Since these can be
+//!   extremely large, they are deleted by default.
 #[macro_use]
 mod registration_macro;
 
