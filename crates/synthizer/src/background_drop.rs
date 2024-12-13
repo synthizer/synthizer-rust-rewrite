@@ -45,8 +45,8 @@ struct BoxDrop(#[derivative(Debug = "ignore")] Box<dyn Any + Send + Sync + 'stat
 macro_rules! decl_variant {
     ($($tys:ident),*)=> {
         mod drop_variant {
-            use crate::data_structures::Graph;
-            use crate::nodes::ConcreteNodeHandle;
+
+
 
             use super::*;
 
@@ -67,7 +67,7 @@ macro_rules! decl_variant {
     }
 }
 
-decl_variant!(ArcDrop, BoxDrop, Graph, ConcreteNodeHandle);
+decl_variant!(ArcDrop, BoxDrop);
 
 /// When background_drop is called, drop the item on the background thread if needed.
 pub(crate) trait BackgroundDroppable {

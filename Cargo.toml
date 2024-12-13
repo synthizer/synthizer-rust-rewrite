@@ -6,9 +6,9 @@ resolver = "2"
 ahash = "0.8.3"
 anyhow = "1.0.79"
 arc-swap = "1.6.0"
+audio_synchronization = { path = "crates/audio_synchronization" }
 arrayvec = "0.7.2"
 atomic_refcell = "0.1.9"
-audio_synchronization = { path = "crates/audio_synchronization" }
 bytemuck = "1.14.0"
 cc = "1.0.79"
 convert_case = "0.6.0"
@@ -46,8 +46,6 @@ rubato = "0.14.1"
 sharded-slab = "0.1.4"
 smallvec = { version = "1.10.0", features = ["write"] }
 spin = "0.9.8"
-supermatch = { path = "crates/supermatch" }
-supermatch_macro = { path = "crates/supermatch_macro" }
 symphonia = { version = "0.5.3", features = ["all-codecs"] }
 syn = { version = "2", features = ["full", "fold"] }
 synthizer_macros_internal = { path = "crates/synthizer_macros_internal" }
