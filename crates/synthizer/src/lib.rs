@@ -9,6 +9,8 @@ mod logging;
 
 mod background_drop;
 pub mod biquad;
+pub mod chain;
+pub mod chain_mathops;
 mod channel_format;
 #[cfg(test)]
 mod close_floats;
@@ -22,6 +24,7 @@ mod is_audio_thread;
 mod loop_spec;
 mod option_recycler;
 pub mod sample_sources;
+pub mod signals;
 mod unique_id;
 mod worker_pool;
 
