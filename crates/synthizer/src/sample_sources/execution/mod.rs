@@ -6,4 +6,3 @@ pub(crate) mod loop_driver;
 mod reader;
 mod resampler;
 
-pub(crate) use executor::Executor;

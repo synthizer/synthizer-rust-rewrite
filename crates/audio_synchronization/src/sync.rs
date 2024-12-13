@@ -3,7 +3,7 @@ mod not_loom {
     pub use std::sync::atomic::*;
     pub use std::sync::*;
     // NOTE: loom doesn't have park_timeout.
-    pub use std::thread::{current, park, spawn, yield_now, JoinHandle, Thread};
+    pub use std::thread::{current, park, Thread};
 
     pub use std::hint::spin_loop;
 
