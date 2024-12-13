@@ -64,9 +64,8 @@ impl SourceReader {
     /// Panics if the slice's length is not a multiple of the channel count, since such slices cannot contain full
     /// frames.
     pub fn read_samples(&mut self, destination: &mut [f32]) -> Result<u64, SampleSourceError> {
-        let got_frames = self.read_samples_impl(destination).map_err(|e| {
+        let got_frames = self.read_samples_impl(destination).inspect_err(|_| {
             self.source_state = SourceState::DoneForever;
-            e
         })?;
         if self.source.is_permanently_finished() {
             self.source_state = SourceState::DoneForever;
@@ -145,9 +144,8 @@ impl SourceReader {
             // try to do that and will do our best to validate elsewhere.
             .map(|x| x.saturating_sub(1).min(new_pos))
             .unwrap_or(new_pos);
-        self.source.seek(new_pos).map_err(|e| {
+        self.source.seek(new_pos).inspect_err(|_| {
             self.source_state = SourceState::DoneForever;
-            e
         })?;
         self.loop_driver.observe_seek(new_pos);
         Ok(())

@@ -122,9 +122,8 @@ impl Graph {
             .get(&outgoing.clone())
             .into_iter()
             .flat_map(|x| x.outgoing.iter())
-            .map(move |x| {
+            .inspect(move |x| {
                 debug_assert_eq!(x.outgoing_node, outgoing);
-                x
             })
     }
 
@@ -137,9 +136,8 @@ impl Graph {
             .get(&incoming.clone())
             .into_iter()
             .flat_map(|x| x.incoming.iter())
-            .map(move |x| {
+            .inspect(move |x| {
                 debug_assert_eq!(x.incoming_node, incoming);
-                x
             })
     }
 

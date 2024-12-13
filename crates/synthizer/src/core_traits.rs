@@ -32,7 +32,7 @@ pub trait Signal: Sized {
     ///
     /// This will be called after a tick of a downstream signal which wishes to send a command, as the return value of
     /// said downstream's destination callback.  Wrapper signals must show the command to their parents.
-    fn consume_command(_ctx: &mut SignalExecutionContext<'_, Self>, command: &Self::Command) {}
+    fn consume_command(_ctx: &mut SignalExecutionContext<'_, Self>, _command: &Self::Command) {}
 
     /// Tick this signal once.
     fn tick1<D: SignalDestination<Self::Output, Command = Self::Command>>(
@@ -42,7 +42,7 @@ pub trait Signal: Sized {
     );
 }
 
-trait SignalDestination<Input: Sized> {
+pub trait SignalDestination<Input: Sized> {
     type Command: Sized;
 
     fn send(&mut self, value: Input) -> Option<Self::Command>;

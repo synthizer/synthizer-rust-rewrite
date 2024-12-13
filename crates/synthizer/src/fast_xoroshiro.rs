@@ -19,21 +19,15 @@ pub struct FastXoroshiro128PlusPlus<const N: usize> {
 
 // Let's force inlining. To do so, use a bunch of macros instead of functions.
 
-macro_rules! rotl {
-    ($x:expr,$k:expr) => {
-        ($x << $k) | ($x >> (64 - $k))
-    };
-}
-
 macro_rules! next {
     ($self:expr, $ind: expr) => {{
         let s0 = $self.s0[$ind];
         let mut s1 = $self.s1[$ind];
 
-        let result: u64 = rotl!(s0.wrapping_add(s1), 17).wrapping_add(s0);
+        let result: u64 = s0.wrapping_add(s1).rotate_left(17).wrapping_add(s0);
         s1 ^= s0;
-        $self.s0[$ind] = rotl!(s0, 49) ^ s1 ^ (s1 << 21);
-        $self.s1[$ind] = rotl!(s1, 28);
+        $self.s0[$ind] = s0.rotate_left(49) ^ s1 ^ (s1 << 21);
+        $self.s1[$ind] = s1.rotate_left(28);
         result
     }};
 }

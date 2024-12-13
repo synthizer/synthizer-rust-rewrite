@@ -1,9 +1,11 @@
+#![allow(unused_imports)]
+
 #[cfg(not(loom))]
 mod not_loom {
     pub use std::sync::atomic::*;
     pub use std::sync::*;
     // NOTE: loom doesn't have park_timeout.
-    pub use std::thread::{current, park, Thread};
+    pub use std::thread::{current, park, spawn, JoinHandle, Thread};
 
     pub use std::hint::spin_loop;
 

@@ -192,7 +192,7 @@ mod tests {
         ensure_background_drop_thread_started();
 
         thread_local! {
-            static THIS_THREAD: std::cell::Cell<bool>=std::cell::Cell::new(false);
+            static THIS_THREAD: std::cell::Cell<bool>=const{std::cell::Cell::new(false)};
         };
 
         struct InlineDrop(u32);
@@ -220,7 +220,7 @@ mod tests {
 
         static mut DID_DROP: bool = false;
         thread_local! {
-            static THIS_THREAD: std::cell::Cell<bool> = std::cell::Cell::new(false);
+            static THIS_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         }
 
         impl Drop for Dropping {

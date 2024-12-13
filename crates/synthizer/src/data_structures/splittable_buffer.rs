@@ -166,7 +166,7 @@ impl<T> SplittableBufferStorageMut for Vec<T> {
     }
 }
 
-impl<'a, T> SplittableBufferStorage for &'a [T] {
+impl<T> SplittableBufferStorage for &'_ [T] {
     type ElementType = T;
 
     fn len(&self) -> usize {
@@ -178,7 +178,7 @@ impl<'a, T> SplittableBufferStorage for &'a [T] {
     }
 }
 
-impl<'a, T> SplittableBufferStorage for &'a mut [T] {
+impl<T> SplittableBufferStorage for &'_ mut [T] {
     type ElementType = T;
 
     fn len(&self) -> usize {
@@ -190,7 +190,7 @@ impl<'a, T> SplittableBufferStorage for &'a mut [T] {
     }
 }
 
-impl<'a, T> SplittableBufferStorageMut for &'a mut [T] {
+impl<T> SplittableBufferStorageMut for &'_ mut [T] {
     fn slice_all_mut(&mut self) -> &mut [Self::ElementType] {
         self
     }

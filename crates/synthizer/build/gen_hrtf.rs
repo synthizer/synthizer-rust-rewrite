@@ -37,7 +37,7 @@ fn validate(db: &p_hrtf::HrtfDataset, name: &str) {
 
     let expected_len = db.elevations[0]
         .azimuths
-        .get(0)
+        .first()
         .expect("There must be at least one azimuth in each elevation")
         .impulse
         .len();

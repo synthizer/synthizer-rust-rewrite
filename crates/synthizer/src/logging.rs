@@ -83,7 +83,7 @@ struct LogMessageFormatter<'a> {
     truncated: &'a mut bool,
 }
 
-impl<'a> std::fmt::Write for LogMessageFormatter<'a> {
+impl std::fmt::Write for LogMessageFormatter<'_> {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         // This formatter never fails. On truncation, it just keeps going and throws the values away.
         if *self.truncated {
