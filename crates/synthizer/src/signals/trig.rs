@@ -1,14 +1,12 @@
-use std::marker::PhantomData as PD;
-
 use crate::core_traits::*;
 
 pub struct SinSignalConfig<S: IntoSignal> {
     pub(crate) wrapped: S,
 }
 
-pub struct SinSignal<S>(PD<*mut S>);
+pub struct SinSignal<S>(S);
 
-impl<S> Signal for SinSignal<S>
+unsafe impl<S> Signal for SinSignal<S>
 where
     S: Signal<Output = f64>,
 {
@@ -18,9 +16,9 @@ where
     type Parameters = S::Parameters;
 
     fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, Self::State, Self::Parameters>,
+        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: &'_ Self::Input,
-        mut destination: D,
+        destination: D,
     ) {
         S::tick1(ctx, input, |x: f64| destination.send(x.sin()));
     }
@@ -34,7 +32,7 @@ where
     type Signal = SinSignal<S::Signal>;
 
     fn into_signal(self) -> crate::Result<Self::Signal> {
-        let _wrapped = self.wrapped.into_signal()?;
-        Ok(SinSignal(PD))
+        let wrapped = self.wrapped.into_signal()?;
+        Ok(SinSignal(wrapped))
     }
 }

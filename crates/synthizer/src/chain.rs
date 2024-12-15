@@ -1,3 +1,4 @@
+use crate::config;
 use crate::core_traits::*;
 use crate::signals as sigs;
 
@@ -43,10 +44,97 @@ impl<S: IntoSignal> Chain<S> {
     /// Start a chain.
     ///
     /// `initial` can be one of a few things.  The two most common are another chain or a constant.
-    pub fn new(initial: S) -> Self {
-        Self { inner: initial }
+    pub fn new(initial: S) -> Chain<S> {
+        Chain { inner: initial }
     }
 
+    /// Send this chain to the audio device.
+    pub fn to_audio_device(
+        self,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl Signal<
+                Input = IntoSignalInput<S>,
+                Output = (),
+                Parameters = IntoSignalParameters<S>,
+                State = IntoSignalState<S>,
+            >,
+        >,
+    >
+    where
+        S::Signal: Signal<Output = f64>,
+    {
+        Chain {
+            inner: sigs::AudioOutputSignalConfig::new(self.inner),
+        }
+    }
+
+    /// Convert this chain's input type to another type, capping the chain with a signal that will use the `Default`
+    /// implementation on whatever input type is currently wanted.
+    ///
+    /// This annoying function exists because Rust does not have specialization.  What we want to be able to do is to
+    /// combine signals which don't have inputs with signals that do when performing mathematical operations.  Ideally,
+    /// we would specialize the mathematical traits.  Unfortunately we cannot do that.  The primary use of this method
+    /// is essentially to say "okay, I know the other side has some bigger input, but this side doesn't need any input, I
+    /// promise".
+    ///
+    /// That is not the only use: sometimes you do legitimately want to feed a signal zeros or some other default value.
+    pub fn discard_and_default<NewInputType>(
+        self,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl Signal<
+                Input = NewInputType,
+                Output = IntoSignalOutput<S>,
+                State = IntoSignalState<S>,
+                Parameters = IntoSignalParameters<S>,
+            >,
+        >,
+    >
+    where
+        IntoSignalInput<S>: Default,
+    {
+        Chain {
+            inner: sigs::ConsumeInputSignalConfig::<_, NewInputType>::new(self.inner),
+        }
+    }
+
+    /// Divide this chain's output by the sample rate of the library.
+    ///
+    /// This is mostly used to convert a frequency (HZ) to an increment per sample, e.g. when building sine waves.
+    pub fn divide_by_sr(
+        self,
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = f64>>>
+    where
+        S::Signal: Signal<Output = f64>,
+        IntoSignalInput<S>: Default,
+    {
+        let converted = self.output_into::<f64>();
+        let sr = Chain::new(config::SR as f64).discard_and_default::<IntoSignalInput<S>>();
+        let done = converted / sr;
+        Chain { inner: done.inner }
+    }
+
+    /// Convert the output of this chain into a different type.
+    pub fn output_into<T>(
+        self,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl Signal<
+                Input = IntoSignalInput<S>,
+                Output = T,
+                State = IntoSignalState<S>,
+                Parameters = IntoSignalParameters<S>,
+            >,
+        >,
+    >
+    where
+        T: From<IntoSignalOutput<S>>,
+    {
+        Chain {
+            inner: sigs::ConvertOutputConfig::<S, T>::new(self.inner),
+        }
+    }
     /// Push a periodic summation onto this chain.
     ///
     /// The input will be taken from whatever signal is here already, and the period is specified herer as a constant.

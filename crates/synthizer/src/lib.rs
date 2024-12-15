@@ -22,14 +22,18 @@ mod error;
 pub mod fast_xoroshiro;
 mod is_audio_thread;
 mod loop_spec;
+mod mount_point;
 mod option_recycler;
 pub mod sample_sources;
 pub mod signals;
+pub mod synthesizer;
 mod unique_id;
 mod worker_pool;
 
+pub use chain::*;
 pub use channel_format::*;
 pub use config::SR;
 pub use db::DbExt;
 pub use error::{Error, Result};
 pub use loop_spec::*;
+pub use synthesizer::Synthesizer;

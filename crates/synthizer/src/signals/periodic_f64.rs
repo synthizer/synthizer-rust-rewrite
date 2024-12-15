@@ -1,5 +1,3 @@
-use std::marker::PhantomData as PD;
-
 use crate::core_traits::*;
 
 /// A signal which produces an f64 value in the range (0..period) by summing the value of an input signal. e.g.
@@ -13,7 +11,7 @@ pub struct PeriodicF64Config<SIncrCfg> {
     pub(crate) initial_value: f64,
 }
 
-pub struct PeriodicF64Signal<SIncr>(PD<*mut SIncr>);
+pub struct PeriodicF64Signal<SIncr>(SIncr);
 
 pub struct PeriodicF64State<SIncr: Signal> {
     freq_state: SIncr::State,
@@ -25,7 +23,7 @@ pub struct PeriodicF64Parameters<SIncr: Signal> {
     freq_params: SIncr::Parameters,
 }
 
-impl<SIncr> Signal for PeriodicF64Signal<SIncr>
+unsafe impl<SIncr> Signal for PeriodicF64Signal<SIncr>
 where
     SIncr: Signal<Output = f64>,
 {
@@ -35,9 +33,9 @@ where
     type Parameters = PeriodicF64Parameters<SIncr>;
 
     fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, Self::State, Self::Parameters>,
+        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: &'_ Self::Input,
-        mut destination: D,
+        destination: D,
     ) {
         let period = ctx.parameters.period;
         let mut val = ctx.state.cur_val;
@@ -66,7 +64,7 @@ where
     type Signal = PeriodicF64Signal<SIncrCfg::Signal>;
 
     fn into_signal(self) -> crate::Result<Self::Signal> {
-        let _wrapped = self.frequency.into_signal()?;
-        Ok(PeriodicF64Signal(PD))
+        let wrapped = self.frequency.into_signal()?;
+        Ok(PeriodicF64Signal(wrapped))
     }
 }

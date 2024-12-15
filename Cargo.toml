@@ -5,7 +5,7 @@ resolver = "2"
 [workspace.dependencies]
 ahash = "0.8.3"
 anyhow = "1.0.79"
-arc-swap = "1.6.0"
+arc-swap = "1.7.1"
 audio_synchronization = { path = "crates/audio_synchronization" }
 arrayvec = "0.7.2"
 atomic_refcell = "0.1.9"
@@ -42,6 +42,7 @@ rand = "0.8.5"
 rand_xoshiro = "0.6.0"
 rayon = "1.8.0"
 reciprocal = "0.1.2"
+rpds = "1.1.0"
 rubato = "0.14.1"
 sharded-slab = "0.1.4"
 smallvec = { version = "1.10.0", features = ["write"] }

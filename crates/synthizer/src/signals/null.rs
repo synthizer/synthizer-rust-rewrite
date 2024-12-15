@@ -6,16 +6,16 @@ use crate::core_traits::*;
 /// at all.
 pub struct NullSignal(());
 
-impl Signal for NullSignal {
+unsafe impl Signal for NullSignal {
     type Input = ();
     type Output = ();
     type State = ();
     type Parameters = ();
 
     fn tick1<D: SignalDestination<Self::Output>>(
-        _ctx: &mut SignalExecutionContext<'_, Self::State, Self::Parameters>,
+        _ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         _input: &'_ Self::Input,
-        mut destination: D,
+        destination: D,
     ) {
         destination.send(());
     }

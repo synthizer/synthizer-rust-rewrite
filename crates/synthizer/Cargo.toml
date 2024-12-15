@@ -25,6 +25,7 @@ num.workspace = true
 rand.workspace = true
 rand_xoshiro.workspace = true
 rayon.workspace = true
+rpds.workspace = true
 rubato.workspace = true
 sharded-slab.workspace = true
 smallvec.workspace = true

@@ -2,30 +2,28 @@
 use crate::core_traits::*;
 use crate::error::Result;
 
-struct ConstConfig<T>(T);
-
 macro_rules! impl_scalar {
     ($t: ty) => {
-        impl Signal for $t {
+        unsafe impl Signal for $t {
             type Input = ();
             type Output = $t;
             type State = ();
             type Parameters = $t;
 
             fn tick1<D: SignalDestination<Self::Output>>(
-                ctx: &mut SignalExecutionContext<'_, Self::State, Self::Parameters>,
+                ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
                 _input: &'_ Self::Input,
-                mut destination: D,
+                destination: D,
             ) {
                 destination.send(*ctx.parameters);
             }
         }
 
-        impl IntoSignal for ConstConfig<$t> {
+        impl IntoSignal for $t {
             type Signal = $t;
 
             fn into_signal(self) -> Result<Self::Signal> {
-                Ok(self.0)
+                Ok(self)
             }
         }
     };

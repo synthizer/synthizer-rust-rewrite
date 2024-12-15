@@ -1,5 +1,3 @@
-use std::marker::PhantomData as PD;
-
 use crate::core_traits::*;
 
 /// Takes the signal on the left, and feeds its output to the signal on the right.  The signal on the left will be
@@ -8,9 +6,9 @@ use crate::core_traits::*;
 /// This allows "filling holes".  For example, one might map a set of signals into a struct for later use, then use
 /// `and_then` to pass it to a signal expecting that struct.  This is what allows chains to embed other chains in them,
 /// and to have recursion.  In other words, higher level helpers use this as a building block.
-pub struct AndThen<S1, S2>(PD<*mut (S1, S2)>);
+pub struct AndThen<S1, S2>(S1, S2);
 
-impl<S1, S2> Signal for AndThen<S1, S2>
+unsafe impl<S1, S2> Signal for AndThen<S1, S2>
 where
     S1: Signal,
     S2: Signal<Input = S1::Output>,
@@ -21,7 +19,7 @@ where
     type Parameters = (S1::Parameters, S2::Parameters);
 
     fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, Self::State, Self::Parameters>,
+        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: &'_ Self::Input,
         destination: D,
     ) {
@@ -51,14 +49,14 @@ where
     type Signal = AndThen<S1::Signal, S2::Signal>;
 
     fn into_signal(self) -> crate::Result<Self::Signal> {
-        let _s1 = self.left.into_signal()?;
-        let _s2 = self.right.into_signal()?;
-        Ok(AndThen::new())
+        let s1 = self.left.into_signal()?;
+        let s2 = self.right.into_signal()?;
+        Ok(AndThen::new(s1, s2))
     }
 }
 
 impl<S1, S2> AndThen<S1, S2> {
-    pub(crate) fn new() -> Self {
-        AndThen(PD)
+    pub(crate) fn new(s1: S1, s2: S2) -> Self {
+        AndThen(s1, s2)
     }
 }
