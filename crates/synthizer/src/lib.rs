@@ -15,6 +15,7 @@ mod channel_format;
 #[cfg(test)]
 mod close_floats;
 mod config;
+mod context;
 pub mod core_traits;
 mod data_structures;
 mod db;

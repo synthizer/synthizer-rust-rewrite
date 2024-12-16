@@ -1,3 +1,4 @@
+use crate::context::*;
 use crate::core_traits::*;
 
 /// A signal which produces an f64 value in the range (0..period) by summing the value of an input signal. e.g.

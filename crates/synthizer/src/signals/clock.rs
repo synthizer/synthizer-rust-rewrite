@@ -1,4 +1,4 @@
-//! Read the current sample.
+use crate::context::*;
 use crate::core_traits::*;
 
 pub struct Clock(());

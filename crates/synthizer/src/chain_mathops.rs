@@ -2,6 +2,7 @@
 use std::ops::*;
 
 use crate::chain::Chain;
+use crate::context::SignalExecutionContext;
 use crate::core_traits::*;
 
 macro_rules! impl_mathop {

@@ -3,6 +3,7 @@
 //! You access this with `.cast_xxx()`.
 use std::marker::PhantomData as PD;
 
+use crate::context::*;
 use crate::core_traits::*;
 
 /// Converts the output of the upstream signal into the input of the downstream signal, if `O::Output: Into<DType>`.

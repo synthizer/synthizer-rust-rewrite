@@ -1,3 +1,4 @@
+use crate::context::*;
 use crate::core_traits::*;
 
 pub struct SinSignalConfig<S: IntoSignal> {

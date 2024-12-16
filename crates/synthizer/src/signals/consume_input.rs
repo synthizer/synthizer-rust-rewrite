@@ -1,5 +1,6 @@
 use std::marker::PhantomData as PD;
 
+use crate::context::*;
 use crate::core_traits::*;
 
 /// Consume the input of this signal.  Then replace it with the `Default::default()` value of a new input type.
