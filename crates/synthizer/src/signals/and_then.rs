@@ -49,10 +49,14 @@ where
 {
     type Signal = AndThen<S1::Signal, S2::Signal>;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
+    fn into_signal(self) -> IntoSignalResult<Self> {
         let s1 = self.left.into_signal()?;
         let s2 = self.right.into_signal()?;
-        Ok(AndThen::new(s1, s2))
+        Ok(ReadySignal {
+            signal: AndThen::new(s1.signal, s2.signal),
+            state: (s1.state, s2.state),
+            parameters: (s1.parameters, s2.parameters),
+        })
     }
 }
 

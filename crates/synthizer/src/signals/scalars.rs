@@ -23,8 +23,12 @@ macro_rules! impl_scalar {
         impl IntoSignal for $t {
             type Signal = $t;
 
-            fn into_signal(self) -> Result<Self::Signal> {
-                Ok(self)
+            fn into_signal(self) -> Result<ReadySignal<Self::Signal,IntoSignalState<Self>,IntoSignalParameters<Self>>> {
+                Ok(ReadySignal {
+                    signal:self,
+                    state:(),
+                    parameters:self,
+                })
             }
         }
     };

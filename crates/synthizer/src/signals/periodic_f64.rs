@@ -64,8 +64,18 @@ where
 {
     type Signal = PeriodicF64Signal<SIncrCfg::Signal>;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
-        let wrapped = self.frequency.into_signal()?;
-        Ok(PeriodicF64Signal(wrapped))
+    fn into_signal(self) -> IntoSignalResult<Self> {
+        let inner = self.frequency.into_signal()?;
+        Ok(ReadySignal {
+            signal: PeriodicF64Signal(inner.signal),
+            state: PeriodicF64State {
+                freq_state: inner.state,
+                cur_val: self.initial_value,
+            },
+            parameters: PeriodicF64Parameters {
+                freq_params: inner.parameters,
+                period: self.period,
+            },
+        })
     }
 }

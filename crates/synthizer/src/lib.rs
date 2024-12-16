@@ -7,6 +7,7 @@ mod variant;
 #[macro_use]
 mod logging;
 
+mod audio_frames;
 mod background_drop;
 pub mod biquad;
 pub mod chain;

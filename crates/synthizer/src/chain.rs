@@ -35,7 +35,7 @@ where
 {
     type Signal = S::Signal;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
+    fn into_signal(self) -> IntoSignalResult<Self> {
         self.inner.into_signal()
     }
 }
@@ -164,6 +164,18 @@ impl<S: IntoSignal> Chain<S> {
             inner: sigs::SinSignalConfig {
                 wrapped: self.inner,
             },
+        }
+    }
+
+    /// Inline version of `*`.
+    ///
+    /// This lets you continue the `.` syntax without having to use more variables.
+    pub fn inline_mul<T>(self, other: T) -> Chain<<Self as std::ops::Mul<T>>::Output>
+    where
+        Self: std::ops::Mul<T>,
+    {
+        Chain {
+            inner: self * other,
         }
     }
 }

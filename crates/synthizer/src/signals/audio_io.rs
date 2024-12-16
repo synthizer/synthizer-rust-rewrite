@@ -24,7 +24,8 @@ where
         // We output the unit type instead.
         destination.send(());
 
-        // TODO: this is actually going to the audio output buffer.
+        // Later this will go to a bus. But we are not at buses yet.
+        ctx.fixed.audio_destinationh[ctx.subblock_index] = val.unwrap();
     }
 }
 
@@ -35,8 +36,13 @@ where
 {
     type Signal = AudioOutputSignal<S::Signal>;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
-        Ok(AudioOutputSignal(self.0.into_signal()?))
+    fn into_signal(self) -> IntoSignalResult<Self> {
+        let inner = self.0.into_signal()?;
+        Ok(ReadySignal {
+            signal: AudioOutputSignal(inner.signal),
+            state: inner.state,
+            parameters: inner.parameters,
+        })
     }
 }
 

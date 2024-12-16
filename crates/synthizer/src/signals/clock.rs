@@ -14,6 +14,6 @@ unsafe impl Signal for Clock {
         _input: &'_ Self::Input,
         destination: D,
     ) {
-        destination.send(ctx.fixed.time);
+        destination.send(ctx.fixed.time_in_blocks);
     }
 }

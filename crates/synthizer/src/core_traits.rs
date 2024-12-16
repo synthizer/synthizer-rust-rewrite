@@ -31,6 +31,62 @@ pub(crate) mod sealed {
     pub trait SignalDestination<Input: Sized> {
         fn send(self, value: Input);
     }
+
+    /// A frame of audio data, which can be stored on the stack.
+    ///
+    /// Frames are basically scalars used to pass audio data around on the stack without taking the hit of an
+    /// allocation.  They are immutable after creation and always `f64`.  They may or may not have an attached format
+    /// hint, used to convert e.g. between mono and stereo, etc.  f64 scalars are mono frames.
+    ///
+    /// # Safety
+    ///
+    /// This trait is unsafe to implement because frames must always fill their destination by calling the closure
+    ///   exactly the number of times their channel counts say they have channels.
+    ///
+    /// In other words, it's not wrong to think of this a bit like a SIMD vector or something; we'd use const if we
+    /// could but that's not stable enough for our purposes, and some frames may have a runtime specified format and
+    /// size in any case.
+    ///
+    /// Furthermore, if a signal outputs frames it must not change the  channel count until the next block. That's
+    /// really not specifically for this trait though; see [Signal] for more on how formats work.  We don't tie formats
+    /// to frames but rather to signals.
+    pub unsafe trait AudioFrame {
+        fn channel_count(&self) -> usize;
+
+        fn read_one<F: FnOnce(f64)>(&self, channel: usize, destination: F);
+
+        /// This is the unsafe-to-implement method: it must call the closure exactly `self.channel_count()` times, no
+        /// more or less.
+        ///
+        /// The default implementation delegates to read_one.
+        fn read_all<F: FnMut(f64)>(&self, mut destination: F) {
+            for i in 0..self.channel_count() {
+                self.read_one(i, &mut destination);
+            }
+        }
+    }
+
+    pub struct ReadySignal<SigT, StateT, ParamsT> {
+        pub(crate) signal: SigT,
+        pub(crate) state: StateT,
+        pub(crate) parameters: ParamsT,
+    }
+
+    /// Something which knows how to convert itself into a signal.
+    ///
+    /// You actually build signals up with these, not with the signal traits directly.
+    ///
+    /// Again, this trait is in practice sealed.
+    pub trait IntoSignal {
+        type Signal: Signal;
+
+        fn into_signal(
+            self,
+        ) -> Result<ReadySignal<Self::Signal, IntoSignalState<Self>, IntoSignalParameters<Self>>>;
+    }
+
+    pub(crate) type IntoSignalResult<S> =
+        Result<ReadySignal<<S as IntoSignal>::Signal, IntoSignalState<S>, IntoSignalParameters<S>>>;
 }
 
 pub(crate) use sealed::*;
@@ -53,28 +109,17 @@ pub trait Mountable
 where
     Self: Generator + Send + Sync + 'static,
     Self: Signal<Output = ()> + Generator,
-    SignalSealedState<Self>: Send + Sync + 'static,
-    SignalSealedParameters<Self>: Send + Sync + 'static,
+    SignalState<Self>: Send + Sync + 'static,
+    SignalParameters<Self>: Send + Sync + 'static,
 {
 }
 
 impl<T> Mountable for T
 where
     T: Generator + Signal<Output = ()> + Send + Sync + 'static,
-    SignalSealedState<T>: Send + Sync + 'static,
-    SignalSealedParameters<T>: Send + Sync + 'static,
+    SignalState<T>: Send + Sync + 'static,
+    SignalParameters<T>: Send + Sync + 'static,
 {
-}
-
-/// Something which knows how to convert itself into a signal.
-///
-/// You actually build signals up with these, not with the signal traits directly.
-///
-/// Again, this trait is in practice sealed.
-pub trait IntoSignal {
-    type Signal: Signal;
-
-    fn into_signal(self) -> Result<Self::Signal>;
 }
 
 // Workarounds for https://github.com/rust-lang/rust/issues/38078: rustc is not always able to determine when a type
@@ -83,7 +128,7 @@ pub(crate) type IntoSignalOutput<S> = <<S as IntoSignal>::Signal as Signal>::Out
 pub(crate) type IntoSignalInput<S> = <<S as IntoSignal>::Signal as Signal>::Input;
 pub(crate) type IntoSignalParameters<S> = <<S as IntoSignal>::Signal as Signal>::Parameters;
 pub(crate) type IntoSignalState<S> = <<S as IntoSignal>::Signal as Signal>::State;
-pub(crate) type SignalSealedInput<T> = <T as Signal>::Input;
-pub(crate) type SignalSealedOutput<T> = <T as Signal>::Output;
-pub(crate) type SignalSealedState<S> = <S as Signal>::State;
-pub(crate) type SignalSealedParameters<S> = <S as Signal>::Parameters;
+pub(crate) type SignalInput<T> = <T as Signal>::Input;
+pub(crate) type SignalOutput<T> = <T as Signal>::Output;
+pub(crate) type SignalState<S> = <S as Signal>::State;
+pub(crate) type SignalParameters<S> = <S as Signal>::Parameters;

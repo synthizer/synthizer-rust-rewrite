@@ -49,8 +49,14 @@ where
 {
     type Signal = ConsumeInputSignal<S::Signal, DiscardingInputType>;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
-        Ok(ConsumeInputSignal(self.0.into_signal()?, PD))
+    fn into_signal(self) -> IntoSignalResult<Self> {
+        let inner = self.0.into_signal()?;
+
+        Ok(ReadySignal {
+            signal: ConsumeInputSignal(inner.signal, PD),
+            state: inner.state,
+            parameters: inner.parameters,
+        })
     }
 }
 

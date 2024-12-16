@@ -4,12 +4,16 @@ pub struct SignalExecutionContext<'a, 'shared, TState, TParameters> {
     pub(crate) state: &'a mut TState,
     pub(crate) parameters: &'a TParameters,
 
+    // The index we are currently in, in the current block. Combined with the shared time, this can be used to put a
+    // timestamp back together.
+    pub(crate) subblock_index: usize,
+
     pub(crate) fixed: &'a mut FixedSignalExecutionContext<'shared>,
 }
 
 /// Parts of the execution context which do not contain references that need to be recast.
 pub(crate) struct FixedSignalExecutionContext<'a> {
-    pub(crate) time: u64,
+    pub(crate) time_in_blocks: u64,
     pub(crate) audio_destinationh: &'a mut [f64; config::BLOCK_SIZE],
 }
 
@@ -28,6 +32,7 @@ impl<'shared, TState, TParameters> SignalExecutionContext<'_, 'shared, TState, T
             state: new_state(self.state),
             parameters: new_params(self.parameters),
             fixed: self.fixed,
+            subblock_index: self.subblock_index,
         }
     }
 }

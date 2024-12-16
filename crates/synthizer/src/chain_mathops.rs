@@ -29,13 +29,13 @@ macro_rules! impl_mathop {
         unsafe impl<S1, S2> Signal for $signal_name<S1, S2>
         where
             S1: Signal,
-            S2: Signal<Input = SignalSealedInput<S1>>,
-            SignalSealedOutput<S1>: $trait<SignalSealedOutput<S2>>,
+            S2: Signal<Input = SignalInput<S1>>,
+            SignalOutput<S1>: $trait<SignalOutput<S2>>,
         {
-            type Input = SignalSealedInput<S1>;
-            type Output = <SignalSealedOutput<S1> as $trait<SignalSealedOutput<S2>>>::Output;
-            type Parameters = (SignalSealedParameters<S1>, SignalSealedParameters<S2>);
-            type State = (SignalSealedState<S1>, SignalSealedState<S2>);
+            type Input = SignalInput<S1>;
+            type Output = <SignalOutput<S1> as $trait<SignalOutput<S2>>>::Output;
+            type Parameters = (SignalParameters<S1>, SignalParameters<S2>);
+            type State = (SignalState<S1>, SignalState<S2>);
 
             fn tick1<D: SignalDestination<Self::Output>>(
                 ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -57,14 +57,21 @@ macro_rules! impl_mathop {
         where
             S1: IntoSignal,
             S2: IntoSignal,
-            $signal_name<S1::Signal, S2::Signal>: Signal,
+            $signal_name<S1::Signal, S2::Signal>: Signal<
+                State = (IntoSignalState<S1>, IntoSignalState<S2>),
+                Parameters = (IntoSignalParameters<S1>, IntoSignalParameters<S2>),
+            >,
         {
             type Signal = $signal_name<S1::Signal, S2::Signal>;
 
-            fn into_signal(self) -> crate::Result<Self::Signal> {
+            fn into_signal(self) -> IntoSignalResult<Self> {
                 let l = self.0.into_signal()?;
                 let r = self.1.into_signal()?;
-                Ok($signal_name(l, r))
+                Ok(ReadySignal {
+                    signal: $signal_name(l.signal, r.signal),
+                    state: (l.state, r.state),
+                    parameters: (l.parameters, r.parameters),
+                })
             }
         }
     };

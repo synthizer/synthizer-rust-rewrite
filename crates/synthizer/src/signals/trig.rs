@@ -32,8 +32,12 @@ where
 {
     type Signal = SinSignal<S::Signal>;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
+    fn into_signal(self) -> IntoSignalResult<Self> {
         let wrapped = self.wrapped.into_signal()?;
-        Ok(SinSignal(wrapped))
+        Ok(ReadySignal {
+            signal: SinSignal(wrapped.signal),
+            state: wrapped.state,
+            parameters: wrapped.parameters,
+        })
     }
 }

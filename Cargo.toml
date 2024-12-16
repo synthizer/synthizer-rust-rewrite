@@ -55,5 +55,8 @@ synthizer_protos = { path = "crates/protos" }
 thingbuf = { version = "0.1.4", features = ["static"] }
 thiserror = "1.0.37"
 
+[profile.dev]
+panic = "abort"
+
 [profile.bench]
 lto = true

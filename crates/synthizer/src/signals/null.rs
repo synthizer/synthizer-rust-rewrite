@@ -25,8 +25,15 @@ unsafe impl Signal for NullSignal {
 impl IntoSignal for NullSignal {
     type Signal = NullSignal;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
-        Ok(NullSignal::new())
+    fn into_signal(
+        self,
+    ) -> crate::Result<ReadySignal<Self::Signal, IntoSignalState<Self>, IntoSignalParameters<Self>>>
+    {
+        Ok(ReadySignal {
+            signal: NullSignal::new(),
+            state: (),
+            parameters: (),
+        })
     }
 }
 

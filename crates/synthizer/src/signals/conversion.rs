@@ -56,7 +56,12 @@ where
 {
     type Signal = ConvertOutput<Sig::Signal, DType>;
 
-    fn into_signal(self) -> crate::Result<Self::Signal> {
-        Ok(ConvertOutput::new(self.0.into_signal()?))
+    fn into_signal(self) -> IntoSignalResult<Self> {
+        let inner = self.0.into_signal()?;
+        Ok(ReadySignal {
+            signal: ConvertOutput::new(inner.signal),
+            state: inner.state,
+            parameters: inner.parameters,
+        })
     }
 }

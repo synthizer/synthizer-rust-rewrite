@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
@@ -8,22 +9,26 @@ use rpds::{HashTrieMapSync, VectorSync};
 use crate::chain::Chain;
 use crate::config;
 use crate::core_traits::*;
+use crate::error::Result;
 use crate::mount_point::ErasedMountPoint;
 use crate::unique_id::UniqueId;
 
 type SynthMap<K, V> = HashTrieMapSync<K, V>;
 type SynthVec<T> = VectorSync<T>;
 
-/// TODO: this is actually private-ish, but we're getting off the ground.
 pub struct Synthesizer {
     published_state: Arc<ArcSwap<SynthesizerState>>,
+    device: Option<synthizer_miniaudio::DeviceHandle>,
 }
 
 #[derive(Clone)]
-struct MountContainer {
-    pending_drop: Arc<std::sync::atomic::AtomicBool>,
-    slots: SynthMap<UniqueId, Arc<AtomicRefCell<Box<dyn std::any::Any + Send + Sync>>>>,
-    erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
+pub(crate) struct MountContainer {
+    pub(crate) pending_drop: Arc<std::sync::atomic::AtomicBool>,
+
+    /// Should only be accessed from the audio thread.  Cloning is fine.
+    pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
+
+    pub(crate) parameters: Arc<dyn Any + Send + Sync + 'static>,
 }
 
 /// This is the state published to the audio thread.
@@ -41,12 +46,11 @@ struct MountContainer {
 /// trick however: this can indeed be a cycle.  We rely on the next batch creation to clear that cycle.
 #[derive(Clone)]
 pub(crate) struct SynthesizerState {
-    older_state: Arc<ArcSwapOption<Self>>,
+    pub(crate) older_state: Arc<ArcSwapOption<Self>>,
 
-    /// The value is an Arc to an interior-mutable erased box.
-    mounts: SynthMap<UniqueId, MountContainer>,
+    pub(crate) mounts: SynthMap<UniqueId, MountContainer>,
 
-    audio_thred_state: Arc<AtomicRefCell<AudioThreadState>>,
+    pub(crate) audio_thred_state: Arc<AtomicRefCell<AudioThreadState>>,
 }
 
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
@@ -126,10 +130,27 @@ impl Drop for Batch<'_> {
 }
 
 impl Synthesizer {
-    pub fn new_audio_defaults() -> Self {
-        Self {
-            published_state: Arc::new(ArcSwap::new(Arc::new(SynthesizerState::new()))),
-        }
+    pub fn new_default_output() -> Result<Self> {
+        let opts = synthizer_miniaudio::DeviceOptions {
+            sample_rate: Some(std::num::NonZeroU32::new(config::SR as u32).unwrap()),
+            channel_format: Some(synthizer_miniaudio::DeviceChannelFormat::Mono),
+        };
+
+        let published_state = Arc::new(ArcSwap::new(Arc::new(SynthesizerState::new())));
+
+        let mut dev = {
+            let published_state = published_state.clone();
+            synthizer_miniaudio::open_default_output_device(&opts, move |_cfg, dest| {
+                at_iter(&published_state.load(), dest);
+            })?
+        };
+
+        dev.start()?;
+
+        Ok(Self {
+            published_state,
+            device: Some(dev),
+        })
     }
 
     pub fn batch(&mut self) -> Batch<'_> {
@@ -179,24 +200,42 @@ impl Batch<'_> {
         }
     }
 
-    pub fn mount<S: IntoSignal>(&mut self, _chain: Chain<S>) -> Handle<MountPointHandleMarker>
+    pub fn mount<S: IntoSignal>(
+        &mut self,
+        chain: Chain<S>,
+    ) -> Result<Handle<MountPointHandleMarker>>
     where
         S::Signal: Mountable,
-        SignalSealedState<S::Signal>: Send + Sync + 'static,
-        SignalSealedParameters<S::Signal>: Send + Sync + 'static,
+        SignalState<S::Signal>: Send + Sync + 'static,
+        SignalParameters<S::Signal>: Send + Sync + 'static,
     {
         let object_id = UniqueId::new();
-        let mark_drop = Arc::new(MarkDropped::new());
-        Handle {
+        let pending_drop = MarkDropped::new();
+
+        let ready = chain.into_signal()?;
+        let mp = crate::mount_point::MountPoint {
+            signal: ready.signal,
+            state: ready.state,
+        };
+
+        let inserting = MountContainer {
+            erased_mount: Arc::new(AtomicRefCell::new(Box::new(mp))),
+            pending_drop: pending_drop.0.clone(),
+            parameters: Arc::new(ready.parameters),
+        };
+
+        self.new_state.mounts.insert_mut(object_id, inserting);
+
+        Ok(Handle {
             object_id,
-            mark_drop,
+            mark_drop: Arc::new(pending_drop),
             _phantom: PD,
-        }
+        })
     }
 }
 
 /// Run one iteration of the audio thread.
-fn at_iter(state: Arc<SynthesizerState>, mut dest: &mut [f64]) {
+fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
     while !dest.is_empty() {
         // Grab the audio thread state and copy out whatever data we can.
         {
@@ -208,8 +247,11 @@ fn at_iter(state: Arc<SynthesizerState>, mut dest: &mut [f64]) {
 
                 let start_ind = state.buffer.len() - state.buf_remaining;
                 let grabbing = &mut state.buffer[start_ind..(start_ind + will_do)];
-                (dest[..will_do]).copy_from_slice(grabbing);
+                grabbing.iter().enumerate().for_each(|(i, x)| {
+                    dest[i] = *x as f32;
+                });
                 dest = &mut dest[will_do..];
+                state.buf_remaining -= will_do;
 
                 if dest.is_empty() {
                     // This was enough, and we do not need to refill the buffer.
@@ -227,15 +269,24 @@ fn at_iter(state: Arc<SynthesizerState>, mut dest: &mut [f64]) {
             at_state.buffer.fill(0.0f64);
         }
 
+        let mut as_mut = state.audio_thred_state.borrow_mut();
+
         // Mounts may fill the audio buffer.
-        for (_, m) in state.mounts.iter() {
+        for (id, m) in state.mounts.iter() {
             if m.pending_drop.load(std::sync::atomic::Ordering::Relaxed) {
                 continue;
             }
 
-            m.erased_mount.borrow_mut().run(&state);
+            m.erased_mount.borrow_mut().run(
+                state,
+                id,
+                &mut crate::context::FixedSignalExecutionContext {
+                    time_in_blocks: as_mut.time_in_blocks,
+                    audio_destinationh: &mut as_mut.buffer,
+                },
+            );
         }
 
-        state.audio_thred_state.borrow_mut().time_in_blocks += 1;
+        as_mut.time_in_blocks += 1;
     }
 }
