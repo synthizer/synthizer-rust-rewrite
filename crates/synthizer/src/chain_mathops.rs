@@ -1,7 +1,9 @@
 //! Implements the mathematical operations between `IntoSignal`s.
+use std::mem::MaybeUninit;
 use std::ops::*;
 
 use crate::chain::Chain;
+use crate::config;
 use crate::context::SignalExecutionContext;
 use crate::core_traits::*;
 
@@ -50,6 +52,52 @@ macro_rules! impl_mathop {
                 S2::tick1(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), input, |y| {
                     destination.send(left.unwrap().$method(y));
                 })
+            }
+
+            fn on_block_start(
+                ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+            ) {
+                S1::on_block_start(&mut ctx.wrap(|s| &mut s.0, |p| &p.0));
+                S2::on_block_start(&mut ctx.wrap(|s| &mut s.1, |p| &p.1));
+            }
+
+            fn tick_block<
+                'a,
+                I: FnMut(usize) -> &'a Self::Input,
+                D: ReusableSignalDestination<Self::Output>,
+            >(
+                ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+                mut input: I,
+                mut destination: D,
+            ) where
+                Self::Input: 'a,
+            {
+                // When we perform the binary operation, left and right fold into each other and the drop is handled
+                // because either the operation dropped the values itself or the final value holds them.  Dropping these
+                // would thus be a double drop.
+                let mut left: [MaybeUninit<SignalOutput<S1>>; config::BLOCK_SIZE] =
+                    [const { MaybeUninit::uninit() }; config::BLOCK_SIZE];
+                let mut right: [MaybeUninit<SignalOutput<S2>>; config::BLOCK_SIZE] =
+                    [const { MaybeUninit::uninit() }; config::BLOCK_SIZE];
+                let mut i = 0usize;
+
+                S1::tick_block(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), &mut input, |val| {
+                    left[i].write(val);
+                    i += 1;
+                });
+
+                i = 0;
+
+                S2::tick_block(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), &mut input, |val| {
+                    right[i].write(val);
+                    i += 1;
+                });
+
+                left.into_iter().zip(right.into_iter()).for_each(|(l, r)| {
+                    let l = unsafe { l.assume_init() };
+                    let r = unsafe { r.assume_init() };
+                    destination.send_reusable(l.$method(r));
+                });
             }
         }
 

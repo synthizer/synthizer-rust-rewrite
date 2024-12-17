@@ -3,11 +3,6 @@ use crate::config;
 pub struct SignalExecutionContext<'a, 'shared, TState, TParameters> {
     pub(crate) state: &'a mut TState,
     pub(crate) parameters: &'a TParameters,
-
-    // The index we are currently in, in the current block. Combined with the shared time, this can be used to put a
-    // timestamp back together.
-    pub(crate) subblock_index: usize,
-
     pub(crate) fixed: &'a mut FixedSignalExecutionContext<'shared>,
 }
 
@@ -32,7 +27,6 @@ impl<'shared, TState, TParameters> SignalExecutionContext<'_, 'shared, TState, T
             state: new_state(self.state),
             parameters: new_params(self.parameters),
             fixed: self.fixed,
-            subblock_index: self.subblock_index,
         }
     }
 }

@@ -42,6 +42,26 @@ where
             destination.send(y)
         })
     }
+
+    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
+        Sig::on_block_start(ctx);
+    }
+
+    fn tick_block<
+        'a,
+        I: FnMut(usize) -> &'a Self::Input,
+        D: ReusableSignalDestination<Self::Output>,
+    >(
+        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+        input: I,
+        mut destination: D,
+    ) where
+        Self::Input: 'a,
+    {
+        Sig::tick_block(ctx, input, |x: Sig::Output| {
+            destination.send_reusable(x.into())
+        });
+    }
 }
 
 // DType is not part of the signal. It is only a record of the signal's output type. Consequently these are actually

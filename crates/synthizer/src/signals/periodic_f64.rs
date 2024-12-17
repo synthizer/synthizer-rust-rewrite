@@ -1,3 +1,4 @@
+use crate::config;
 use crate::context::*;
 use crate::core_traits::*;
 
@@ -24,6 +25,17 @@ pub struct PeriodicF64Parameters<SIncr: Signal> {
     freq_params: SIncr::Parameters,
 }
 
+fn inc1<SIncr: Signal>(
+    state: &mut PeriodicF64State<SIncr>,
+    params: &PeriodicF64Parameters<SIncr>,
+    increment: f64,
+) -> f64 {
+    let cur_val = state.cur_val;
+    let new_val = (cur_val + increment) % params.period;
+    state.cur_val = new_val;
+    cur_val
+}
+
 unsafe impl<SIncr> Signal for PeriodicF64Signal<SIncr>
 where
     SIncr: Signal<Output = f64>,
@@ -38,22 +50,47 @@ where
         input: &'_ Self::Input,
         destination: D,
     ) {
-        let period = ctx.parameters.period;
-        let mut val = ctx.state.cur_val;
-
+        let mut parent: f64 = 0.0;
         SIncr::tick1(
             &mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params),
             input,
             |incr| {
-                // If we do not send the value first, then the first value sent is never 0.0 (or the otherwise specified
-                // initial value).
-                destination.send(val);
-                val += incr;
-                val %= period;
+                parent = incr;
             },
         );
 
-        ctx.state.cur_val = val;
+        destination.send(inc1(ctx.state, ctx.parameters, parent));
+    }
+
+    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
+        SIncr::on_block_start(&mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params));
+    }
+
+    fn tick_block<
+        'a,
+        I: FnMut(usize) -> &'a Self::Input,
+        D: ReusableSignalDestination<Self::Output>,
+    >(
+        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+        input: I,
+        mut destination: D,
+    ) where
+        Self::Input: 'a,
+    {
+        let mut increments: [f64; config::BLOCK_SIZE] = [0.0; config::BLOCK_SIZE];
+        let mut i = 0;
+        SIncr::tick_block(
+            &mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params),
+            input,
+            |x| {
+                increments[i] = x;
+                i += 1;
+            },
+        );
+
+        increments.into_iter().for_each(|val| {
+            destination.send_reusable(inc1(ctx.state, ctx.parameters, val));
+        });
     }
 }
 

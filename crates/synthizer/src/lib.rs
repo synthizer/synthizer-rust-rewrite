@@ -30,6 +30,7 @@ pub mod sample_sources;
 pub mod signals;
 pub mod synthesizer;
 mod unique_id;
+mod unsafe_utils;
 mod worker_pool;
 
 pub use chain::*;

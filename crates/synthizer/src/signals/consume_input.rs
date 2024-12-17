@@ -40,6 +40,10 @@ where
         let new_in: S::Input = Default::default();
         S::tick1(ctx, &new_in, destination);
     }
+
+    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
+        S::on_block_start(ctx);
+    }
 }
 
 impl<S, DiscardingInputType> IntoSignal for ConsumeInputSignalConfig<S, DiscardingInputType>

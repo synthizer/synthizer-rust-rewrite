@@ -18,6 +18,8 @@ macro_rules! impl_scalar {
             ) {
                 destination.send(*ctx.parameters);
             }
+
+            fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}
         }
 
         impl IntoSignal for $t {

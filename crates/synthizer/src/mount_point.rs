@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::config;
 use crate::context::*;
 use crate::core_traits::*;
 use crate::synthesizer::SynthesizerState;
@@ -35,7 +34,6 @@ impl<S: Mountable> ErasedMountPoint for MountPoint<S> {
     ) {
         let mut ctx = SignalExecutionContext {
             fixed: shared_ctx,
-            subblock_index: 0,
             state: &mut self.state,
             parameters: state
                 .mounts
@@ -46,9 +44,6 @@ impl<S: Mountable> ErasedMountPoint for MountPoint<S> {
                 .expect("These are parameters for this mount"),
         };
 
-        for i in 0..config::BLOCK_SIZE {
-            ctx.subblock_index = i;
-            S::tick1(&mut ctx, &(), |_| {});
-        }
+        S::tick_block(&mut ctx, |_| &(), |_| {});
     }
 }

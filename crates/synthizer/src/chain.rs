@@ -51,16 +51,7 @@ impl<S: IntoSignal> Chain<S> {
     /// Send this chain to the audio device.
     pub fn to_audio_device(
         self,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl Signal<
-                Input = IntoSignalInput<S>,
-                Output = (),
-                Parameters = IntoSignalParameters<S>,
-                State = IntoSignalState<S>,
-            >,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
     where
         S::Signal: Signal<Output = f64>,
     {

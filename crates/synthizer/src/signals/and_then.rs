@@ -1,3 +1,6 @@
+use std::mem::MaybeUninit;
+
+use crate::config;
 use crate::context::*;
 use crate::core_traits::*;
 
@@ -33,6 +36,41 @@ where
         let left = left.unwrap();
 
         S2::tick1(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), &left, destination);
+    }
+
+    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
+        S1::on_block_start(&mut ctx.wrap(|s| &mut s.0, |p| &p.0));
+        S2::on_block_start(&mut ctx.wrap(|s| &mut s.1, |p| &p.1));
+    }
+
+    fn tick_block<
+        'a,
+        I: FnMut(usize) -> &'a Self::Input,
+        D: ReusableSignalDestination<Self::Output>,
+    >(
+        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+        input: I,
+        destination: D,
+    ) where
+        Self::Input: 'a,
+    {
+        let mut left_out: [MaybeUninit<SignalOutput<S1>>; config::BLOCK_SIZE] =
+            [const { MaybeUninit::uninit() }; config::BLOCK_SIZE];
+        let mut i = 0;
+        S1::tick_block(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), input, |val| {
+            left_out[i].write(val);
+            i += 1;
+        });
+
+        S2::tick_block(
+            &mut ctx.wrap(|s| &mut s.1, |p| &p.1),
+            |ind| unsafe { left_out[ind].assume_init_ref() },
+            destination,
+        );
+
+        unsafe {
+            crate::unsafe_utils::drop_initialized_array(left_out);
+        }
     }
 }
 

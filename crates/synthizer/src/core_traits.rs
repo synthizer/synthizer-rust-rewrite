@@ -1,3 +1,4 @@
+use crate::config;
 use crate::context::*;
 use crate::error::Result;
 
@@ -26,17 +27,57 @@ pub(crate) mod sealed {
             input: &'_ Self::Input,
             destination: D,
         );
+
+        /// Tick this signal [config::BLOCK_SIZE] times.  Implemented via `tick1` by default.
+        ///
+        /// The default implementation is only suitable for signals which are "endpoints" e.g. signals that produce
+        /// values from nothing.  Combinators must implement this in terms of their combined signals.  Signals which are
+        /// not combinators may ignore this if they are wrapping a signal, but cannot meaningfully benefit from or store
+        /// output data.  The complexity here, though: when reading from files and external sources, we are not able to
+        /// do so efficiently sample by sample.  Anywhere which does not forward block-based calls to their parent
+        /// de-optimizes this path.
+        ///
+        /// Callers will choose to use tick1 or to use tick_block, and will not mix them for the duration of a block.
+        /// Callers may change their mind between blocks.  Wrapper signals should also preserve this property, though
+        /// since this is an entire block of data, it's hard to break this rule.
+        fn tick_block<
+            'a,
+            I: FnMut(usize) -> &'a Self::Input,
+            D: ReusableSignalDestination<Self::Output>,
+        >(
+            ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+            mut input: I,
+            mut destination: D,
+        ) where
+            Self::Input: 'a,
+        {
+            for i in 0..config::BLOCK_SIZE {
+                Self::tick1(ctx, input(i), |x| destination.send_reusable(x));
+            }
+        }
+
+        /// Called when a signal is starting a new block.
+        ///
+        /// This will be called every [config::BLOCK_SIZE] ticks.  All signals wrapping other signals must call it on
+        /// their wrapped signals.  Only "leaf" signals may ignore it.  It is entirely correct to do nothing here.  THis
+        /// is used for many things, among them gathering references to buses or resetting block-based counters.
+        ///
+        /// No default impl is provided.  All signals need to consider what they want to do so we forc3e the issue.
+        fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>);
     }
 
     pub trait SignalDestination<Input: Sized> {
         fn send(self, value: Input);
     }
 
+    pub trait ReusableSignalDestination<Input: Sized>: SignalDestination<Input> {
+        fn send_reusable(&mut self, value: Input);
+    }
+
     /// A frame of audio data, which can be stored on the stack.
     ///
     /// Frames are basically scalars used to pass audio data around on the stack without taking the hit of an
-    /// allocation.  They are immutable after creation and always `f64`.  They may or may not have an attached format
-    /// hint, used to convert e.g. between mono and stereo, etc.  f64 scalars are mono frames.
+    /// allocation.  They are immutable after creation and always `f64`.  f64 scalars are single-channel frames.
     ///
     /// # Safety
     ///
@@ -98,6 +139,16 @@ where
 {
     fn send(self, value: Input) {
         self(value)
+    }
+}
+
+impl<F, Input> ReusableSignalDestination<Input> for F
+where
+    Input: Sized,
+    F: FnMut(Input),
+{
+    fn send_reusable(&mut self, value: Input) {
+        (*self)(value)
     }
 }
 
