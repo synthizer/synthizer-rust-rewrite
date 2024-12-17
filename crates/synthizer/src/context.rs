@@ -1,4 +1,5 @@
 use crate::config;
+use crate::signals::SlotUpdateContext;
 
 pub struct SignalExecutionContext<'a, 'shared, TState, TParameters> {
     pub(crate) state: &'a mut TState,
@@ -10,6 +11,7 @@ pub struct SignalExecutionContext<'a, 'shared, TState, TParameters> {
 pub(crate) struct FixedSignalExecutionContext<'a> {
     pub(crate) time_in_blocks: u64,
     pub(crate) audio_destinationh: &'a mut [f64; config::BLOCK_SIZE],
+    pub(crate) slots: &'a SlotUpdateContext<'a>,
 }
 
 impl<'shared, TState, TParameters> SignalExecutionContext<'_, 'shared, TState, TParameters> {

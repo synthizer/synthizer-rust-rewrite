@@ -44,6 +44,40 @@ where
     fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
         S::on_block_start(ctx);
     }
+
+    fn tick_block<
+        'a,
+        SigI: FnMut(usize) -> &'a Self::Input,
+        D: ReusableSignalDestination<Self::Output>,
+    >(
+        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+        _input: SigI,
+        mut destination: D,
+    ) where
+        Self::Input: 'a,
+    {
+        let ni = Default::default();
+        S::tick_block(
+            ctx,
+            |_| &ni,
+            |v| {
+                destination.send_reusable(v);
+            },
+        );
+    }
+
+    fn trace_slots<
+        F: FnMut(
+            crate::unique_id::UniqueId,
+            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
+        ),
+    >(
+        state: &Self::State,
+        parameters: &Self::Parameters,
+        inserter: &mut F,
+    ) {
+        S::trace_slots(state, parameters, inserter);
+    }
 }
 
 impl<S, DiscardingInputType> IntoSignal for ConsumeInputSignalConfig<S, DiscardingInputType>

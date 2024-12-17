@@ -72,6 +72,20 @@ where
             crate::unsafe_utils::drop_initialized_array(left_out);
         }
     }
+
+    fn trace_slots<
+        F: FnMut(
+            crate::unique_id::UniqueId,
+            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
+        ),
+    >(
+        state: &Self::State,
+        parameters: &Self::Parameters,
+        inserter: &mut F,
+    ) {
+        S1::trace_slots(&state.0, &parameters.0, inserter);
+        S2::trace_slots(&state.1, &parameters.1, inserter);
+    }
 }
 
 pub struct AndThenConfig<S1, S2> {

@@ -1,7 +1,10 @@
+use std::any::Any;
+use std::sync::Arc;
+
 use crate::context::*;
-/// Implementation of signals for scalars.
 use crate::core_traits::*;
 use crate::error::Result;
+use crate::unique_id::UniqueId;
 
 macro_rules! impl_scalar {
     ($t: ty) => {
@@ -20,6 +23,12 @@ macro_rules! impl_scalar {
             }
 
             fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}
+
+            fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
+                _state: &Self::State,
+                _parameters: &Self::Parameters,
+                _inserter: &mut F,
+            ) {}
         }
 
         impl IntoSignal for $t {

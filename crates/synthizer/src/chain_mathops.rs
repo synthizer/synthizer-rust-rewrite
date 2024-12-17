@@ -1,11 +1,14 @@
 //! Implements the mathematical operations between `IntoSignal`s.
+use std::any::Any;
 use std::mem::MaybeUninit;
 use std::ops::*;
+use std::sync::Arc;
 
 use crate::chain::Chain;
 use crate::config;
 use crate::context::SignalExecutionContext;
 use crate::core_traits::*;
+use crate::unique_id::UniqueId;
 
 macro_rules! impl_mathop {
     ($trait: ident, $signal_name: ident, $signal_config:ident, $method: ident) => {
@@ -98,6 +101,15 @@ macro_rules! impl_mathop {
                     let r = unsafe { r.assume_init() };
                     destination.send_reusable(l.$method(r));
                 });
+            }
+
+            fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
+                state: &Self::State,
+                parameters: &Self::Parameters,
+                inserter: &mut F,
+            ) {
+                S1::trace_slots(&state.0, &parameters.0, inserter);
+                S2::trace_slots(&state.1, &parameters.1, inserter);
             }
         }
 

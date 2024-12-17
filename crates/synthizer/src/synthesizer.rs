@@ -11,6 +11,7 @@ use crate::config;
 use crate::core_traits::*;
 use crate::error::Result;
 use crate::mount_point::ErasedMountPoint;
+use crate::signals::{SlotMap, SlotUpdateContext};
 use crate::unique_id::UniqueId;
 
 type SynthMap<K, V> = HashTrieMapSync<K, V>;
@@ -29,6 +30,8 @@ pub(crate) struct MountContainer {
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
 
     pub(crate) parameters: Arc<dyn Any + Send + Sync + 'static>,
+
+    pub(crate) slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
 }
 
 /// This is the state published to the audio thread.
@@ -222,6 +225,7 @@ impl Batch<'_> {
             erased_mount: Arc::new(AtomicRefCell::new(Box::new(mp))),
             pending_drop: pending_drop.0.clone(),
             parameters: Arc::new(ready.parameters),
+            slots: Default::default(),
         };
 
         self.new_state.mounts.insert_mut(object_id, inserting);
@@ -283,6 +287,9 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
                 &mut crate::context::FixedSignalExecutionContext {
                     time_in_blocks: as_mut.time_in_blocks,
                     audio_destinationh: &mut as_mut.buffer,
+                    slots: &SlotUpdateContext {
+                        mount_slots: &m.slots,
+                    },
                 },
             );
         }

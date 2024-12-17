@@ -44,6 +44,7 @@ impl<S: Mountable> ErasedMountPoint for MountPoint<S> {
                 .expect("These are parameters for this mount"),
         };
 
+        S::on_block_start(&mut ctx);
         S::tick_block(&mut ctx, |_| &(), |_| {});
     }
 }

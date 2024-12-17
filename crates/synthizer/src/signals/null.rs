@@ -22,6 +22,18 @@ unsafe impl Signal for NullSignal {
     }
 
     fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}
+
+    fn trace_slots<
+        F: FnMut(
+            crate::unique_id::UniqueId,
+            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
+        ),
+    >(
+        _state: &Self::State,
+        _parameters: &Self::Parameters,
+        _inserter: &mut F,
+    ) {
+    }
 }
 
 impl IntoSignal for NullSignal {

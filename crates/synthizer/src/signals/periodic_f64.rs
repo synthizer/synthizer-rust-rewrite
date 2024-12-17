@@ -92,6 +92,19 @@ where
             destination.send_reusable(inc1(ctx.state, ctx.parameters, val));
         });
     }
+
+    fn trace_slots<
+        F: FnMut(
+            crate::unique_id::UniqueId,
+            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
+        ),
+    >(
+        state: &Self::State,
+        parameters: &Self::Parameters,
+        inserter: &mut F,
+    ) {
+        SIncr::trace_slots(&state.freq_state, &parameters.freq_params, inserter);
+    }
 }
 
 impl<SIncrCfg> IntoSignal for PeriodicF64Config<SIncrCfg>

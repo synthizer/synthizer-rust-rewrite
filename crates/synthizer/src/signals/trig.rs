@@ -39,6 +39,19 @@ where
     {
         S::tick_block(ctx, input, |x: f64| destination.send_reusable(x.sin()));
     }
+
+    fn trace_slots<
+        F: FnMut(
+            crate::unique_id::UniqueId,
+            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
+        ),
+    >(
+        state: &Self::State,
+        parameters: &Self::Parameters,
+        inserter: &mut F,
+    ) {
+        S::trace_slots(state, parameters, inserter);
+    }
 }
 
 impl<S> IntoSignal for SinSignalConfig<S>

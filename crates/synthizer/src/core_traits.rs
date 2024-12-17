@@ -1,6 +1,10 @@
+use std::any::Any;
+use std::sync::Arc;
+
 use crate::config;
 use crate::context::*;
 use crate::error::Result;
+use crate::unique_id::UniqueId;
 
 pub(crate) mod sealed {
     use super::*;
@@ -64,6 +68,26 @@ pub(crate) mod sealed {
         ///
         /// No default impl is provided.  All signals need to consider what they want to do so we forc3e the issue.
         fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>);
+
+        /// Trace slots.
+        ///
+        /// This is "private" to the slot machinery, but must e implemented on combinators.  Everything else should
+        /// leave the implementation empty.
+        ///
+        /// This is called when mounting, in the thread that mounts.  It calls the callback with ids and states for new
+        /// slots.  The only implementor which does anything but pass to other signals is `SlotSignal`.
+        ///
+        /// If the user tries to use a slot which is not traced they get an error.  If the algorithm tries to use a slot
+        /// which is not traced, we panic.  The latter is an internal bug.  It is on us to always know what slots the
+        /// user made.
+        ///
+        /// The callback gets called with an Arc to the *value* of the slot.  The rest is wrapped up by the generic
+        /// machinery.
+        fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
+            state: &Self::State,
+            parameters: &Self::Parameters,
+            inserter: &mut F,
+        );
     }
 
     pub trait SignalDestination<Input: Sized> {

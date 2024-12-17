@@ -5,6 +5,7 @@ mod conversion;
 mod null;
 mod periodic_f64;
 mod scalars;
+mod slots;
 mod trig;
 
 pub use and_then::*;
@@ -13,4 +14,5 @@ pub(crate) use consume_input::*;
 pub use conversion::*;
 pub use null::*;
 pub use periodic_f64::*;
+pub use slots::*;
 pub use trig::*;

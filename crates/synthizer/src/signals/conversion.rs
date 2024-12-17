@@ -62,6 +62,19 @@ where
             destination.send_reusable(x.into())
         });
     }
+
+    fn trace_slots<
+        F: FnMut(
+            crate::unique_id::UniqueId,
+            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
+        ),
+    >(
+        state: &Self::State,
+        parameters: &Self::Parameters,
+        inserter: &mut F,
+    ) {
+        Sig::trace_slots(state, parameters, inserter);
+    }
 }
 
 // DType is not part of the signal. It is only a record of the signal's output type. Consequently these are actually
