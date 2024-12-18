@@ -9,9 +9,9 @@ use rpds::{HashTrieMapSync, VectorSync};
 use crate::chain::Chain;
 use crate::config;
 use crate::core_traits::*;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::mount_point::ErasedMountPoint;
-use crate::signals::{SlotMap, SlotUpdateContext};
+use crate::signals::{Slot, SlotMap, SlotUpdateContext, SlotValueContainer};
 use crate::unique_id::UniqueId;
 
 type SynthMap<K, V> = HashTrieMapSync<K, V>;
@@ -95,18 +95,16 @@ impl Drop for MarkDropped {
 /// Handles may alias the same object.  The `T` here is allowing you to manipulate some parameter of your signal in some
 /// fashion, but signals may have different parameters and "knobs" all of which may have a different handle (TODO:
 /// implement `Slot<T>` stuff).
-pub struct Handle<T> {
+pub struct Handle {
     object_id: UniqueId,
     mark_drop: Arc<MarkDropped>,
-    _phantom: PD<T>,
 }
 
-impl<T> Clone for Handle<T> {
+impl Clone for Handle {
     fn clone(&self) -> Self {
         Self {
             object_id: self.object_id,
             mark_drop: self.mark_drop.clone(),
-            _phantom: PD,
         }
     }
 }
@@ -185,6 +183,7 @@ impl SynthesizerState {
         }
     }
 }
+
 impl Batch<'_> {
     /// Called on batch creation to catch pending drops from last time, then again on batch publish to catch pending
     /// drops the user might have made during the batch.
@@ -203,10 +202,7 @@ impl Batch<'_> {
         }
     }
 
-    pub fn mount<S: IntoSignal>(
-        &mut self,
-        chain: Chain<S>,
-    ) -> Result<Handle<MountPointHandleMarker>>
+    pub fn mount<S: IntoSignal>(&mut self, chain: Chain<S>) -> Result<Handle>
     where
         S::Signal: Mountable,
         SignalState<S::Signal>: Send + Sync + 'static,
@@ -216,6 +212,13 @@ impl Batch<'_> {
         let pending_drop = MarkDropped::new();
 
         let ready = chain.into_signal()?;
+
+        let mut slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>> = Default::default();
+
+        S::Signal::trace_slots(&ready.state, &ready.parameters, &mut |id, s| {
+            slots.insert_mut(id, s);
+        });
+
         let mp = crate::mount_point::MountPoint {
             signal: ready.signal,
             state: ready.state,
@@ -225,7 +228,7 @@ impl Batch<'_> {
             erased_mount: Arc::new(AtomicRefCell::new(Box::new(mp))),
             pending_drop: pending_drop.0.clone(),
             parameters: Arc::new(ready.parameters),
-            slots: Default::default(),
+            slots,
         };
 
         self.new_state.mounts.insert_mut(object_id, inserting);
@@ -233,8 +236,43 @@ impl Batch<'_> {
         Ok(Handle {
             object_id,
             mark_drop: Arc::new(pending_drop),
-            _phantom: PD,
         })
+    }
+
+    /// Allocate a slot.
+    ///
+    /// This slot cannot be used until a chain which uses it is mounted.  To use a slot, call [Slot::signal()] or
+    /// variations, specifying an initial value.  Mounting activates the slot by allocating the necessary internal data
+    /// structures.
+    pub fn allocate_slot<T>(&mut self) -> Slot<T> {
+        Slot {
+            slot_id: UniqueId::new(),
+            _phantom: PD,
+        }
+    }
+
+    pub fn replace_slot_value<T>(
+        &mut self,
+        handle: &Handle,
+        slot: &Slot<T>,
+        new_val: T,
+    ) -> Result<()>
+    where
+        T: Send + Sync + Clone + 'static,
+    {
+        let slot  = self.new_state
+        .mounts.get_mut(&handle.object_id)
+        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist")
+        .slots
+        .get_mut(&slot.slot_id)
+        .ok_or_else(||Error::new_validation_cow("Slot does not match this mount"))?;
+        let newslot = slot
+            .downcast_ref::<SlotValueContainer<T>>()
+            .unwrap()
+            .replace(new_val);
+        *slot = Arc::new(newslot);
+
+        Ok(())
     }
 }
 

@@ -40,6 +40,34 @@ where
     }
 }
 
+/// Start a chain which reads from a slot.
+pub fn read_slot<T>(
+    slot: &sigs::Slot<T>,
+    initial_value: T,
+) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    Chain {
+        inner: slot.read_signal(initial_value),
+    }
+}
+
+/// Start a chain which reads from a slot, then includes whether or not the slot changed this block.
+///
+/// Returns `(T, bool)`.
+pub fn read_slot_and_changed<T>(
+    slot: &sigs::Slot<T>,
+    initial_value: T,
+) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = (T, bool)>>>
+where
+    T: Send + Sync + Clone + 'static,
+{
+    Chain {
+        inner: slot.read_signal_and_change_flag(initial_value),
+    }
+}
+
 impl<S: IntoSignal> Chain<S> {
     /// Start a chain.
     ///

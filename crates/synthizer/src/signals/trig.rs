@@ -24,7 +24,9 @@ where
         S::tick1(ctx, input, |x: f64| destination.send(x.sin()));
     }
 
-    fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}
+    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
+        S::on_block_start(ctx);
+    }
 
     fn tick_block<
         'a,
