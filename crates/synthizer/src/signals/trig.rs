@@ -23,7 +23,7 @@ where
     fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -32,7 +32,7 @@ where
     ) where
         Self::Input: 'a,
     {
-        S::tick::<_, _, N>(ctx, input, |x: f64| destination.send_reusable(x.sin()));
+        S::tick::<_, _, N>(ctx, input, |x: f64| destination.send(x.sin()));
     }
 
     fn trace_slots<

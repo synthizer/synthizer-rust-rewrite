@@ -51,7 +51,7 @@ where
     fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -72,7 +72,7 @@ where
         );
 
         increments.into_iter().for_each(|val| {
-            destination.send_reusable(inc1(ctx.state, ctx.parameters, val));
+            destination.send(inc1(ctx.state, ctx.parameters, val));
         });
     }
 

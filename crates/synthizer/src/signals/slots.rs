@@ -153,7 +153,7 @@ where
     fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         ctx: &'_ mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -168,7 +168,7 @@ where
         };
 
         for _ in 0..N {
-            destination.send_reusable(val.clone());
+            destination.send(val.clone());
         }
     }
 

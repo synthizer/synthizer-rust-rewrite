@@ -29,7 +29,7 @@ where
     fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,

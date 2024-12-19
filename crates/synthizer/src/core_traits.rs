@@ -36,7 +36,7 @@ pub(crate) mod sealed {
         fn tick<
             'a,
             I: FnMut(usize) -> &'a Self::Input,
-            D: ReusableSignalDestination<Self::Output>,
+            D: SignalDestination<Self::Output>,
             const N: usize,
         >(
             ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -76,11 +76,7 @@ pub(crate) mod sealed {
     }
 
     pub trait SignalDestination<Input: Sized> {
-        fn send(self, value: Input);
-    }
-
-    pub trait ReusableSignalDestination<Input: Sized>: SignalDestination<Input> {
-        fn send_reusable(&mut self, value: Input);
+        fn send(&mut self, value: Input);
     }
 
     /// A frame of audio data, which can be stored on the stack.
@@ -144,19 +140,9 @@ pub(crate) use sealed::*;
 impl<F, Input> SignalDestination<Input> for F
 where
     Input: Sized,
-    F: FnOnce(Input),
-{
-    fn send(self, value: Input) {
-        self(value)
-    }
-}
-
-impl<F, Input> ReusableSignalDestination<Input> for F
-where
-    Input: Sized,
     F: FnMut(Input),
 {
-    fn send_reusable(&mut self, value: Input) {
+    fn send(&mut self, value: Input) {
         (*self)(value)
     }
 }

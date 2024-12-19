@@ -16,7 +16,7 @@ unsafe impl Signal for NullSignal {
     fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         _ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -27,7 +27,7 @@ unsafe impl Signal for NullSignal {
     {
         for i in 0..N {
             input(i);
-            destination.send_reusable(());
+            destination.send(());
         }
     }
 

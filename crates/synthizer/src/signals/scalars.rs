@@ -17,7 +17,7 @@ macro_rules! impl_scalar {
             fn tick<
             'a,
             I: FnMut(usize) -> &'a Self::Input,
-            D: ReusableSignalDestination<Self::Output>,
+            D: SignalDestination<Self::Output>,
             const N: usize,
         >(
             ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -27,7 +27,7 @@ mut             destination: D,
             Self::Input: 'a {
                 for i in 0..N {
                     input(i);
-                    destination.send_reusable(*ctx.parameters);
+                    destination.send(*ctx.parameters);
                 }
             }
 

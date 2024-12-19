@@ -39,7 +39,7 @@ where
     fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         ctx: &'_ mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -55,9 +55,8 @@ where
             i += 1;
         });
 
-        outs.iter().for_each(|i| {
-            destination.send_reusable((ctx.state.closure)(unsafe { i.assume_init_ref() }))
-        });
+        outs.iter()
+            .for_each(|i| destination.send((ctx.state.closure)(unsafe { i.assume_init_ref() })));
 
         // The mapping closure gets references, so we must drop this ourselves.
         unsafe {

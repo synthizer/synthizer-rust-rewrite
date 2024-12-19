@@ -25,7 +25,7 @@ where
     fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -50,7 +50,7 @@ where
 
         // We do have to actually use the destination, as this drives computations elsewhere.
         for _ in 0..config::BLOCK_SIZE {
-            destination.send_reusable(());
+            destination.send(());
         }
     }
 

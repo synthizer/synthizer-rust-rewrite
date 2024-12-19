@@ -51,7 +51,7 @@ macro_rules! impl_mathop {
             fn tick<
                 'a,
                 I: FnMut(usize) -> &'a Self::Input,
-                D: ReusableSignalDestination<Self::Output>,
+                D: SignalDestination<Self::Output>,
                 const N: usize,
             >(
                 ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -84,7 +84,7 @@ macro_rules! impl_mathop {
                 left.into_iter().zip(right.into_iter()).for_each(|(l, r)| {
                     let l = unsafe { l.assume_init() };
                     let r = unsafe { r.assume_init() };
-                    destination.send_reusable(l.$method(r));
+                    destination.send(l.$method(r));
                 });
             }
 

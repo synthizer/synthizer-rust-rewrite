@@ -39,7 +39,7 @@ where
     fn tick<
         'a,
         SigI: FnMut(usize) -> &'a Self::Input,
-        D: ReusableSignalDestination<Self::Output>,
+        D: SignalDestination<Self::Output>,
         const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
@@ -53,7 +53,7 @@ where
             ctx,
             |_| &ni,
             |v| {
-                destination.send_reusable(v);
+                destination.send(v);
             },
         );
     }
