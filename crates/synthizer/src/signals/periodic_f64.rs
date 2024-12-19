@@ -45,23 +45,6 @@ where
     type State = PeriodicF64State<SIncr>;
     type Parameters = PeriodicF64Parameters<SIncr>;
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: &'_ Self::Input,
-        destination: D,
-    ) {
-        let mut parent: f64 = 0.0;
-        SIncr::tick1(
-            &mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params),
-            input,
-            |incr| {
-                parent = incr;
-            },
-        );
-
-        destination.send(inc1(ctx.state, ctx.parameters, parent));
-    }
-
     fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
         SIncr::on_block_start(&mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params));
     }

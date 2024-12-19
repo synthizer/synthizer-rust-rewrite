@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::config;
 use crate::context::*;
 use crate::error::Result;
 use crate::unique_id::UniqueId;
@@ -13,24 +12,14 @@ pub(crate) mod sealed {
     ///
     /// # Safety
     ///
-    /// This trait is unsafe because the library relies on it to uphold the contracts documented with the method.  In
-    /// particular, calling `tick1` must always send exactly one value to the destination, as the destination may be
-    /// writing into uninitialized memory.  This lets us get performance out, especially in debug builds where things
-    /// like immediate unwrapping of options will not be optimized away.
+    /// This trait is unsafe because the library relies on it to uphold the contracts documented with the method.  This
+    /// lets us get performance out, especially in debug builds where things like immediate unwrapping of options will
+    /// not be optimized away.
     pub unsafe trait Signal: Sized + Send + Sync {
         type Input: Sized;
         type Output: Sized;
         type State: Sized + Send + Sync;
         type Parameters: Sized + Send + Sync;
-
-        /// Tick this signal once.
-        ///
-        /// Must use the destination to send exactly one value.
-        fn tick1<D: SignalDestination<Self::Output>>(
-            ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-            input: &'_ Self::Input,
-            destination: D,
-        );
 
         /// Tick this signal [config::BLOCK_SIZE] times.  Implemented via `tick1` by default.
         ///
@@ -50,15 +39,10 @@ pub(crate) mod sealed {
             D: ReusableSignalDestination<Self::Output>,
         >(
             ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-            mut input: I,
-            mut destination: D,
+            input: I,
+            destination: D,
         ) where
-            Self::Input: 'a,
-        {
-            for i in 0..config::BLOCK_SIZE {
-                Self::tick1(ctx, input(i), |x| destination.send_reusable(x));
-            }
-        }
+            Self::Input: 'a;
 
         /// Called when a signal is starting a new block.
         ///

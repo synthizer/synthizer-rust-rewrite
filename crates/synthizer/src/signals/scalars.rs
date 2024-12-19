@@ -14,12 +14,20 @@ macro_rules! impl_scalar {
             type State = ();
             type Parameters = $t;
 
-            fn tick1<D: SignalDestination<Self::Output>>(
-                ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-                _input: &'_ Self::Input,
-                destination: D,
-            ) {
-                destination.send(*ctx.parameters);
+            fn tick_block<
+            'a,
+            I: FnMut(usize) -> &'a Self::Input,
+            D: ReusableSignalDestination<Self::Output>,
+        >(
+            ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+            mut input: I,
+mut             destination: D,
+        ) where
+            Self::Input: 'a {
+                for i in 0..crate::config::BLOCK_SIZE {
+                    input(i);
+                    destination.send_reusable(*ctx.parameters);
+                }
             }
 
             fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}

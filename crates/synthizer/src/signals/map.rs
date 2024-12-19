@@ -37,19 +37,6 @@ where
         ParSig::on_block_start(&mut ctx.wrap(|s| &mut s.parent_state, |p| p));
     }
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: &'_ Self::Input,
-        destination: D,
-    ) {
-        let mut par_in = MaybeUninit::uninit();
-        ParSig::tick1(&mut ctx.wrap(|s| &mut s.parent_state, |p| p), input, |x| {
-            par_in.write(x);
-        });
-
-        destination.send((ctx.state.closure)(unsafe { par_in.assume_init_ref() }));
-    }
-
     fn tick_block<
         'a,
         I: FnMut(usize) -> &'a Self::Input,

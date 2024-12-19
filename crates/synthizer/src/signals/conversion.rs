@@ -32,17 +32,6 @@ where
     type Parameters = Sig::Parameters;
     type State = Sig::State;
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: &'_ Self::Input,
-        destination: D,
-    ) {
-        Sig::tick1(ctx, input, |x: Sig::Output| {
-            let y: DType = x.into();
-            destination.send(y)
-        })
-    }
-
     fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
         Sig::on_block_start(ctx);
     }

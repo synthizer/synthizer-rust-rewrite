@@ -151,17 +151,6 @@ where
         ctx.state.changed_this_block = true;
     }
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        _input: &'_ Self::Input,
-        destination: D,
-    ) {
-        destination.send(SlotSignalOutput {
-            value: (*ctx.state.value).clone(),
-            changed_this_block: ctx.state.changed_this_block,
-        });
-    }
-
     fn tick_block<
         'a,
         I: FnMut(usize) -> &'a Self::Input,

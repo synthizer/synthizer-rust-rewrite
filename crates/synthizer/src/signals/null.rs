@@ -13,12 +13,21 @@ unsafe impl Signal for NullSignal {
     type State = ();
     type Parameters = ();
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        _ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        _input: &'_ Self::Input,
-        destination: D,
-    ) {
-        destination.send(());
+    fn tick_block<
+        'a,
+        I: FnMut(usize) -> &'a Self::Input,
+        D: ReusableSignalDestination<Self::Output>,
+    >(
+        _ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+        mut input: I,
+        mut destination: D,
+    ) where
+        Self::Input: 'a,
+    {
+        for i in 0..crate::config::BLOCK_SIZE {
+            input(i);
+            destination.send_reusable(());
+        }
     }
 
     fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}

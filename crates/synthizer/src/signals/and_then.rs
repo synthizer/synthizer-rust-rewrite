@@ -22,22 +22,6 @@ where
     type State = (S1::State, S2::State);
     type Parameters = (S1::Parameters, S2::Parameters);
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: &'_ Self::Input,
-        destination: D,
-    ) {
-        // LLVM should be able to see through this.  Not that that's guaranteed, but it avoids wild unsafety.
-        let mut left: Option<S1::Output> = None;
-
-        S1::tick1(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), input, |x| {
-            left = Some(x)
-        });
-        let left = left.unwrap();
-
-        S2::tick1(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), &left, destination);
-    }
-
     fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
         S1::on_block_start(&mut ctx.wrap(|s| &mut s.0, |p| &p.0));
         S2::on_block_start(&mut ctx.wrap(|s| &mut s.1, |p| &p.1));

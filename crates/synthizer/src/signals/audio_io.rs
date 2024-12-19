@@ -15,22 +15,6 @@ where
     type State = (S::State, usize);
     type Parameters = S::Parameters;
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: &'_ Self::Input,
-        destination: D,
-    ) {
-        let mut val: Option<S::Output> = None;
-        S::tick1(&mut ctx.wrap(|s| &mut s.0, |p| p), input, |x| val = Some(x));
-
-        // We output the unit type instead.
-        destination.send(());
-
-        // Later this will go to a bus. But we are not at buses yet.
-        ctx.fixed.audio_destinationh[ctx.state.1] = val.unwrap();
-        ctx.state.1 += 1;
-    }
-
     fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
         S::on_block_start(&mut ctx.wrap(|s| &mut s.0, |p| p));
 

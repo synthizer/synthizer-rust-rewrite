@@ -42,21 +42,6 @@ macro_rules! impl_mathop {
             type Parameters = (SignalParameters<S1>, SignalParameters<S2>);
             type State = (SignalState<S1>, SignalState<S2>);
 
-            fn tick1<D: SignalDestination<Self::Output>>(
-                ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-                input: &'_ Self::Input,
-                destination: D,
-            ) {
-                // The complexity here is that we cannot project the context twice.  We need the left value first.
-                let mut left = None;
-                S1::tick1(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), input, |y| {
-                    left = Some(y)
-                });
-                S2::tick1(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), input, |y| {
-                    destination.send(left.unwrap().$method(y));
-                })
-            }
-
             fn on_block_start(
                 ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
             ) {

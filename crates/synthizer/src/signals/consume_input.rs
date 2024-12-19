@@ -32,15 +32,6 @@ where
     type State = S::State;
     type Parameters = S::Parameters;
 
-    fn tick1<D: SignalDestination<Self::Output>>(
-        ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        _input: &'_ Self::Input,
-        destination: D,
-    ) {
-        let new_in: S::Input = Default::default();
-        S::tick1(ctx, &new_in, destination);
-    }
-
     fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
         S::on_block_start(ctx);
     }
