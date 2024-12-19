@@ -1,6 +1,5 @@
 use std::mem::MaybeUninit;
 
-use crate::config;
 use crate::context::*;
 use crate::core_traits::*;
 
@@ -27,10 +26,11 @@ where
         S2::on_block_start(&mut ctx.wrap(|s| &mut s.1, |p| &p.1));
     }
 
-    fn tick_block<
+    fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: I,
@@ -38,15 +38,14 @@ where
     ) where
         Self::Input: 'a,
     {
-        let mut left_out: [MaybeUninit<SignalOutput<S1>>; config::BLOCK_SIZE] =
-            [const { MaybeUninit::uninit() }; config::BLOCK_SIZE];
+        let mut left_out: [MaybeUninit<SignalOutput<S1>>; N] = [const { MaybeUninit::uninit() }; N];
         let mut i = 0;
-        S1::tick_block(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), input, |val| {
+        S1::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), input, |val| {
             left_out[i].write(val);
             i += 1;
         });
 
-        S2::tick_block(
+        S2::tick::<_, _, N>(
             &mut ctx.wrap(|s| &mut s.1, |p| &p.1),
             |ind| unsafe { left_out[ind].assume_init_ref() },
             destination,

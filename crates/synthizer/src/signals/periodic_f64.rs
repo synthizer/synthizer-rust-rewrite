@@ -1,4 +1,3 @@
-use crate::config;
 use crate::context::*;
 use crate::core_traits::*;
 
@@ -49,10 +48,11 @@ where
         SIncr::on_block_start(&mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params));
     }
 
-    fn tick_block<
+    fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: I,
@@ -60,9 +60,9 @@ where
     ) where
         Self::Input: 'a,
     {
-        let mut increments: [f64; config::BLOCK_SIZE] = [0.0; config::BLOCK_SIZE];
+        let mut increments: [f64; N] = [0.0; N];
         let mut i = 0;
-        SIncr::tick_block(
+        SIncr::tick::<_, _, N>(
             &mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params),
             input,
             |x| {

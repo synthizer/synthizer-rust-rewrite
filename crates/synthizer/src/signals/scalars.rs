@@ -14,17 +14,18 @@ macro_rules! impl_scalar {
             type State = ();
             type Parameters = $t;
 
-            fn tick_block<
+            fn tick<
             'a,
             I: FnMut(usize) -> &'a Self::Input,
             D: ReusableSignalDestination<Self::Output>,
+            const N: usize,
         >(
             ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
             mut input: I,
 mut             destination: D,
         ) where
             Self::Input: 'a {
-                for i in 0..crate::config::BLOCK_SIZE {
+                for i in 0..N {
                     input(i);
                     destination.send_reusable(*ctx.parameters);
                 }

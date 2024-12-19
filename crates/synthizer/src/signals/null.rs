@@ -13,10 +13,11 @@ unsafe impl Signal for NullSignal {
     type State = ();
     type Parameters = ();
 
-    fn tick_block<
+    fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         _ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         mut input: I,
@@ -24,7 +25,7 @@ unsafe impl Signal for NullSignal {
     ) where
         Self::Input: 'a,
     {
-        for i in 0..crate::config::BLOCK_SIZE {
+        for i in 0..N {
             input(i);
             destination.send_reusable(());
         }

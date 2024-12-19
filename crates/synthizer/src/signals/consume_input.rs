@@ -36,10 +36,11 @@ where
         S::on_block_start(ctx);
     }
 
-    fn tick_block<
+    fn tick<
         'a,
         SigI: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         _input: SigI,
@@ -48,7 +49,7 @@ where
         Self::Input: 'a,
     {
         let ni = Default::default();
-        S::tick_block(
+        S::tick::<_, _, N>(
             ctx,
             |_| &ni,
             |v| {

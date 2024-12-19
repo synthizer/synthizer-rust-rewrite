@@ -22,10 +22,11 @@ where
         ctx.state.1 = 0;
     }
 
-    fn tick_block<
+    fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: I,
@@ -36,7 +37,7 @@ where
         let mut block: [f64; config::BLOCK_SIZE] = [0.0f64; config::BLOCK_SIZE];
 
         let mut i = 0;
-        S::tick_block(&mut ctx.wrap(|s| &mut s.0, |p| p), input, |x| {
+        S::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.0, |p| p), input, |x| {
             block[i] = x;
             i += 1;
         });

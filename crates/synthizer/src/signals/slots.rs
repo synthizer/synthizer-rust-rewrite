@@ -2,10 +2,9 @@ use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
+use crate::core_traits::*;
 use rpds::HashTrieMapSync;
 
-use crate::config;
-use crate::core_traits::*;
 use crate::unique_id::UniqueId;
 
 pub(crate) type SlotMap<K, V> = HashTrieMapSync<K, V>;
@@ -151,10 +150,11 @@ where
         ctx.state.changed_this_block = true;
     }
 
-    fn tick_block<
+    fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         ctx: &'_ mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         _input: I,
@@ -167,7 +167,7 @@ where
             changed_this_block: ctx.state.changed_this_block,
         };
 
-        for _ in 0..config::BLOCK_SIZE {
+        for _ in 0..N {
             destination.send_reusable(val.clone());
         }
     }

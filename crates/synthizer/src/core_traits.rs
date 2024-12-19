@@ -21,22 +21,23 @@ pub(crate) mod sealed {
         type State: Sized + Send + Sync;
         type Parameters: Sized + Send + Sync;
 
-        /// Tick this signal [config::BLOCK_SIZE] times.  Implemented via `tick1` by default.
+        /// Tick this signal.
         ///
-        /// The default implementation is only suitable for signals which are "endpoints" e.g. signals that produce
-        /// values from nothing.  Combinators must implement this in terms of their combined signals.  Signals which are
-        /// not combinators may ignore this if they are wrapping a signal, but cannot meaningfully benefit from or store
-        /// output data.  The complexity here, though: when reading from files and external sources, we are not able to
-        /// do so efficiently sample by sample.  Anywhere which does not forward block-based calls to their parent
-        /// de-optimizes this path.
+        /// Exactly `BLOCK_SIZE` ticks will occur between calls to `on_block_start`.  They may be broken up into smaller
+        /// blocks, possibly down to 1 sample (for example, in recursive structures).
         ///
-        /// Callers will choose to use tick1 or to use tick_block, and will not mix them for the duration of a block.
-        /// Callers may change their mind between blocks.  Wrapper signals should also preserve this property, though
-        /// since this is an entire block of data, it's hard to break this rule.
-        fn tick_block<
+        /// This method must uphold two important invariants:
+        ///
+        /// - `input(i)` must be called at minimum once on each input index in the range `0..N`.
+        /// - Exactly `N` outputs are sent to the destination.
+        ///
+        /// Signals may choose to do work in either of those points instead, so they must be used to drive dependent
+        /// signals.
+        fn tick<
             'a,
             I: FnMut(usize) -> &'a Self::Input,
             D: ReusableSignalDestination<Self::Output>,
+            const N: usize,
         >(
             ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
             input: I,

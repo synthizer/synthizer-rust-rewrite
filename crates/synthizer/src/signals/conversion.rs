@@ -36,10 +36,11 @@ where
         Sig::on_block_start(ctx);
     }
 
-    fn tick_block<
+    fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: I,
@@ -47,7 +48,7 @@ where
     ) where
         Self::Input: 'a,
     {
-        Sig::tick_block(ctx, input, |x: Sig::Output| {
+        Sig::tick::<_, _, N>(ctx, input, |x: Sig::Output| {
             destination.send_reusable(x.into())
         });
     }

@@ -5,7 +5,6 @@ use std::ops::*;
 use std::sync::Arc;
 
 use crate::chain::Chain;
-use crate::config;
 use crate::context::SignalExecutionContext;
 use crate::core_traits::*;
 use crate::unique_id::UniqueId;
@@ -49,10 +48,11 @@ macro_rules! impl_mathop {
                 S2::on_block_start(&mut ctx.wrap(|s| &mut s.1, |p| &p.1));
             }
 
-            fn tick_block<
+            fn tick<
                 'a,
                 I: FnMut(usize) -> &'a Self::Input,
                 D: ReusableSignalDestination<Self::Output>,
+                const N: usize,
             >(
                 ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
                 mut input: I,
@@ -63,20 +63,20 @@ macro_rules! impl_mathop {
                 // When we perform the binary operation, left and right fold into each other and the drop is handled
                 // because either the operation dropped the values itself or the final value holds them.  Dropping these
                 // would thus be a double drop.
-                let mut left: [MaybeUninit<SignalOutput<S1>>; config::BLOCK_SIZE] =
-                    [const { MaybeUninit::uninit() }; config::BLOCK_SIZE];
-                let mut right: [MaybeUninit<SignalOutput<S2>>; config::BLOCK_SIZE] =
-                    [const { MaybeUninit::uninit() }; config::BLOCK_SIZE];
+                let mut left: [MaybeUninit<SignalOutput<S1>>; N] =
+                    [const { MaybeUninit::uninit() }; N];
+                let mut right: [MaybeUninit<SignalOutput<S2>>; N] =
+                    [const { MaybeUninit::uninit() }; N];
                 let mut i = 0usize;
 
-                S1::tick_block(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), &mut input, |val| {
+                S1::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), &mut input, |val| {
                     left[i].write(val);
                     i += 1;
                 });
 
                 i = 0;
 
-                S2::tick_block(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), &mut input, |val| {
+                S2::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), &mut input, |val| {
                     right[i].write(val);
                     i += 1;
                 });

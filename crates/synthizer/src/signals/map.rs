@@ -1,7 +1,6 @@
 use std::marker::PhantomData as PD;
 use std::mem::MaybeUninit;
 
-use crate::config;
 use crate::core_traits::*;
 
 pub struct MapSignal<ParSig, F, O>(PD<*const (ParSig, F, O)>);
@@ -37,10 +36,11 @@ where
         ParSig::on_block_start(&mut ctx.wrap(|s| &mut s.parent_state, |p| p));
     }
 
-    fn tick_block<
+    fn tick<
         'a,
         I: FnMut(usize) -> &'a Self::Input,
         D: ReusableSignalDestination<Self::Output>,
+        const N: usize,
     >(
         ctx: &'_ mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
         input: I,
@@ -48,10 +48,9 @@ where
     ) where
         Self::Input: 'a,
     {
-        let mut outs: [MaybeUninit<SignalOutput<ParSig>>; config::BLOCK_SIZE] =
-            [const { MaybeUninit::uninit() }; config::BLOCK_SIZE];
+        let mut outs: [MaybeUninit<SignalOutput<ParSig>>; N] = [const { MaybeUninit::uninit() }; N];
         let mut i = 0;
-        ParSig::tick_block(&mut ctx.wrap(|s| &mut s.parent_state, |p| p), input, |x| {
+        ParSig::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.parent_state, |p| p), input, |x| {
             outs[i].write(x);
             i += 1;
         });

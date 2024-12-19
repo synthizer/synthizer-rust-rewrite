@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::config;
 use crate::context::*;
 use crate::core_traits::*;
 use crate::synthesizer::SynthesizerState;
@@ -45,6 +46,6 @@ impl<S: Mountable> ErasedMountPoint for MountPoint<S> {
         };
 
         S::on_block_start(&mut ctx);
-        S::tick_block(&mut ctx, |_| &(), |_| {});
+        S::tick::<_, _, { config::BLOCK_SIZE }>(&mut ctx, |_| &(), |_| {});
     }
 }
