@@ -22,7 +22,7 @@ pub(crate) trait ErasedMountPoint: Send + Sync + 'static {
         &mut self,
         state: &Arc<SynthesizerState>,
         mount_id: &UniqueId,
-        shared_ctx: &mut FixedSignalExecutionContext,
+        shared_ctx: &FixedSignalExecutionContext,
     );
 }
 
@@ -31,21 +31,25 @@ impl<S: Mountable> ErasedMountPoint for MountPoint<S> {
         &mut self,
         state: &Arc<SynthesizerState>,
         mount_id: &UniqueId,
-        shared_ctx: &mut FixedSignalExecutionContext,
+        shared_ctx: &FixedSignalExecutionContext,
     ) {
-        let mut ctx = SignalExecutionContext {
-            fixed: shared_ctx,
-            state: &mut self.state,
-            parameters: state
-                .mounts
-                .get(mount_id)
-                .expect("We are in a mount that should be in this map")
-                .parameters
-                .downcast_ref::<S::Parameters>()
-                .expect("These are parameters for this mount"),
-        };
+        let sig_state = &mut self.state;
+        let parameters = state
+            .mounts
+            .get(mount_id)
+            .expect("We are in a mount that should be in this map")
+            .parameters
+            .downcast_ref::<S::Parameters>()
+            .expect("These are parameters for this mount");
+        let mut ctx = SignalExecutionContext { fixed: shared_ctx };
 
-        S::on_block_start(&mut ctx);
-        S::tick::<_, _, { config::BLOCK_SIZE }>(&mut ctx, |_| &(), |_| {});
+        S::on_block_start(&mut ctx, &parameters, &mut *sig_state);
+        S::tick::<_, { config::BLOCK_SIZE }>(
+            &ctx,
+            [(); config::BLOCK_SIZE],
+            &parameters,
+            &mut *sig_state,
+            |_: [(); config::BLOCK_SIZE]| {},
+        );
     }
 }

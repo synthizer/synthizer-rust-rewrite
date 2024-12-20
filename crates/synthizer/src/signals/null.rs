@@ -8,30 +8,31 @@ use crate::core_traits::*;
 pub struct NullSignal(());
 
 unsafe impl Signal for NullSignal {
-    type Input = ();
-    type Output = ();
+    type Input<'il> = ();
+    type Output<'ol> = ();
     type State = ();
     type Parameters = ();
 
-    fn tick<
-        'a,
-        I: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        _ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        mut input: I,
-        mut destination: D,
+    fn tick<'il, 'ol, D, const N: usize>(
+        _ctx: &'_ SignalExecutionContext<'_, '_>,
+        _input: [Self::Input<'il>; N],
+        _params: &Self::Parameters,
+        _state: &mut Self::State,
+        destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
-        for i in 0..N {
-            input(i);
-            destination.send(());
-        }
+        destination.send([(); N]);
     }
 
-    fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}
+    fn on_block_start(
+        _ctx: &SignalExecutionContext<'_, '_>,
+        _params: &Self::Parameters,
+        _state: &mut Self::State,
+    ) {
+    }
 
     fn trace_slots<
         F: FnMut(

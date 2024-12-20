@@ -1,5 +1,3 @@
-use std::mem::MaybeUninit;
-
 use crate::context::*;
 use crate::core_traits::*;
 
@@ -14,46 +12,38 @@ pub struct AndThen<S1, S2>(S1, S2);
 unsafe impl<S1, S2> Signal for AndThen<S1, S2>
 where
     S1: Signal,
-    S2: Signal<Input = S1::Output>,
+    for<'a> S2: Signal<Input<'a> = S1::Output<'a>>,
+    S1: 'static,
+    S2: 'static,
 {
-    type Input = S1::Input;
-    type Output = S2::Output;
+    type Input<'il> = S1::Input<'il>;
+    type Output<'ol> = S2::Output<'ol>;
     type State = (S1::State, S2::State);
     type Parameters = (S1::Parameters, S2::Parameters);
 
-    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
-        S1::on_block_start(&mut ctx.wrap(|s| &mut s.0, |p| &p.0));
-        S2::on_block_start(&mut ctx.wrap(|s| &mut s.1, |p| &p.1));
+    fn on_block_start(
+        ctx: &SignalExecutionContext<'_, '_>,
+        params: &Self::Parameters,
+        state: &mut Self::State,
+    ) {
+        S1::on_block_start(ctx, &params.0, &mut state.0);
+        S2::on_block_start(ctx, &params.1, &mut state.1);
     }
 
-    fn tick<
-        'a,
-        I: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: I,
+    fn tick<'il, 'ol, D, const N: usize>(
+        ctx: &'_ SignalExecutionContext<'_, '_>,
+        input: [Self::Input<'il>; N],
+        params: &Self::Parameters,
+        state: &mut Self::State,
         destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
-        let mut left_out: [MaybeUninit<SignalOutput<S1>>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut i = 0;
-        S1::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), input, |val| {
-            left_out[i].write(val);
-            i += 1;
+        S1::tick::<_, N>(ctx, input, &params.0, &mut state.0, |left_out| {
+            S2::tick::<_, N>(ctx, left_out, &params.1, &mut state.1, destination);
         });
-
-        S2::tick::<_, _, N>(
-            &mut ctx.wrap(|s| &mut s.1, |p| &p.1),
-            |ind| unsafe { left_out[ind].assume_init_ref() },
-            destination,
-        );
-
-        unsafe {
-            crate::unsafe_utils::drop_initialized_array(left_out);
-        }
     }
 
     fn trace_slots<
@@ -78,9 +68,11 @@ pub struct AndThenConfig<S1, S2> {
 
 impl<S1, S2> IntoSignal for AndThenConfig<S1, S2>
 where
-    S1: IntoSignal,
-    S2: IntoSignal,
-    S1::Signal: Signal<Output = <S2::Signal as Signal>::Input>,
+    S1: IntoSignal + 'static,
+    S2: IntoSignal + 'static,
+    for<'a> S1::Signal: Signal<Output<'a> = <S2::Signal as Signal>::Input<'a>>,
+    S1::Signal: 'static,
+    S2::Signal: 'static,
 {
     type Signal = AndThen<S1::Signal, S2::Signal>;
 

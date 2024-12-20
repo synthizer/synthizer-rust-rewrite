@@ -124,52 +124,51 @@ unsafe impl<T: Send + Sync + 'static + Clone> Signal for SlotSignal<T>
 where
     T: Clone,
 {
-    type Input = ();
-    type Output = SlotSignalOutput<T>;
+    type Input<'il> = ();
+    type Output<'ol> = SlotSignalOutput<T>;
     type State = SlotAudioThreadState<T>;
     type Parameters = SlotSignalParams<T>;
 
     fn on_block_start(
-        ctx: &mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+        ctx: &crate::context::SignalExecutionContext<'_, '_>,
+        params: &Self::Parameters,
+        state: &mut Self::State,
     ) {
         let slot_container = ctx
             .fixed
             .slots
-            .resolve::<T>(&ctx.parameters.id)
+            .resolve::<T>(&params.id)
             .expect("If a slot is created, it should have previously been allocated");
-        let is_change = ctx.state.last_update_id != slot_container.update_id;
+        let is_change = state.last_update_id != slot_container.update_id;
 
         // If no change has occurred, optimize out doing anything.
         if !is_change {
-            ctx.state.changed_this_block = false;
+            state.changed_this_block = false;
             return;
         }
 
-        ctx.state.value = slot_container.value.clone();
-        ctx.state.last_update_id = slot_container.update_id;
-        ctx.state.changed_this_block = true;
+        state.value = slot_container.value.clone();
+        state.last_update_id = slot_container.update_id;
+        state.changed_this_block = true;
     }
 
-    fn tick<
-        'a,
-        I: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        ctx: &'_ mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        _input: I,
-        mut destination: D,
+    fn tick<'il, 'ol, D, const N: usize>(
+        _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
+        _input: [(); N],
+        _params: &Self::Parameters,
+        state: &mut Self::State,
+        destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
-        let val = SlotSignalOutput {
-            value: (*ctx.state.value).clone(),
-            changed_this_block: ctx.state.changed_this_block,
-        };
+        let sending = [(); N].map(|_| SlotSignalOutput {
+            value: (*state.value).clone(),
+            changed_this_block: state.changed_this_block,
+        });
 
-        for _ in 0..N {
-            destination.send(val.clone());
-        }
+        destination.send(sending);
     }
 
     fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
@@ -216,13 +215,13 @@ where
     pub(crate) fn read_signal(
         &self,
         initial_value: T,
-    ) -> impl IntoSignal<Signal = impl Signal<Input = (), Output = T>> {
+    ) -> impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = T>> {
         crate::signals::MapSignalConfig::new(
             SlotSignalConfig {
                 initial_value,
                 slot_id: self.slot_id,
             },
-            |x: &SlotSignalOutput<T>| -> T { x.value.clone() },
+            |x: SlotSignalOutput<T>| -> T { x.value.clone() },
         )
     }
 
@@ -230,13 +229,13 @@ where
     pub(crate) fn read_signal_and_change_flag(
         &self,
         initial_value: T,
-    ) -> impl IntoSignal<Signal = impl Signal<Input = (), Output = (T, bool)>> {
+    ) -> impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = (T, bool)>> {
         crate::signals::MapSignalConfig::new(
             SlotSignalConfig {
                 initial_value,
                 slot_id: self.slot_id,
             },
-            |x: &SlotSignalOutput<T>| -> (T, bool) { (x.value.clone(), x.changed_this_block) },
+            |x: SlotSignalOutput<T>| -> (T, bool) { (x.value.clone(), x.changed_this_block) },
         )
     }
 }

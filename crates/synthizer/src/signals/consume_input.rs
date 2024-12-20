@@ -24,38 +24,35 @@ unsafe impl<S, I> Sync for ConsumeInputSignal<S, I> where S: Sync {}
 
 unsafe impl<S, I> Signal for ConsumeInputSignal<S, I>
 where
-    S: Signal,
-    S::Input: Default,
+    S: Signal + 'static,
+    for<'a> S::Input<'a>: Default,
 {
-    type Input = I;
-    type Output = S::Output;
+    type Input<'il> = I;
+    type Output<'ol> = S::Output<'ol>;
     type State = S::State;
     type Parameters = S::Parameters;
 
-    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
-        S::on_block_start(ctx);
+    fn on_block_start(
+        ctx: &SignalExecutionContext<'_, '_>,
+        params: &Self::Parameters,
+        state: &mut Self::State,
+    ) {
+        S::on_block_start(ctx, params, state);
     }
 
-    fn tick<
-        'a,
-        SigI: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        _input: SigI,
-        mut destination: D,
+    fn tick<'il, 'ol, D, const N: usize>(
+        ctx: &'_ SignalExecutionContext<'_, '_>,
+        _input: [Self::Input<'il>; N],
+        params: &Self::Parameters,
+        state: &mut Self::State,
+        destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
-        let ni = Default::default();
-        S::tick::<_, _, N>(
-            ctx,
-            |_| &ni,
-            |v| {
-                destination.send(v);
-            },
-        );
+        let ni = [(); N].map(|_| Default::default());
+        S::tick::<_, N>(ctx, ni, params, state, destination);
     }
 
     fn trace_slots<
@@ -75,7 +72,8 @@ where
 impl<S, DiscardingInputType> IntoSignal for ConsumeInputSignalConfig<S, DiscardingInputType>
 where
     S: IntoSignal,
-    IntoSignalInput<S>: Default,
+    for<'a> IntoSignalInput<'a, S>: Default,
+    S::Signal: 'static,
 {
     type Signal = ConsumeInputSignal<S::Signal, DiscardingInputType>;
 
