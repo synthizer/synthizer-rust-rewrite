@@ -1,6 +1,6 @@
 //! Implements the mathematical operations between `IntoSignal`s.
 use std::any::Any;
-use std::mem::MaybeUninit;
+
 use std::ops::*;
 use std::sync::Arc;
 
@@ -18,8 +18,7 @@ macro_rules! impl_mathop {
         where
             A: IntoSignal,
             B: IntoSignal,
-            A::Signal: Signal<Output = IntoSignalOutput<B>>,
-            IntoSignalOutput<A>: $trait<IntoSignalOutput<B>>,
+            $signal_config<A, B>: IntoSignal,
         {
             type Output = Chain<$signal_config<A, B>>;
 
@@ -30,62 +29,61 @@ macro_rules! impl_mathop {
             }
         }
 
-        unsafe impl<S1, S2> Signal for $signal_name<S1, S2>
+        unsafe impl<I1, I2, O1, O2, S1, S2> Signal for $signal_name<S1, S2>
         where
-            S1: Signal,
-            S2: Signal<Input = SignalInput<S1>>,
-            SignalOutput<S1>: $trait<SignalOutput<S2>>,
+            for<'il, 'ol> S1: Signal<Input<'il> = I1, Output<'ol> = O1>,
+            for<'il, 'ol> S2: Signal<Input<'il> = I2, Output<'ol> = O2>,
+            O1: $trait<O2>,
+            I1: Clone + 'static,
+            I2: From<I1> + Clone + 'static,
         {
-            type Input = SignalInput<S1>;
-            type Output = <SignalOutput<S1> as $trait<SignalOutput<S2>>>::Output;
+            type Input<'il> = SignalInput<'il, S1>;
+            type Output<'ol> = <SignalOutput<'ol, S1> as $trait<SignalOutput<'ol, S2>>>::Output;
             type Parameters = (SignalParameters<S1>, SignalParameters<S2>);
             type State = (SignalState<S1>, SignalState<S2>);
 
             fn on_block_start(
-                ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+                ctx: &SignalExecutionContext<'_, '_>,
+                params: &Self::Parameters,
+                state: &mut Self::State,
             ) {
-                S1::on_block_start(&mut ctx.wrap(|s| &mut s.0, |p| &p.0));
-                S2::on_block_start(&mut ctx.wrap(|s| &mut s.1, |p| &p.1));
+                S1::on_block_start(ctx, &params.0, &mut state.0);
+                S2::on_block_start(&ctx, &params.1, &mut state.1);
             }
 
-            fn tick<
-                'a,
-                I: FnMut(usize) -> &'a Self::Input,
-                D: SignalDestination<Self::Output>,
-                const N: usize,
-            >(
-                ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-                mut input: I,
-                mut destination: D,
+            fn tick<'il, 'ol, D, const N: usize>(
+                ctx: &'_ SignalExecutionContext<'_, '_>,
+                input: [Self::Input<'il>; N],
+                params: &Self::Parameters,
+                state: &mut Self::State,
+                destination: D,
             ) where
-                Self::Input: 'a,
+                Self::Input<'il>: 'ol,
+                'il: 'ol,
+                D: SignalDestination<Self::Output<'ol>, N>,
             {
-                // When we perform the binary operation, left and right fold into each other and the drop is handled
-                // because either the operation dropped the values itself or the final value holds them.  Dropping these
-                // would thus be a double drop.
-                let mut left: [MaybeUninit<SignalOutput<S1>>; N] =
-                    [const { MaybeUninit::uninit() }; N];
-                let mut right: [MaybeUninit<SignalOutput<S2>>; N] =
-                    [const { MaybeUninit::uninit() }; N];
-                let mut i = 0usize;
-
-                S1::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.0, |p| &p.0), &mut input, |val| {
-                    left[i].write(val);
-                    i += 1;
-                });
-
-                i = 0;
-
-                S2::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.1, |p| &p.1), &mut input, |val| {
-                    right[i].write(val);
-                    i += 1;
-                });
-
-                left.into_iter().zip(right.into_iter()).for_each(|(l, r)| {
-                    let l = unsafe { l.assume_init() };
-                    let r = unsafe { r.assume_init() };
-                    destination.send(l.$method(r));
-                });
+                S1::tick::<_, N>(
+                    ctx,
+                    input.clone(),
+                    &params.0,
+                    &mut state.0,
+                    |left: [S1::Output<'ol>; N]| {
+                        S2::tick(
+                            ctx,
+                            input.map(|x| x.into()),
+                            &params.1,
+                            &mut state.1,
+                            |right: [S2::Output<'ol>; N]| {
+                                let outgoing = crate::array_utils::collect_iter::<_, N>(
+                                    left.into_iter()
+                                        .zip(right.into_iter())
+                                        .map(|(a, b)| a.$method(b)),
+                                );
+                                destination.send(outgoing);
+                            },
+                        );
+                    },
+                );
             }
 
             fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
@@ -98,14 +96,14 @@ macro_rules! impl_mathop {
             }
         }
 
-        impl<S1, S2> IntoSignal for $signal_config<S1, S2>
+        impl<I1, I2, S1, S2> IntoSignal for $signal_config<S1, S2>
         where
-            S1: IntoSignal,
-            S2: IntoSignal,
-            $signal_name<S1::Signal, S2::Signal>: Signal<
-                State = (IntoSignalState<S1>, IntoSignalState<S2>),
-                Parameters = (IntoSignalParameters<S1>, IntoSignalParameters<S2>),
-            >,
+            S1: IntoSignal + Send + Sync,
+            S2: IntoSignal + Send + Sync,
+            for<'il, 'ol> S1::Signal: Signal<Input<'il> = I1, Output<'ol> = f64>,
+            for<'il, 'ol> S2::Signal: Signal<Input<'il> = I2, Output<'ol> = f64>,
+            I1: Clone + 'static,
+            I2: From<I1> + Clone + 'static,
         {
             type Signal = $signal_name<S1::Signal, S2::Signal>;
 
@@ -126,10 +124,3 @@ impl_mathop!(Add, AddSig, AddSigConfig, add);
 impl_mathop!(Sub, SubSig, SubSigConfig, sub);
 impl_mathop!(Mul, MulSig, MulSigConfig, mul);
 impl_mathop!(Div, DivSig, DivSigConfig, div);
-impl_mathop!(BitAnd, BitAndSig, BitAndSigConfig, bitand);
-impl_mathop!(BitOr, BitOrSig, BitOrSigConfig, bitor);
-impl_mathop!(BitXor, BitXorSig, BitXorSigConfig, bitxor);
-
-impl_mathop!(Rem, RemSig, RemSigConfig, rem);
-impl_mathop!(Shl, ShlSig, ShlSigConfig, shl);
-impl_mathop!(Shr, ShrSig, ShrSigConfig, shr);

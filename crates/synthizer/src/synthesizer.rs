@@ -322,9 +322,9 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
             m.erased_mount.borrow_mut().run(
                 state,
                 id,
-                &mut crate::context::FixedSignalExecutionContext {
+                &crate::context::FixedSignalExecutionContext {
                     time_in_blocks: as_mut.time_in_blocks,
-                    audio_destinationh: &mut as_mut.buffer,
+                    audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut as_mut.buffer),
                     slots: &SlotUpdateContext {
                         mount_slots: &m.slots,
                     },

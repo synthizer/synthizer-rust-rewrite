@@ -37,43 +37,45 @@ fn inc1<SIncr: Signal>(
 
 unsafe impl<SIncr> Signal for PeriodicF64Signal<SIncr>
 where
-    SIncr: Signal<Output = f64>,
+    SIncr: for<'a> Signal<Output<'a> = f64>,
 {
-    type Output = f64;
-    type Input = SIncr::Input;
+    type Output<'ol> = f64;
+    type Input<'il> = SIncr::Input<'il>;
     type State = PeriodicF64State<SIncr>;
     type Parameters = PeriodicF64Parameters<SIncr>;
 
-    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
-        SIncr::on_block_start(&mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params));
+    fn on_block_start(
+        ctx: &SignalExecutionContext<'_, '_>,
+        params: &Self::Parameters,
+        state: &mut Self::State,
+    ) {
+        SIncr::on_block_start(ctx, &params.freq_params, &mut state.freq_state);
     }
 
-    fn tick<
-        'a,
-        I: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: I,
-        mut destination: D,
+    fn tick<'il, 'ol, D, const N: usize>(
+        ctx: &'_ SignalExecutionContext<'_, '_>,
+        input: [Self::Input<'il>; N],
+        params: &Self::Parameters,
+        state: &mut Self::State,
+        destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
         let mut increments: [f64; N] = [0.0; N];
-        let mut i = 0;
-        SIncr::tick::<_, _, N>(
-            &mut ctx.wrap(|s| &mut s.freq_state, |p| &p.freq_params),
+        SIncr::tick::<_, N>(
+            ctx,
             input,
-            |x| {
-                increments[i] = x;
-                i += 1;
+            &params.freq_params,
+            &mut state.freq_state,
+            |x: [f64; N]| {
+                increments.copy_from_slice(&x);
             },
         );
+        let results = increments.map(|x| inc1(state, params, x));
 
-        increments.into_iter().for_each(|val| {
-            destination.send(inc1(ctx.state, ctx.parameters, val));
-        });
+        destination.send(results);
     }
 
     fn trace_slots<
@@ -93,7 +95,7 @@ where
 impl<SIncrCfg> IntoSignal for PeriodicF64Config<SIncrCfg>
 where
     SIncrCfg: IntoSignal,
-    SIncrCfg::Signal: Signal<Output = f64>,
+    SIncrCfg::Signal: for<'ol> Signal<Output<'ol> = f64>,
 {
     type Signal = PeriodicF64Signal<SIncrCfg::Signal>;
 

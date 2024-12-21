@@ -1,5 +1,4 @@
 use std::marker::PhantomData as PD;
-use std::mem::MaybeUninit;
 
 use crate::core_traits::*;
 
@@ -15,53 +14,49 @@ pub struct MapSignalConfig<ParSigCfg, F, O> {
 
 pub struct MapSignalState<ParSig: Signal, F> {
     closure: F,
-
     parent_state: SignalState<ParSig>,
 }
 
 unsafe impl<ParSig, F, O> Signal for MapSignal<ParSig, F, O>
 where
     ParSig: Signal,
-    F: FnMut(&SignalOutput<ParSig>) -> O + Send + Sync + 'static,
+    F: FnMut(SignalOutput<ParSig>) -> O + Send + Sync + 'static,
     O: Send,
 {
-    type Input = SignalInput<ParSig>;
-    type Output = O;
+    type Input<'il> = SignalInput<'il, ParSig>;
+    type Output<'ol> = O;
     type Parameters = ParSig::Parameters;
     type State = MapSignalState<ParSig, F>;
 
     fn on_block_start(
-        ctx: &mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
+        ctx: &crate::context::SignalExecutionContext<'_, '_>,
+        params: &Self::Parameters,
+        state: &mut Self::State,
     ) {
-        ParSig::on_block_start(&mut ctx.wrap(|s| &mut s.parent_state, |p| p));
+        ParSig::on_block_start(ctx, params, &mut state.parent_state);
     }
 
-    fn tick<
-        'a,
-        I: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        ctx: &'_ mut crate::context::SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: I,
-        mut destination: D,
+    fn tick<'il, 'ol, D, const N: usize>(
+        ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
+        input: [Self::Input<'il>; N],
+        params: &Self::Parameters,
+        state: &mut Self::State,
+        destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
-        let mut outs: [MaybeUninit<SignalOutput<ParSig>>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut i = 0;
-        ParSig::tick::<_, _, N>(&mut ctx.wrap(|s| &mut s.parent_state, |p| p), input, |x| {
-            outs[i].write(x);
-            i += 1;
-        });
-
-        outs.iter()
-            .for_each(|i| destination.send((ctx.state.closure)(unsafe { i.assume_init_ref() })));
-
-        // The mapping closure gets references, so we must drop this ourselves.
-        unsafe {
-            crate::unsafe_utils::drop_initialized_array(outs);
-        }
+        ParSig::tick::<_, N>(
+            ctx,
+            input,
+            params,
+            &mut state.parent_state,
+            |x: [ParSig::Output<'ol>; N]| {
+                let mapped = x.map(&mut state.closure);
+                destination.send(mapped);
+            },
+        );
     }
 
     fn trace_slots<
@@ -80,7 +75,7 @@ where
 
 impl<ParSig, F, O> IntoSignal for MapSignalConfig<ParSig, F, O>
 where
-    F: FnMut(&IntoSignalOutput<ParSig>) -> O + Send + Sync + 'static,
+    F: FnMut(IntoSignalOutput<ParSig>) -> O + Send + Sync + 'static,
     ParSig: IntoSignal,
     O: Send + 'static,
 {

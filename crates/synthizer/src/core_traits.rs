@@ -16,8 +16,8 @@ pub(crate) mod sealed {
     /// lets us get performance out, especially in debug builds where things like immediate unwrapping of options will
     /// not be optimized away.
     pub unsafe trait Signal: Sized + Send + Sync {
-        type Input: Sized;
-        type Output: Sized;
+        type Input<'il>: Sized;
+        type Output<'ol>: Sized;
         type State: Sized + Send + Sync;
         type Parameters: Sized + Send + Sync;
 
@@ -33,17 +33,16 @@ pub(crate) mod sealed {
         ///
         /// Signals may choose to do work in either of those points instead, so they must be used to drive dependent
         /// signals.
-        fn tick<
-            'a,
-            I: FnMut(usize) -> &'a Self::Input,
-            D: SignalDestination<Self::Output>,
-            const N: usize,
-        >(
-            ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-            input: I,
+        fn tick<'il, 'ol, D, const N: usize>(
+            ctx: &'_ SignalExecutionContext<'_, '_>,
+            input: [Self::Input<'il>; N],
+            params: &Self::Parameters,
+            state: &mut Self::State,
             destination: D,
         ) where
-            Self::Input: 'a;
+            D: SignalDestination<Self::Output<'ol>, N>,
+            Self::Input<'il>: 'ol,
+            'il: 'ol;
 
         /// Called when a signal is starting a new block.
         ///
@@ -52,7 +51,11 @@ pub(crate) mod sealed {
         /// is used for many things, among them gathering references to buses or resetting block-based counters.
         ///
         /// No default impl is provided.  All signals need to consider what they want to do so we forc3e the issue.
-        fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>);
+        fn on_block_start(
+            ctx: &SignalExecutionContext<'_, '_>,
+            params: &Self::Parameters,
+            state: &mut Self::State,
+        );
 
         /// Trace slots.
         ///
@@ -75,8 +78,8 @@ pub(crate) mod sealed {
         );
     }
 
-    pub trait SignalDestination<Input: Sized> {
-        fn send(&mut self, value: Input);
+    pub trait SignalDestination<Input: Sized, const N: usize> {
+        fn send(self, values: [Input; N]);
     }
 
     /// A frame of audio data, which can be stored on the stack.
@@ -137,24 +140,24 @@ pub(crate) mod sealed {
 
 pub(crate) use sealed::*;
 
-impl<F, Input> SignalDestination<Input> for F
+impl<F, Input, const N: usize> SignalDestination<Input, N> for F
 where
     Input: Sized,
-    F: FnMut(Input),
+    F: FnOnce([Input; N]),
 {
-    fn send(&mut self, value: Input) {
-        (*self)(value)
+    fn send(self, value: [Input; N]) {
+        self(value)
     }
 }
 
-pub trait Generator: Signal<Input = ()> {}
-impl<T> Generator for T where T: Signal<Input = ()> {}
+pub trait Generator: for<'a> Signal<Input<'a> = ()> {}
+impl<T> Generator for T where T: for<'a> Signal<Input<'a> = ()> {}
 
 /// A mountable signal has no inputs and no outputs, and its state and parameters are 'static.
 pub trait Mountable
 where
     Self: Generator + Send + Sync + 'static,
-    Self: Signal<Output = ()> + Generator,
+    Self: for<'a> Signal<Output<'a> = ()> + Generator,
     SignalState<Self>: Send + Sync + 'static,
     SignalParameters<Self>: Send + Sync + 'static,
 {
@@ -162,7 +165,7 @@ where
 
 impl<T> Mountable for T
 where
-    T: Generator + Signal<Output = ()> + Send + Sync + 'static,
+    T: Generator + for<'a> Signal<Output<'a> = ()> + Send + Sync + 'static,
     SignalState<T>: Send + Sync + 'static,
     SignalParameters<T>: Send + Sync + 'static,
 {
@@ -170,11 +173,11 @@ where
 
 // Workarounds for https://github.com/rust-lang/rust/issues/38078: rustc is not always able to determine when a type
 // isn't ambiguous, or at the very least it doesn't tell us what the options are, so we use this instead.
-pub(crate) type IntoSignalOutput<S> = <<S as IntoSignal>::Signal as Signal>::Output;
-pub(crate) type IntoSignalInput<S> = <<S as IntoSignal>::Signal as Signal>::Input;
+pub(crate) type IntoSignalOutput<'a, S> = <<S as IntoSignal>::Signal as Signal>::Output<'a>;
+pub(crate) type IntoSignalInput<'a, S> = <<S as IntoSignal>::Signal as Signal>::Input<'a>;
 pub(crate) type IntoSignalParameters<S> = <<S as IntoSignal>::Signal as Signal>::Parameters;
 pub(crate) type IntoSignalState<S> = <<S as IntoSignal>::Signal as Signal>::State;
-pub(crate) type SignalInput<T> = <T as Signal>::Input;
-pub(crate) type SignalOutput<T> = <T as Signal>::Output;
+pub(crate) type SignalInput<'a, T> = <T as Signal>::Input<'a>;
+pub(crate) type SignalOutput<'a, T> = <T as Signal>::Output<'a>;
 pub(crate) type SignalState<S> = <S as Signal>::State;
 pub(crate) type SignalParameters<S> = <S as Signal>::Parameters;

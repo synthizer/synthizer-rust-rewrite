@@ -9,30 +9,35 @@ pub struct SinSignal<S>(S);
 
 unsafe impl<S> Signal for SinSignal<S>
 where
-    S: Signal<Output = f64>,
+    S: for<'ol> Signal<Output<'ol> = f64>,
 {
-    type Input = S::Input;
-    type Output = S::Output;
+    type Input<'il> = S::Input<'il>;
+    type Output<'ol> = S::Output<'ol>;
     type State = S::State;
     type Parameters = S::Parameters;
 
-    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
-        S::on_block_start(ctx);
+    fn on_block_start(
+        ctx: &SignalExecutionContext<'_, '_>,
+        params: &Self::Parameters,
+        state: &mut Self::State,
+    ) {
+        S::on_block_start(ctx, params, state);
     }
 
-    fn tick<
-        'a,
-        I: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: I,
-        mut destination: D,
+    fn tick<'il, 'ol, D, const N: usize>(
+        ctx: &'_ SignalExecutionContext<'_, '_>,
+        input: [Self::Input<'il>; N],
+        params: &Self::Parameters,
+        state: &mut Self::State,
+        destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
-        S::tick::<_, _, N>(ctx, input, |x: f64| destination.send(x.sin()));
+        S::tick::<_, N>(ctx, input, params, state, |x: [f64; N]| {
+            destination.send(x.map(|x| x.sin()))
+        });
     }
 
     fn trace_slots<
@@ -52,7 +57,7 @@ where
 impl<S> IntoSignal for SinSignalConfig<S>
 where
     S: IntoSignal,
-    S::Signal: Signal<Output = f64>,
+    for<'a> S::Signal: Signal<Output<'a> = f64>,
 {
     type Signal = SinSignal<S::Signal>;
 

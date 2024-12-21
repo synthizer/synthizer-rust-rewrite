@@ -25,30 +25,35 @@ impl<Sig, DType> ConvertOutputConfig<Sig, DType> {
 unsafe impl<Sig, DType> Signal for ConvertOutput<Sig, DType>
 where
     Sig: Signal,
-    Sig::Output: Into<DType>,
+    for<'a> Sig::Output<'a>: Into<DType> + Clone,
 {
-    type Output = DType;
-    type Input = Sig::Input;
+    type Output<'ol> = DType;
+    type Input<'il> = Sig::Input<'il>;
     type Parameters = Sig::Parameters;
     type State = Sig::State;
 
-    fn on_block_start(ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {
-        Sig::on_block_start(ctx);
+    fn on_block_start(
+        ctx: &SignalExecutionContext<'_, '_>,
+        params: &Self::Parameters,
+        state: &mut Self::State,
+    ) {
+        Sig::on_block_start(ctx, params, state);
     }
 
-    fn tick<
-        'a,
-        I: FnMut(usize) -> &'a Self::Input,
-        D: SignalDestination<Self::Output>,
-        const N: usize,
-    >(
-        ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-        input: I,
-        mut destination: D,
+    fn tick<'il, 'ol, D, const N: usize>(
+        ctx: &'_ SignalExecutionContext<'_, '_>,
+        input: [Self::Input<'il>; N],
+        params: &Self::Parameters,
+        state: &mut Self::State,
+        destination: D,
     ) where
-        Self::Input: 'a,
+        Self::Input<'il>: 'ol,
+        'il: 'ol,
+        D: SignalDestination<Self::Output<'ol>, N>,
     {
-        Sig::tick::<_, _, N>(ctx, input, |x: Sig::Output| destination.send(x.into()));
+        Sig::tick::<_, N>(ctx, input, params, state, |x: [Sig::Output<'ol>; N]| {
+            destination.send(x.map(Into::into));
+        });
     }
 
     fn trace_slots<
@@ -73,7 +78,7 @@ unsafe impl<Sig: Sync, DType> Sync for ConvertOutput<Sig, DType> {}
 impl<Sig, DType> IntoSignal for ConvertOutputConfig<Sig, DType>
 where
     Sig: IntoSignal,
-    IntoSignalOutput<Sig>: Into<DType>,
+    for<'a> IntoSignalOutput<'a, Sig>: Into<DType> + Clone,
 {
     type Signal = ConvertOutput<Sig::Signal, DType>;
 

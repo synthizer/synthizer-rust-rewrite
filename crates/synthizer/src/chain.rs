@@ -44,7 +44,7 @@ where
 pub fn read_slot<T>(
     slot: &sigs::Slot<T>,
     initial_value: T,
-) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
+) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = T>>>
 where
     T: Clone + Send + Sync + 'static,
 {
@@ -59,7 +59,7 @@ where
 pub fn read_slot_and_changed<T>(
     slot: &sigs::Slot<T>,
     initial_value: T,
-) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = (T, bool)>>>
+) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = (T, bool)>>>
 where
     T: Send + Sync + Clone + 'static,
 {
@@ -79,9 +79,13 @@ impl<S: IntoSignal> Chain<S> {
     /// Send this chain to the audio device.
     pub fn to_audio_device(
         self,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl for<'a> Signal<Input<'a> = IntoSignalInput<'a, S>, Output<'a> = ()>,
+        >,
+    >
     where
-        S::Signal: Signal<Output = f64>,
+        S::Signal: for<'a> Signal<Output<'a> = f64>,
     {
         Chain {
             inner: sigs::AudioOutputSignalConfig::new(self.inner),
@@ -102,16 +106,17 @@ impl<S: IntoSignal> Chain<S> {
         self,
     ) -> Chain<
         impl IntoSignal<
-            Signal = impl Signal<
-                Input = NewInputType,
-                Output = IntoSignalOutput<S>,
+            Signal = impl for<'a> Signal<
+                Input<'a> = NewInputType,
+                Output<'a> = IntoSignalOutput<'a, S>,
                 State = IntoSignalState<S>,
                 Parameters = IntoSignalParameters<S>,
             >,
         >,
     >
     where
-        IntoSignalInput<S>: Default,
+        for<'a> IntoSignalInput<'a, S>: Default,
+        S::Signal: 'static,
     {
         Chain {
             inner: sigs::ConsumeInputSignalConfig::<_, NewInputType>::new(self.inner),
@@ -123,15 +128,18 @@ impl<S: IntoSignal> Chain<S> {
     /// This is mostly used to convert a frequency (HZ) to an increment per sample, e.g. when building sine waves.
     pub fn divide_by_sr(
         self,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = f64>>>
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl for<'a> Signal<Input<'a> = IntoSignalInput<'a, S>, Output<'a> = f64>,
+        >,
+    >
     where
-        S::Signal: Signal<Output = f64>,
-        IntoSignalInput<S>: Default,
+        for<'a> S::Signal: Signal<Output<'a> = f64>,
+        for<'a> IntoSignalInput<'a, S>: Default + Clone,
+        for<'a> IntoSignalOutput<'a, S>: Clone,
     {
-        let converted = self.output_into::<f64>();
-        let sr = Chain::new(config::SR as f64).discard_and_default::<IntoSignalInput<S>>();
-        let done = converted / sr;
-        Chain { inner: done.inner }
+        let newsig = sigs::MapSignalConfig::new(self.inner, |x| x / (config::SR as f64));
+        Chain { inner: newsig }
     }
 
     /// Convert the output of this chain into a different type.
@@ -139,21 +147,23 @@ impl<S: IntoSignal> Chain<S> {
         self,
     ) -> Chain<
         impl IntoSignal<
-            Signal = impl Signal<
-                Input = IntoSignalInput<S>,
-                Output = T,
+            Signal = impl for<'a> Signal<
+                Input<'a> = IntoSignalInput<'a, S>,
+                Output<'a> = T,
                 State = IntoSignalState<S>,
                 Parameters = IntoSignalParameters<S>,
             >,
         >,
     >
     where
-        T: From<IntoSignalOutput<S>>,
+        for<'a> T: From<IntoSignalOutput<'a, S>>,
+        for<'a> IntoSignalOutput<'a, S>: Clone,
     {
         Chain {
             inner: sigs::ConvertOutputConfig::<S, T>::new(self.inner),
         }
     }
+
     /// Push a periodic summation onto this chain.
     ///
     /// The input will be taken from whatever signal is here already, and the period is specified herer as a constant.
@@ -162,7 +172,7 @@ impl<S: IntoSignal> Chain<S> {
     pub fn periodic_sum(self, period: f64, initial_value: f64) -> Chain<sigs::PeriodicF64Config<S>>
     where
         S: IntoSignal,
-        S::Signal: Signal<Output = f64>,
+        for<'a> S::Signal: Signal<Output<'a> = f64>,
     {
         Chain {
             inner: sigs::PeriodicF64Config {
@@ -177,7 +187,7 @@ impl<S: IntoSignal> Chain<S> {
     pub fn sin(self) -> Chain<sigs::SinSignalConfig<S>>
     where
         S: IntoSignal,
-        S::Signal: Signal<Output = f64>,
+        for<'a> S::Signal: Signal<Output<'a> = f64>,
     {
         Chain {
             inner: sigs::SinSignalConfig {
@@ -189,12 +199,12 @@ impl<S: IntoSignal> Chain<S> {
     /// Inline version of `*`.
     ///
     /// This lets you continue the `.` syntax without having to use more variables.
-    pub fn inline_mul<T>(self, other: T) -> Chain<<Self as std::ops::Mul<T>>::Output>
+    pub fn inline_mul<T>(self, other: Chain<T>) -> <Self as std::ops::Mul<Chain<T>>>::Output
     where
-        Self: std::ops::Mul<T>,
+        Self: std::ops::Mul<Chain<T>>,
+        for<'il> IntoSignalInput<'il, S>: Clone,
+        T: IntoSignal,
     {
-        Chain {
-            inner: self * other,
-        }
+        self * other
     }
 }

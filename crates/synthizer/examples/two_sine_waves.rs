@@ -21,11 +21,11 @@ fn main() -> Result<()> {
         freq3 = b.allocate_slot::<f64>();
     }
 
-    let note1 = read_slot(&freq1, C_FREQ)
+    let note1_start = read_slot(&freq1, C_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0f64)
-        .inline_mul(Chain::new(pi2))
-        .sin();
+        * Chain::new(pi2);
+    let note1 = note1_start.sin();
     let note2 = read_slot(&freq2, E_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)

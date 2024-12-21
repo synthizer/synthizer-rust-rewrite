@@ -9,29 +9,30 @@ use crate::unique_id::UniqueId;
 macro_rules! impl_scalar {
     ($t: ty) => {
         unsafe impl Signal for $t {
-            type Input = ();
-            type Output = $t;
+            type Input<'il> = ();
+            type Output<'ol> = $t;
             type State = ();
             type Parameters = $t;
 
             fn tick<
-            'a,
-            I: FnMut(usize) -> &'a Self::Input,
-            D: SignalDestination<Self::Output>,
+            'il,
+            'ol,
+            D,
             const N: usize,
         >(
-            ctx: &'_ mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>,
-            mut input: I,
-mut             destination: D,
+            _ctx: &'_ SignalExecutionContext<'_, '_>,
+            input: [Self::Input<'il>; N],
+            params: &Self::Parameters,
+            _state: &mut Self::State,
+            destination: D,
         ) where
-            Self::Input: 'a {
-                for i in 0..N {
-                    input(i);
-                    destination.send(*ctx.parameters);
-                }
+            Self::Input<'il>: 'ol,
+            'il: 'ol,
+            D: SignalDestination<Self::Output<'ol>, N>, {
+                destination.send(input.map(|_|*params));
             }
 
-            fn on_block_start(_ctx: &mut SignalExecutionContext<'_, '_, Self::State, Self::Parameters>) {}
+            fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _params: &Self::Parameters, _state: &mut Self::State) {}
 
             fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
                 _state: &Self::State,
