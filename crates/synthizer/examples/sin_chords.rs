@@ -25,17 +25,20 @@ fn main() -> Result<()> {
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0f64)
         .inline_mul(Chain::new(pi2))
-        .sin();
+        .sin()
+        .boxed();
     let note2 = read_slot(&freq2, E_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
         .inline_mul(Chain::new(pi2))
-        .sin();
+        .sin()
+        .boxed();
     let note3 = read_slot(&freq3, G_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
         .inline_mul(Chain::new(pi2))
-        .sin();
+        .sin()
+        .boxed();
 
     let added = note1 + note2 + note3;
     let ready = added * Chain::new(0.1f64);

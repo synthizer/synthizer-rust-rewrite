@@ -26,6 +26,7 @@ unsafe impl<Sig, DType> Signal for ConvertOutput<Sig, DType>
 where
     Sig: Signal,
     for<'a> Sig::Output<'a>: Into<DType> + Clone,
+    DType: 'static,
 {
     type Output<'ol> = DType;
     type Input<'il> = Sig::Input<'il>;
@@ -79,6 +80,7 @@ impl<Sig, DType> IntoSignal for ConvertOutputConfig<Sig, DType>
 where
     Sig: IntoSignal,
     for<'a> IntoSignalOutput<'a, Sig>: Into<DType> + Clone,
+    DType: 'static,
 {
     type Signal = ConvertOutput<Sig::Signal, DType>;
 

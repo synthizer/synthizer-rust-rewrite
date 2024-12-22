@@ -117,6 +117,7 @@ impl<S: IntoSignal> Chain<S> {
     where
         for<'a> IntoSignalInput<'a, S>: Default,
         S::Signal: 'static,
+        NewInputType: 'static,
     {
         Chain {
             inner: sigs::ConsumeInputSignalConfig::<_, NewInputType>::new(self.inner),
@@ -158,6 +159,7 @@ impl<S: IntoSignal> Chain<S> {
     where
         for<'a> T: From<IntoSignalOutput<'a, S>>,
         for<'a> IntoSignalOutput<'a, S>: Clone,
+        T: 'static,
     {
         Chain {
             inner: sigs::ConvertOutputConfig::<S, T>::new(self.inner),
@@ -206,5 +208,21 @@ impl<S: IntoSignal> Chain<S> {
         T: IntoSignal,
     {
         self * other
+    }
+
+    /// Box this signal.
+    ///
+    /// This simplifies the type, at a performance cost.  If you do not put this boxed signal in a recursive path, the
+    /// performance cost is minimal.
+    pub fn boxed<I, O>(self) -> Chain<sigs::BoxedSignalConfig<I, O>>
+    where
+        I: Copy + Send + Sync + 'static,
+        O: Copy + Send + Sync + 'static,
+        S: Send + Sync + 'static,
+        for<'il, 'ol> S::Signal: Signal<Input<'il> = I, Output<'ol> = O>,
+    {
+        Chain {
+            inner: sigs::BoxedSignalConfig::new(self.inner),
+        }
     }
 }

@@ -26,6 +26,7 @@ unsafe impl<S, I> Signal for ConsumeInputSignal<S, I>
 where
     S: Signal + 'static,
     for<'a> S::Input<'a>: Default,
+    I: 'static,
 {
     type Input<'il> = I;
     type Output<'ol> = S::Output<'ol>;
@@ -74,6 +75,7 @@ where
     S: IntoSignal,
     for<'a> IntoSignalInput<'a, S>: Default,
     S::Signal: 'static,
+    DiscardingInputType: 'static,
 {
     type Signal = ConsumeInputSignal<S::Signal, DiscardingInputType>;
 

@@ -21,7 +21,7 @@ unsafe impl<ParSig, F, O> Signal for MapSignal<ParSig, F, O>
 where
     ParSig: Signal,
     F: FnMut(SignalOutput<ParSig>) -> O + Send + Sync + 'static,
-    O: Send,
+    O: Send + 'static,
 {
     type Input<'il> = SignalInput<'il, ParSig>;
     type Output<'ol> = O;

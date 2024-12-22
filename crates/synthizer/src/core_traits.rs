@@ -15,11 +15,11 @@ pub(crate) mod sealed {
     /// This trait is unsafe because the library relies on it to uphold the contracts documented with the method.  This
     /// lets us get performance out, especially in debug builds where things like immediate unwrapping of options will
     /// not be optimized away.
-    pub unsafe trait Signal: Sized + Send + Sync {
+    pub unsafe trait Signal: Sized + Send + Sync + 'static {
         type Input<'il>: Sized;
         type Output<'ol>: Sized;
-        type State: Sized + Send + Sync;
-        type Parameters: Sized + Send + Sync;
+        type State: Sized + Send + Sync + 'static;
+        type Parameters: Sized + Send + Sync + 'static;
 
         /// Tick this signal.
         ///

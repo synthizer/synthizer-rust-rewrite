@@ -1,5 +1,6 @@
 mod and_then;
 mod audio_io;
+mod boxed;
 mod consume_input;
 mod conversion;
 mod map;
@@ -11,6 +12,7 @@ mod trig;
 
 pub use and_then::*;
 pub use audio_io::*;
+pub use boxed::*;
 pub(crate) use consume_input::*;
 pub use conversion::*;
 pub use map::*;
