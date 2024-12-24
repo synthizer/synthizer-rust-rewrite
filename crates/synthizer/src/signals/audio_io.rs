@@ -32,10 +32,17 @@ where
         S::tick::<_, N>(ctx, input, &mut state.0, |x: [f64; N]| {
             block = Some(x);
         });
-        let block = block.unwrap();
+        let mut block = block.unwrap();
+        let mut temp = [[0.0f64; 2]; N];
+        crate::channel_conversion::convert_channels(
+            &crate::audio_frames::DefaultingFrameWrapper::wrap_array(&mut block),
+            crate::ChannelFormat::Mono,
+            &mut temp,
+            crate::ChannelFormat::Stereo,
+        );
         {
             let mut dest = ctx.fixed.audio_destinationh.borrow_mut();
-            dest[state.1..(state.1 + N)].copy_from_slice(&block);
+            dest[state.1..(state.1 + N)].copy_from_slice(&temp);
             state.1 += N;
         }
 

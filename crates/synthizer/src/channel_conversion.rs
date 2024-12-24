@@ -3,7 +3,7 @@ use crate::channel_format::ChannelFormat;
 use crate::core_traits::*;
 
 /// Mono to anything.
-fn broadcast<I, O, const N: usize>(input: &[I; N], output: &mut [O; N])
+fn broadcast<I, O, const N: usize>(input: &[DefaultingFrameWrapper<f64, I>; N], output: &mut [O; N])
 where
     I: AudioFrame<f64>,
     O: AudioFrame<f64>,
@@ -15,7 +15,7 @@ where
     }
 }
 
-fn to_mono<I, O, const N: usize>(input: &[I; N], output: &mut [O; N])
+fn to_mono<I, O, const N: usize>(input: &[DefaultingFrameWrapper<f64, I>; N], output: &mut [O; N])
 where
     I: AudioFrame<f64>,
     O: AudioFrame<f64>,
@@ -33,8 +33,10 @@ where
 }
 
 /// Use `DefaultingFrameWrapper` to copy all input channels to all output channels; if the output has more they are left alone, if it has left the higher are ignored.
-fn expand_or_truncate<I, O, const N: usize>(input: &[I; N], output: &mut [O; N])
-where
+fn expand_or_truncate<I, O, const N: usize>(
+    input: &[DefaultingFrameWrapper<f64, I>; N],
+    output: &mut [O; N],
+) where
     I: AudioFrame<f64>,
     O: AudioFrame<f64>,
 {
@@ -49,7 +51,7 @@ where
 }
 
 pub(crate) fn convert_channels<I, O, const N: usize>(
-    input: &[I; N],
+    input: &[DefaultingFrameWrapper<f64, I>; N],
     input_format: ChannelFormat,
     output: &mut [O; N],
     output_format: ChannelFormat,

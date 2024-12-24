@@ -57,10 +57,10 @@ pub(crate) struct SynthesizerState {
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
 /// code.
 pub(crate) struct AudioThreadState {
-    /// Intermediate mono buffer before going to miniaudio.
+    /// Intermediate stereo buffer before going to miniaudio.
     ///
     /// This will be more complex a bit later on. At the moment, it's more "get us off the ground" stuff.
-    pub(crate) buffer: [f64; config::BLOCK_SIZE],
+    pub(crate) buffer: [[f64; 2]; config::BLOCK_SIZE],
 
     pub(crate) buf_remaining: usize,
 
@@ -132,7 +132,7 @@ impl Synthesizer {
     pub fn new_default_output() -> Result<Self> {
         let opts = synthizer_miniaudio::DeviceOptions {
             sample_rate: Some(std::num::NonZeroU32::new(config::SR as u32).unwrap()),
-            channel_format: Some(synthizer_miniaudio::DeviceChannelFormat::Mono),
+            channel_format: Some(synthizer_miniaudio::DeviceChannelFormat::Stereo),
         };
 
         let published_state = Arc::new(ArcSwap::new(Arc::new(SynthesizerState::new())));
@@ -173,7 +173,7 @@ impl SynthesizerState {
         Self {
             audio_thred_state: Arc::new(AtomicRefCell::new(AudioThreadState {
                 buf_remaining: 0,
-                buffer: [0.0f64; config::BLOCK_SIZE],
+                buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
                 time_in_blocks: 0,
             })),
             mounts: SynthMap::new_sync(),
@@ -279,16 +279,19 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
         {
             let mut state = state.audio_thred_state.borrow_mut();
             if state.buf_remaining > 0 {
-                let remaining = dest.len();
+                // Hardcoded stereo, at the moment.
+                let remaining = dest.len() / 2;
                 let will_do = state.buf_remaining.min(remaining);
                 assert!(will_do > 0);
 
                 let start_ind = state.buffer.len() - state.buf_remaining;
                 let grabbing = &mut state.buffer[start_ind..(start_ind + will_do)];
                 grabbing.iter().enumerate().for_each(|(i, x)| {
-                    dest[i] = *x as f32;
+                    dest[i * 2] = x[0] as f32;
+                    dest[i * 2 + 1] = x[1] as f32;
                 });
-                dest = &mut dest[will_do..];
+                // Careful: advance by stereo, not mono.
+                dest = &mut dest[will_do * 2..];
                 state.buf_remaining -= will_do;
 
                 if dest.is_empty() {
@@ -304,7 +307,7 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
 
             at_state.buf_remaining = config::BLOCK_SIZE;
             // Zero it out for this iteration.
-            at_state.buffer.fill(0.0f64);
+            at_state.buffer.fill([0.0f64; 2]);
         }
 
         let mut as_mut = state.audio_thred_state.borrow_mut();
@@ -321,6 +324,7 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
                 &crate::context::FixedSignalExecutionContext {
                     time_in_blocks: as_mut.time_in_blocks,
                     audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut as_mut.buffer),
+                    audio_destination_format: &crate::channel_format::ChannelFormat::Stereo,
                     slots: &SlotUpdateContext {
                         mount_slots: &m.slots,
                     },

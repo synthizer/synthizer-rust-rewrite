@@ -1,7 +1,6 @@
 //! Implementation of audio frames.
 //!
 //! Mostly we need a static frame and a dynamic frame and we're done.
-
 use crate::core_traits::*;
 
 impl AudioFrame<f64> for f64 {
@@ -64,5 +63,19 @@ where
         }
 
         self.0.set(index, value);
+    }
+}
+
+impl<T, const N: usize> AudioFrame<T> for [T; N] {
+    fn channel_count(&self) -> usize {
+        N
+    }
+
+    fn get(&self, index: usize) -> &T {
+        &self[index]
+    }
+
+    fn set(&mut self, index: usize, value: T) {
+        self[index] = value;
     }
 }
