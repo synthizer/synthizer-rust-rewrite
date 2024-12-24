@@ -4,6 +4,12 @@ use crate::core_traits::*;
 pub struct AudioOutputSignal<S>(S);
 pub struct AudioOutputSignalConfig<S>(S);
 
+pub struct AudioOutputState<T> {
+    offset: usize,
+    format: crate::ChannelFormat,
+    underlying_state: T,
+}
+
 unsafe impl<S> Signal for AudioOutputSignal<S>
 where
     for<'a> S: Signal<Output<'a> = f64>,
@@ -11,11 +17,11 @@ where
     type Output<'ol> = ();
     type Input<'il> = S::Input<'il>;
     // The parent state, with a usize tacked on for tick1's counter.
-    type State = (S::State, usize);
+    type State = AudioOutputState<S::State>;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
-        S::on_block_start(ctx, &mut state.0);
-        state.1 = 0;
+        S::on_block_start(ctx, &mut state.underlying_state);
+        state.offset = 0;
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
@@ -29,7 +35,7 @@ where
         D: SignalDestination<Self::Output<'ol>, N>,
     {
         let mut block = None;
-        S::tick::<_, N>(ctx, input, &mut state.0, |x: [f64; N]| {
+        S::tick::<_, N>(ctx, input, &mut state.underlying_state, |x: [f64; N]| {
             block = Some(x);
         });
         let mut block = block.unwrap();
@@ -42,8 +48,8 @@ where
         );
         {
             let mut dest = ctx.fixed.audio_destinationh.borrow_mut();
-            dest[state.1..(state.1 + N)].copy_from_slice(&temp);
-            state.1 += N;
+            dest[state.offset..(state.offset + N)].copy_from_slice(&temp);
+            state.offset += N;
         }
 
         destination.send([(); N]);
@@ -58,7 +64,7 @@ where
         state: &Self::State,
         inserter: &mut F,
     ) {
-        S::trace_slots(&state.0, inserter);
+        S::trace_slots(&state.underlying_state, inserter);
     }
 }
 
@@ -73,7 +79,11 @@ where
         let inner = self.0.into_signal()?;
         Ok(ReadySignal {
             signal: AudioOutputSignal(inner.signal),
-            state: (inner.state, 0),
+            state: AudioOutputState {
+                offset: 0,
+                underlying_state: inner.state,
+                format: crate::ChannelFormat::Mono,
+            },
         })
     }
 }
