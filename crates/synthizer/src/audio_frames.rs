@@ -79,3 +79,54 @@ impl<T, const N: usize> AudioFrame<T> for [T; N] {
         self[index] = value;
     }
 }
+
+macro_rules! impl_tuple {
+    ($(($t:ident, $i: tt))*) => {
+        impl<Elem, $($t),*> AudioFrame<Elem> for ($($t,)*) where
+        $($t: AudioFrame<Elem>),*
+        {
+            fn channel_count(&self) -> usize {
+                0 $(+ self.$i.channel_count())*
+            }
+
+            fn get(&self, index: usize) -> &Elem {
+                let mut index = index;
+                $(
+                    if index < self.$i.channel_count() {
+                        return &self.$i.get(index);
+                    }
+                    #[allow(unused_assignments)] {
+                        index -= self.$i.channel_count();
+                    }
+                )*
+                panic!("Index out of bounds");
+            }
+
+            fn set(&mut self, index: usize, value: Elem) {
+                let mut index = index;
+                $(
+                    if index < self.$i.channel_count() {
+                        self.$i.set(index, value);
+                        return;
+                    }
+                    #[allow(unused_assignments)] {
+                        index -= self.$i.channel_count();
+                    }
+                )*
+                panic!("Index out of bounds");
+            }
+        }
+    };
+}
+
+macro_rules! repl_tuple {
+    ($count: tt) => {
+        seq_macro::seq!(N in 0.$count {
+            impl_tuple!(#((T~N, N),#));
+        });
+    }
+}
+
+seq_macro::seq!(N in 1..32 {
+    repl_tuple!(N);
+});

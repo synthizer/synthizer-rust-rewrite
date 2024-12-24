@@ -24,6 +24,7 @@ rand_xoshiro.workspace = true
 rayon.workspace = true
 rpds.workspace = true
 rubato.workspace = true
+seq-macro.workspace = true
 smallvec.workspace = true
 spin.workspace = true
 symphonia.workspace = true

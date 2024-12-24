@@ -35,6 +35,7 @@ rayon = "1.8.0"
 reciprocal = "0.1.2"
 rpds = "1.1.0"
 rubato = "0.14.1"
+seq-macro = "0.3.5"
 smallvec = { version = "1.10.0", features = ["write"] }
 spin = "0.9.8"
 symphonia = { version = "0.5.3", features = ["all-codecs"] }
