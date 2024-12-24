@@ -47,10 +47,10 @@ pub(crate) mod sealed {
         /// Called when a signal is starting a new block.
         ///
         /// This will be called every [config::BLOCK_SIZE] ticks.  All signals wrapping other signals must call it on
-        /// their wrapped signals.  Only "leaf" signals may ignore it.  It is entirely correct to do nothing here.  THis
+        /// their wrapped signals.  Only "leaf" signals may ignore it.  It is entirely correct to do nothing here.  This
         /// is used for many things, among them gathering references to buses or resetting block-based counters.
         ///
-        /// No default impl is provided.  All signals need to consider what they want to do so we forc3e the issue.
+        /// No default impl is provided.  All signals need to consider what they want to do so we force the issue.
         fn on_block_start(
             ctx: &SignalExecutionContext<'_, '_>,
             params: &Self::Parameters,
@@ -59,8 +59,8 @@ pub(crate) mod sealed {
 
         /// Trace slots.
         ///
-        /// This is "private" to the slot machinery, but must e implemented on combinators.  Everything else should
-        /// leave the implementation empty.
+        /// This is "private" to the slot machinery, but must be implemented on combinators.  Combinators should forward
+        /// to their parents.  Everything else should leave the implementation empty.
         ///
         /// This is called when mounting, in the thread that mounts.  It calls the callback with ids and states for new
         /// slots.  The only implementor which does anything but pass to other signals is `SlotSignal`.
@@ -85,34 +85,11 @@ pub(crate) mod sealed {
     /// A frame of audio data, which can be stored on the stack.
     ///
     /// Frames are basically scalars used to pass audio data around on the stack without taking the hit of an
-    /// allocation.  They are immutable after creation and always `f64`.  f64 scalars are single-channel frames.
-    ///
-    /// # Safety
-    ///
-    /// This trait is unsafe to implement because frames must always fill their destination by calling the closure
-    ///   exactly the number of times their channel counts say they have channels.
-    ///
-    /// In other words, it's not wrong to think of this a bit like a SIMD vector or something; we'd use const if we
-    /// could but that's not stable enough for our purposes, and some frames may have a runtime specified format and
-    /// size in any case.
-    ///
-    /// Furthermore, if a signal outputs frames it must not change the  channel count until the next block. That's
-    /// really not specifically for this trait though; see [Signal] for more on how formats work.  We don't tie formats
-    /// to frames but rather to signals.
-    pub unsafe trait AudioFrame {
+    /// allocation.  They are immutable after creation.  `f64` is a single-channel frame.
+    pub trait AudioFrame<T> {
         fn channel_count(&self) -> usize;
-
-        fn read_one<F: FnOnce(f64)>(&self, channel: usize, destination: F);
-
-        /// This is the unsafe-to-implement method: it must call the closure exactly `self.channel_count()` times, no
-        /// more or less.
-        ///
-        /// The default implementation delegates to read_one.
-        fn read_all<F: FnMut(f64)>(&self, mut destination: F) {
-            for i in 0..self.channel_count() {
-                self.read_one(i, &mut destination);
-            }
-        }
+        fn get(&self, index: usize) -> &T;
+        fn set(&mut self, index: usize, value: T);
     }
 
     pub struct ReadySignal<SigT, StateT, ParamsT> {

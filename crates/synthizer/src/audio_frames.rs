@@ -1,35 +1,68 @@
 //! Implementation of audio frames.
 //!
 //! Mostly we need a static frame and a dynamic frame and we're done.
+
 use crate::core_traits::*;
 
-unsafe impl AudioFrame for f64 {
+impl AudioFrame<f64> for f64 {
     fn channel_count(&self) -> usize {
         1
     }
 
-    fn read_one<F: FnOnce(f64)>(&self, channel: usize, destination: F) {
-        debug_assert_eq!(channel, 0);
-        destination(*self);
+    fn get(&self, index: usize) -> &f64 {
+        debug_assert_eq!(index, 0);
+        self
     }
 
-    fn read_all<F: FnMut(f64)>(&self, mut destination: F) {
-        destination(*self)
+    fn set(&mut self, index: usize, value: f64) {
+        debug_assert_eq!(index, 0);
+        *self = value;
     }
 }
 
-unsafe impl<const CH: usize> AudioFrame for [f64; CH] {
+/// A wrapper over a frame which will return the default value of some `T` for indices outside the given range of the
+/// underlying frame.
+pub(crate) struct DefaultingFrameWrapper<'a, T, Inner>(&'a mut Inner, T);
+
+impl<'a, T, Inner> DefaultingFrameWrapper<'a, T, Inner>
+where
+    T: Default,
+{
+    pub(crate) fn new(inner: &'a mut Inner) -> Self {
+        DefaultingFrameWrapper(inner, Default::default())
+    }
+
+    /// Convert an array of frames to an array of wrappers.
+    pub(crate) fn wrap_array<const N: usize>(array: &'a mut [Inner; N]) -> [Self; N] {
+        crate::array_utils::collect_iter(
+            array
+                .iter_mut()
+                .map(|x: &'a mut Inner| Self(x, Default::default())),
+        )
+    }
+}
+
+impl<T, Inner> AudioFrame<T> for DefaultingFrameWrapper<'_, T, Inner>
+where
+    Inner: AudioFrame<T>,
+{
     fn channel_count(&self) -> usize {
-        CH
+        self.0.channel_count()
     }
 
-    fn read_one<F: FnOnce(f64)>(&self, channel: usize, destination: F) {
-        destination(self[channel])
-    }
-
-    fn read_all<F: FnMut(f64)>(&self, mut destination: F) {
-        for i in self.iter() {
-            destination(*i)
+    fn get(&self, index: usize) -> &T {
+        if index >= self.0.channel_count() {
+            return &self.1;
         }
+
+        self.0.get(index)
+    }
+
+    fn set(&mut self, index: usize, value: T) {
+        if index > self.0.channel_count() {
+            return;
+        }
+
+        self.0.set(index, value);
     }
 }

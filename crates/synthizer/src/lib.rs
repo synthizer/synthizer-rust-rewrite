@@ -13,6 +13,7 @@ mod background_drop;
 pub mod biquad;
 pub mod chain;
 pub mod chain_mathops;
+mod channel_conversion;
 mod channel_format;
 #[cfg(test)]
 mod close_floats;
