@@ -181,7 +181,7 @@ where
 // Rust is not happy about casting the references we have into `&dyn Any` without a reborrow.  It's kind of unclear why:
 // the references we get have longer lifetimes than where they're going.  I'm guessing this is just a type inference
 // weakness.
-#[allow(clippy::borrow_ref_deref)]
+#[allow(clippy::borrow_deref_ref)]
 unsafe impl<I, O> Signal for BoxedSignal<I, O>
 where
     I: Copy + Send + Sync + 'static,
