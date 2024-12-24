@@ -22,7 +22,7 @@ use sealed::*;
 /// Get a source implementation for a stream of encoded bytes.
 ///
 /// This currently produces sources which are not realtime-safe, and which do not support precise seeking.  The backing
-/// implementation is Symphonia but is subject to change, in particular because we will propbably carve out subsets with
+/// implementation is Symphonia but is subject to change, in particular because we will probably carve out subsets with
 /// specific libraries in order to do better for formats where we can be realtime-safe.
 ///
 /// The generic parameter is using a sealed trait with a fixed set of impls.  You may pass:

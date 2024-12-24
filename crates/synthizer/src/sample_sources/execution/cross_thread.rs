@@ -17,7 +17,7 @@ use super::driver::Driver;
 // required.  For streaming sources, we can push pitch bending to the background thread if we ever decide to go there,
 // then tell users if they want no latency they need to use a buffer.
 //
-// This leaves the question of whatb to do in two cases: what happens when the source dies?  How do we get user commands
+// This leaves the question of what to do in two cases: what happens when the source dies?  How do we get user commands
 // to the background thread?
 //
 // Source death is easy.  In that case, we simply close the spsc ring (which is why audio_synchronization supports
@@ -61,7 +61,6 @@ fn merge_opts<T>(first: Option<T>, second: Option<T>) -> Option<T> {
 }
 
 /// A patch to apply to the background thread.
-
 #[derive(Clone, Debug, Default)]
 struct ConfigPatch {
     loop_spec: Option<LoopSpec>,
