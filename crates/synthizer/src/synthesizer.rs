@@ -29,8 +29,6 @@ pub(crate) struct MountContainer {
     /// Should only be accessed from the audio thread.  Cloning is fine.
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
 
-    pub(crate) parameters: Arc<dyn Any + Send + Sync + 'static>,
-
     pub(crate) slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
 }
 
@@ -206,7 +204,6 @@ impl Batch<'_> {
     where
         S::Signal: Mountable,
         SignalState<S::Signal>: Send + Sync + 'static,
-        SignalParameters<S::Signal>: Send + Sync + 'static,
     {
         let object_id = UniqueId::new();
         let pending_drop = MarkDropped::new();
@@ -215,7 +212,7 @@ impl Batch<'_> {
 
         let mut slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>> = Default::default();
 
-        S::Signal::trace_slots(&ready.state, &ready.parameters, &mut |id, s| {
+        S::Signal::trace_slots(&ready.state, &mut |id, s| {
             slots.insert_mut(id, s);
         });
 
@@ -227,7 +224,6 @@ impl Batch<'_> {
         let inserting = MountContainer {
             erased_mount: Arc::new(AtomicRefCell::new(Box::new(mp))),
             pending_drop: pending_drop.0.clone(),
-            parameters: Arc::new(ready.parameters),
             slots,
         };
 

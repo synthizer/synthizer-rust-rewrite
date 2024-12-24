@@ -17,20 +17,12 @@ pub struct PeriodicF64Signal<SIncr>(SIncr);
 pub struct PeriodicF64State<SIncr: Signal> {
     freq_state: SIncr::State,
     cur_val: f64,
-}
-
-pub struct PeriodicF64Parameters<SIncr: Signal> {
     period: f64,
-    freq_params: SIncr::Parameters,
 }
 
-fn inc1<SIncr: Signal>(
-    state: &mut PeriodicF64State<SIncr>,
-    params: &PeriodicF64Parameters<SIncr>,
-    increment: f64,
-) -> f64 {
+fn inc1<SIncr: Signal>(state: &mut PeriodicF64State<SIncr>, increment: f64) -> f64 {
     let cur_val = state.cur_val;
-    let new_val = (cur_val + increment) % params.period;
+    let new_val = (cur_val + increment) % state.period;
     state.cur_val = new_val;
     cur_val
 }
@@ -42,20 +34,14 @@ where
     type Output<'ol> = f64;
     type Input<'il> = SIncr::Input<'il>;
     type State = PeriodicF64State<SIncr>;
-    type Parameters = PeriodicF64Parameters<SIncr>;
 
-    fn on_block_start(
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
-        state: &mut Self::State,
-    ) {
-        SIncr::on_block_start(ctx, &params.freq_params, &mut state.freq_state);
+    fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+        SIncr::on_block_start(ctx, &mut state.freq_state);
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -64,16 +50,10 @@ where
         D: SignalDestination<Self::Output<'ol>, N>,
     {
         let mut increments: [f64; N] = [0.0; N];
-        SIncr::tick::<_, N>(
-            ctx,
-            input,
-            &params.freq_params,
-            &mut state.freq_state,
-            |x: [f64; N]| {
-                increments.copy_from_slice(&x);
-            },
-        );
-        let results = increments.map(|x| inc1(state, params, x));
+        SIncr::tick::<_, N>(ctx, input, &mut state.freq_state, |x: [f64; N]| {
+            increments.copy_from_slice(&x);
+        });
+        let results = increments.map(|x| inc1(state, x));
 
         destination.send(results);
     }
@@ -85,10 +65,9 @@ where
         ),
     >(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut F,
     ) {
-        SIncr::trace_slots(&state.freq_state, &parameters.freq_params, inserter);
+        SIncr::trace_slots(&state.freq_state, inserter);
     }
 }
 
@@ -106,9 +85,6 @@ where
             state: PeriodicF64State {
                 freq_state: inner.state,
                 cur_val: self.initial_value,
-            },
-            parameters: PeriodicF64Parameters {
-                freq_params: inner.parameters,
                 period: self.period,
             },
         })

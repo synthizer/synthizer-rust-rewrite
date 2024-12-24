@@ -59,6 +59,8 @@ pub(crate) struct SlotValueContainer<T> {
 /// This is also the state for the signal: each signal is one slot, and so can directly hold this without having to use
 /// erasure.
 pub struct SlotAudioThreadState<T> {
+    slot_id: UniqueId,
+
     /// Same `Arc` as the SlotValueContainer.
     value: Arc<T>,
     last_update_id: UniqueId,
@@ -81,11 +83,6 @@ impl SlotUpdateContext<'_> {
             .get(id)?
             .downcast_ref::<SlotValueContainer<T>>()
     }
-}
-
-pub struct SlotSignalParams<T> {
-    id: UniqueId,
-    _phantom: PD<T>,
 }
 
 pub struct SlotSignalConfig<T> {
@@ -127,17 +124,15 @@ where
     type Input<'il> = ();
     type Output<'ol> = SlotSignalOutput<T>;
     type State = SlotAudioThreadState<T>;
-    type Parameters = SlotSignalParams<T>;
 
     fn on_block_start(
         ctx: &crate::context::SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
         state: &mut Self::State,
     ) {
         let slot_container = ctx
             .fixed
             .slots
-            .resolve::<T>(&params.id)
+            .resolve::<T>(&state.slot_id)
             .expect("If a slot is created, it should have previously been allocated");
         let is_change = state.last_update_id != slot_container.update_id;
 
@@ -155,7 +150,6 @@ where
     fn tick<'il, 'ol, D, const N: usize>(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         _input: [(); N],
-        _params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -173,7 +167,6 @@ where
 
     fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut F,
     ) {
         let ns = SlotValueContainer {
@@ -181,7 +174,7 @@ where
             value: state.value.clone(),
         };
 
-        inserter(parameters.id, Arc::new(ns));
+        inserter(state.slot_id, Arc::new(ns));
     }
 }
 
@@ -194,11 +187,9 @@ where
     fn into_signal(self) -> IntoSignalResult<Self> {
         Ok(ReadySignal {
             signal: SlotSignal(PD),
-            parameters: SlotSignalParams {
-                id: self.slot_id,
-                _phantom: PD,
-            },
+
             state: SlotAudioThreadState {
+                slot_id: self.slot_id,
                 changed_this_block: false,
                 last_update_id: UniqueId::new(),
                 value: Arc::new(self.initial_value),

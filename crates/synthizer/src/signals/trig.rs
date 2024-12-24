@@ -14,20 +14,14 @@ where
     type Input<'il> = S::Input<'il>;
     type Output<'ol> = S::Output<'ol>;
     type State = S::State;
-    type Parameters = S::Parameters;
 
-    fn on_block_start(
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
-        state: &mut Self::State,
-    ) {
-        S::on_block_start(ctx, params, state);
+    fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+        S::on_block_start(ctx, state);
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -35,7 +29,7 @@ where
         'il: 'ol,
         D: SignalDestination<Self::Output<'ol>, N>,
     {
-        S::tick::<_, N>(ctx, input, params, state, |x: [f64; N]| {
+        S::tick::<_, N>(ctx, input, state, |x: [f64; N]| {
             destination.send(x.map(|x| x.sin()))
         });
     }
@@ -47,10 +41,9 @@ where
         ),
     >(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut F,
     ) {
-        S::trace_slots(state, parameters, inserter);
+        S::trace_slots(state, inserter);
     }
 }
 
@@ -66,7 +59,6 @@ where
         Ok(ReadySignal {
             signal: SinSignal(wrapped.signal),
             state: wrapped.state,
-            parameters: wrapped.parameters,
         })
     }
 }

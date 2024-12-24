@@ -39,22 +39,17 @@ macro_rules! impl_mathop {
         {
             type Input<'il> = SignalInput<'il, S1>;
             type Output<'ol> = <SignalOutput<'ol, S1> as $trait<SignalOutput<'ol, S2>>>::Output;
-            type Parameters = (SignalParameters<S1>, SignalParameters<S2>);
+
             type State = (SignalState<S1>, SignalState<S2>);
 
-            fn on_block_start(
-                ctx: &SignalExecutionContext<'_, '_>,
-                params: &Self::Parameters,
-                state: &mut Self::State,
-            ) {
-                S1::on_block_start(ctx, &params.0, &mut state.0);
-                S2::on_block_start(&ctx, &params.1, &mut state.1);
+            fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+                S1::on_block_start(ctx, &mut state.0);
+                S2::on_block_start(&ctx, &mut state.1);
             }
 
             fn tick<'il, 'ol, D, const N: usize>(
                 ctx: &'_ SignalExecutionContext<'_, '_>,
                 input: [Self::Input<'il>; N],
-                params: &Self::Parameters,
                 state: &mut Self::State,
                 destination: D,
             ) where
@@ -65,13 +60,11 @@ macro_rules! impl_mathop {
                 S1::tick::<_, N>(
                     ctx,
                     input.clone(),
-                    &params.0,
                     &mut state.0,
                     |left: [S1::Output<'ol>; N]| {
                         S2::tick(
                             ctx,
                             input.map(|x| x.into()),
-                            &params.1,
                             &mut state.1,
                             |right: [S2::Output<'ol>; N]| {
                                 let outgoing = crate::array_utils::collect_iter::<_, N>(
@@ -88,11 +81,10 @@ macro_rules! impl_mathop {
 
             fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
                 state: &Self::State,
-                parameters: &Self::Parameters,
                 inserter: &mut F,
             ) {
-                S1::trace_slots(&state.0, &parameters.0, inserter);
-                S2::trace_slots(&state.1, &parameters.1, inserter);
+                S1::trace_slots(&state.0, inserter);
+                S2::trace_slots(&state.1, inserter);
             }
         }
 
@@ -113,7 +105,6 @@ macro_rules! impl_mathop {
                 Ok(ReadySignal {
                     signal: $signal_name(l.signal, r.signal),
                     state: (l.state, r.state),
-                    parameters: (l.parameters, r.parameters),
                 })
             }
         }

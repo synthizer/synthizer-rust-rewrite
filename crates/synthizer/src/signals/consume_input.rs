@@ -31,20 +31,14 @@ where
     type Input<'il> = I;
     type Output<'ol> = S::Output<'ol>;
     type State = S::State;
-    type Parameters = S::Parameters;
 
-    fn on_block_start(
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
-        state: &mut Self::State,
-    ) {
-        S::on_block_start(ctx, params, state);
+    fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+        S::on_block_start(ctx, state);
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         _input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -53,7 +47,7 @@ where
         D: SignalDestination<Self::Output<'ol>, N>,
     {
         let ni = [(); N].map(|_| Default::default());
-        S::tick::<_, N>(ctx, ni, params, state, destination);
+        S::tick::<_, N>(ctx, ni, state, destination);
     }
 
     fn trace_slots<
@@ -63,10 +57,10 @@ where
         ),
     >(
         state: &Self::State,
-        parameters: &Self::Parameters,
+
         inserter: &mut F,
     ) {
-        S::trace_slots(state, parameters, inserter);
+        S::trace_slots(state, inserter);
     }
 }
 
@@ -85,7 +79,6 @@ where
         Ok(ReadySignal {
             signal: ConsumeInputSignal(inner.signal, PD),
             state: inner.state,
-            parameters: inner.parameters,
         })
     }
 }

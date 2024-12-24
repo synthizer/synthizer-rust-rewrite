@@ -110,7 +110,6 @@ impl<S: IntoSignal> Chain<S> {
                 Input<'a> = NewInputType,
                 Output<'a> = IntoSignalOutput<'a, S>,
                 State = IntoSignalState<S>,
-                Parameters = IntoSignalParameters<S>,
             >,
         >,
     >
@@ -152,7 +151,6 @@ impl<S: IntoSignal> Chain<S> {
                 Input<'a> = IntoSignalInput<'a, S>,
                 Output<'a> = T,
                 State = IntoSignalState<S>,
-                Parameters = IntoSignalParameters<S>,
             >,
         >,
     >

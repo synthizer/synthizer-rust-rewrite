@@ -25,21 +25,18 @@ where
 {
     type Input<'il> = SignalInput<'il, ParSig>;
     type Output<'ol> = O;
-    type Parameters = ParSig::Parameters;
     type State = MapSignalState<ParSig, F>;
 
     fn on_block_start(
         ctx: &crate::context::SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
         state: &mut Self::State,
     ) {
-        ParSig::on_block_start(ctx, params, &mut state.parent_state);
+        ParSig::on_block_start(ctx, &mut state.parent_state);
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -50,7 +47,6 @@ where
         ParSig::tick::<_, N>(
             ctx,
             input,
-            params,
             &mut state.parent_state,
             |x: [ParSig::Output<'ol>; N]| {
                 let mapped = x.map(&mut state.closure);
@@ -66,10 +62,9 @@ where
         ),
     >(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut Tracer,
     ) {
-        ParSig::trace_slots(&state.parent_state, parameters, inserter);
+        ParSig::trace_slots(&state.parent_state, inserter);
     }
 }
 
@@ -85,7 +80,6 @@ where
         let par = self.parent.into_signal()?;
 
         Ok(ReadySignal {
-            parameters: par.parameters,
             state: MapSignalState {
                 closure: self.closure,
                 parent_state: par.state,

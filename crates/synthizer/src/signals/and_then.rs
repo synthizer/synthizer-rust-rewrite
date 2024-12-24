@@ -19,21 +19,15 @@ where
     type Input<'il> = S1::Input<'il>;
     type Output<'ol> = S2::Output<'ol>;
     type State = (S1::State, S2::State);
-    type Parameters = (S1::Parameters, S2::Parameters);
 
-    fn on_block_start(
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
-        state: &mut Self::State,
-    ) {
-        S1::on_block_start(ctx, &params.0, &mut state.0);
-        S2::on_block_start(ctx, &params.1, &mut state.1);
+    fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+        S1::on_block_start(ctx, &mut state.0);
+        S2::on_block_start(ctx, &mut state.1);
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -41,8 +35,8 @@ where
         'il: 'ol,
         D: SignalDestination<Self::Output<'ol>, N>,
     {
-        S1::tick::<_, N>(ctx, input, &params.0, &mut state.0, |left_out| {
-            S2::tick::<_, N>(ctx, left_out, &params.1, &mut state.1, destination);
+        S1::tick::<_, N>(ctx, input, &mut state.0, |left_out| {
+            S2::tick::<_, N>(ctx, left_out, &mut state.1, destination);
         });
     }
 
@@ -53,11 +47,10 @@ where
         ),
     >(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut F,
     ) {
-        S1::trace_slots(&state.0, &parameters.0, inserter);
-        S2::trace_slots(&state.1, &parameters.1, inserter);
+        S1::trace_slots(&state.0, inserter);
+        S2::trace_slots(&state.1, inserter);
     }
 }
 
@@ -82,7 +75,6 @@ where
         Ok(ReadySignal {
             signal: AndThen::new(s1.signal, s2.signal),
             state: (s1.state, s2.state),
-            parameters: (s1.parameters, s2.parameters),
         })
     }
 }

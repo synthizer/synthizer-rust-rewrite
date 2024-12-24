@@ -11,12 +11,10 @@ unsafe impl Signal for NullSignal {
     type Input<'il> = ();
     type Output<'ol> = ();
     type State = ();
-    type Parameters = ();
 
     fn tick<'il, 'ol, D, const N: usize>(
         _ctx: &'_ SignalExecutionContext<'_, '_>,
         _input: [Self::Input<'il>; N],
-        _params: &Self::Parameters,
         _state: &mut Self::State,
         destination: D,
     ) where
@@ -27,12 +25,7 @@ unsafe impl Signal for NullSignal {
         destination.send([(); N]);
     }
 
-    fn on_block_start(
-        _ctx: &SignalExecutionContext<'_, '_>,
-        _params: &Self::Parameters,
-        _state: &mut Self::State,
-    ) {
-    }
+    fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _state: &mut Self::State) {}
 
     fn trace_slots<
         F: FnMut(
@@ -41,7 +34,6 @@ unsafe impl Signal for NullSignal {
         ),
     >(
         _state: &Self::State,
-        _parameters: &Self::Parameters,
         _inserter: &mut F,
     ) {
     }
@@ -50,14 +42,10 @@ unsafe impl Signal for NullSignal {
 impl IntoSignal for NullSignal {
     type Signal = NullSignal;
 
-    fn into_signal(
-        self,
-    ) -> crate::Result<ReadySignal<Self::Signal, IntoSignalState<Self>, IntoSignalParameters<Self>>>
-    {
+    fn into_signal(self) -> IntoSignalResult<Self> {
         Ok(ReadySignal {
             signal: NullSignal::new(),
             state: (),
-            parameters: (),
         })
     }
 }

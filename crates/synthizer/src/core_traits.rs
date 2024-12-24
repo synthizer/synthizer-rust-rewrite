@@ -19,7 +19,6 @@ pub(crate) mod sealed {
         type Input<'il>: Sized;
         type Output<'ol>: Sized;
         type State: Sized + Send + Sync + 'static;
-        type Parameters: Sized + Send + Sync + 'static;
 
         /// Tick this signal.
         ///
@@ -36,7 +35,6 @@ pub(crate) mod sealed {
         fn tick<'il, 'ol, D, const N: usize>(
             ctx: &'_ SignalExecutionContext<'_, '_>,
             input: [Self::Input<'il>; N],
-            params: &Self::Parameters,
             state: &mut Self::State,
             destination: D,
         ) where
@@ -51,11 +49,7 @@ pub(crate) mod sealed {
         /// is used for many things, among them gathering references to buses or resetting block-based counters.
         ///
         /// No default impl is provided.  All signals need to consider what they want to do so we force the issue.
-        fn on_block_start(
-            ctx: &SignalExecutionContext<'_, '_>,
-            params: &Self::Parameters,
-            state: &mut Self::State,
-        );
+        fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State);
 
         /// Trace slots.
         ///
@@ -73,7 +67,6 @@ pub(crate) mod sealed {
         /// machinery.
         fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
             state: &Self::State,
-            parameters: &Self::Parameters,
             inserter: &mut F,
         );
     }
@@ -92,10 +85,9 @@ pub(crate) mod sealed {
         fn set(&mut self, index: usize, value: T);
     }
 
-    pub struct ReadySignal<SigT, StateT, ParamsT> {
+    pub struct ReadySignal<SigT, StateT> {
         pub(crate) signal: SigT,
         pub(crate) state: StateT,
-        pub(crate) parameters: ParamsT,
     }
 
     /// Something which knows how to convert itself into a signal.
@@ -106,13 +98,11 @@ pub(crate) mod sealed {
     pub trait IntoSignal {
         type Signal: Signal;
 
-        fn into_signal(
-            self,
-        ) -> Result<ReadySignal<Self::Signal, IntoSignalState<Self>, IntoSignalParameters<Self>>>;
+        fn into_signal(self) -> Result<ReadySignal<Self::Signal, IntoSignalState<Self>>>;
     }
 
     pub(crate) type IntoSignalResult<S> =
-        Result<ReadySignal<<S as IntoSignal>::Signal, IntoSignalState<S>, IntoSignalParameters<S>>>;
+        Result<ReadySignal<<S as IntoSignal>::Signal, IntoSignalState<S>>>;
 }
 
 pub(crate) use sealed::*;
@@ -136,7 +126,6 @@ where
     Self: Generator + Send + Sync + 'static,
     Self: for<'a> Signal<Output<'a> = ()> + Generator,
     SignalState<Self>: Send + Sync + 'static,
-    SignalParameters<Self>: Send + Sync + 'static,
 {
 }
 
@@ -144,7 +133,6 @@ impl<T> Mountable for T
 where
     T: Generator + for<'a> Signal<Output<'a> = ()> + Send + Sync + 'static,
     SignalState<T>: Send + Sync + 'static,
-    SignalParameters<T>: Send + Sync + 'static,
 {
 }
 
@@ -152,9 +140,7 @@ where
 // isn't ambiguous, or at the very least it doesn't tell us what the options are, so we use this instead.
 pub(crate) type IntoSignalOutput<'a, S> = <<S as IntoSignal>::Signal as Signal>::Output<'a>;
 pub(crate) type IntoSignalInput<'a, S> = <<S as IntoSignal>::Signal as Signal>::Input<'a>;
-pub(crate) type IntoSignalParameters<S> = <<S as IntoSignal>::Signal as Signal>::Parameters;
 pub(crate) type IntoSignalState<S> = <<S as IntoSignal>::Signal as Signal>::State;
 pub(crate) type SignalInput<'a, T> = <T as Signal>::Input<'a>;
 pub(crate) type SignalOutput<'a, T> = <T as Signal>::Output<'a>;
 pub(crate) type SignalState<S> = <S as Signal>::State;
-pub(crate) type SignalParameters<S> = <S as Signal>::Parameters;

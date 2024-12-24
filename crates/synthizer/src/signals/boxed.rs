@@ -24,13 +24,9 @@ pub struct BoxedSignal<I, O> {
     _phantom: PD<(I, O)>,
 }
 
-pub struct BoxedSignalState {
-    state: Box<dyn Any + Send + Sync + 'static>,
-}
-
-pub struct BoxedSignalParams<I, O> {
+pub struct BoxedSignalState<I, O> {
     signal: Box<dyn ErasedSignal<I, O>>,
-    underlying_params: Box<dyn Any + Send + Sync + 'static>,
+    state: Box<dyn Any + Send + Sync + 'static>,
 }
 
 trait ErasedSignal<I, O>
@@ -39,17 +35,11 @@ where
     I: 'static + Copy,
     O: 'static + Copy,
 {
-    fn on_block_start_erased(
-        &self,
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &dyn Any,
-        state: &mut dyn Any,
-    );
+    fn on_block_start_erased(&self, ctx: &SignalExecutionContext<'_, '_>, state: &mut dyn Any);
 
     fn trace_slots_erased(
         &self,
         state: &dyn Any,
-        params: &dyn Any,
         tracer: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>),
     );
 
@@ -57,7 +47,6 @@ where
         &self,
         ctx: &SignalExecutionContext<'_, '_>,
         input: &[I],
-        params: &dyn Any,
         state: &mut dyn Any,
         output: &mut dyn FnMut(O),
     );
@@ -70,9 +59,7 @@ where
     O: 'static + Copy,
 {
     #[allow(clippy::type_complexity)]
-    fn erased_into(
-        &mut self,
-    ) -> Result<ReadySignal<BoxedSignal<I, O>, BoxedSignalState, BoxedSignalParams<I, O>>>;
+    fn erased_into(&mut self) -> Result<ReadySignal<BoxedSignal<I, O>, BoxedSignalState<I, O>>>;
 }
 
 impl<T, I, O> ErasedIntoSignal<I, O> for Option<T>
@@ -82,20 +69,15 @@ where
     T: IntoSignal + Send + Sync + 'static,
     for<'il, 'ol> T::Signal: Signal<Input<'il> = I, Output<'ol> = O> + 'static,
 {
-    fn erased_into(
-        &mut self,
-    ) -> Result<ReadySignal<BoxedSignal<I, O>, BoxedSignalState, BoxedSignalParams<I, O>>> {
+    fn erased_into(&mut self) -> Result<ReadySignal<BoxedSignal<I, O>, BoxedSignalState<I, O>>> {
         let underlying = self
             .take()
             .expect("This should never be called twice; we are using `Option<T>` to do a move at runtime")
             .into_signal()?;
         Ok(ReadySignal {
             signal: BoxedSignal { _phantom: PD },
-            parameters: BoxedSignalParams {
-                signal: Box::new(underlying.signal),
-                underlying_params: Box::new(underlying.parameters),
-            },
             state: BoxedSignalState {
+                signal: Box::new(underlying.signal),
                 state: Box::new(underlying.state),
             },
         })
@@ -111,63 +93,32 @@ where
     fn trace_slots_erased(
         &self,
         state: &dyn Any,
-        params: &dyn Any,
         mut tracer: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>),
     ) {
-        let params = params.downcast_ref::<BoxedSignalParams<I, O>>().unwrap();
-        let state = state.downcast_ref::<BoxedSignalState>().unwrap();
-        let underlying_params = params
-            .underlying_params
-            .downcast_ref::<T::Parameters>()
-            .unwrap();
-        let underlying_state = state.state.downcast_ref::<T::State>().unwrap();
-        T::trace_slots(underlying_state, underlying_params, &mut tracer);
+        let state = state.downcast_ref::<T::State>().unwrap();
+        T::trace_slots(state, &mut tracer);
     }
 
-    fn on_block_start_erased(
-        &self,
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &dyn Any,
-        state: &mut dyn Any,
-    ) {
-        let params = params.downcast_ref::<BoxedSignalParams<I, O>>().unwrap();
-        let state = state.downcast_mut::<BoxedSignalState>().unwrap();
-        let underlying_params = params
-            .underlying_params
-            .downcast_ref::<T::Parameters>()
-            .unwrap();
-        let underlying_state = state.state.downcast_mut::<T::State>().unwrap();
-        T::on_block_start(ctx, underlying_params, underlying_state);
+    fn on_block_start_erased(&self, ctx: &SignalExecutionContext<'_, '_>, state: &mut dyn Any) {
+        let state = state.downcast_mut::<T::State>().unwrap();
+        T::on_block_start(ctx, state);
     }
 
     fn tick_erased(
         &self,
         ctx: &SignalExecutionContext<'_, '_>,
         mut input: &[I],
-        params: &dyn Any,
         state: &mut dyn Any,
         mut output: &mut dyn FnMut(O),
     ) {
-        let params = params.downcast_ref::<BoxedSignalParams<I, O>>().unwrap();
-        let state = state.downcast_mut::<BoxedSignalState>().unwrap();
-        let underlying_params = params
-            .underlying_params
-            .downcast_ref::<T::Parameters>()
-            .unwrap();
-        let underlying_state = state.state.downcast_mut::<T::State>().unwrap();
+        let state = state.downcast_mut::<T::State>().unwrap();
 
         macro_rules! do_one {
             ($num: expr) => {
                 while let Some(this_input) = input.first_chunk::<$num>().copied() {
-                    T::tick::<_, $num>(
-                        ctx,
-                        this_input,
-                        underlying_params,
-                        underlying_state,
-                        |x: [O; $num]| {
-                            x.into_iter().for_each(&mut output);
-                        },
-                    );
+                    T::tick::<_, $num>(ctx, this_input, state, |x: [O; $num]| {
+                        x.into_iter().for_each(&mut output);
+                    });
                     input = &input[$num..];
                 }
             };
@@ -178,10 +129,7 @@ where
         do_one!(1);
     }
 }
-// Rust is not happy about casting the references we have into `&dyn Any` without a reborrow.  It's kind of unclear why:
-// the references we get have longer lifetimes than where they're going.  I'm guessing this is just a type inference
-// weakness.
-#[allow(clippy::borrow_deref_ref)]
+
 unsafe impl<I, O> Signal for BoxedSignal<I, O>
 where
     I: Copy + Send + Sync + 'static,
@@ -189,23 +137,15 @@ where
 {
     type Input<'il> = I;
     type Output<'ol> = O;
-    type Parameters = BoxedSignalParams<I, O>;
-    type State = BoxedSignalState;
+    type State = BoxedSignalState<I, O>;
 
-    fn on_block_start(
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
-        state: &mut Self::State,
-    ) {
-        params
-            .signal
-            .on_block_start_erased(ctx, &*params, &mut *state);
+    fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+        state.signal.on_block_start_erased(ctx, &mut *state.state);
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -216,9 +156,9 @@ where
         let mut dest: [MaybeUninit<O>; N] = [const { MaybeUninit::uninit() }; N];
         let mut i = 0;
 
-        params
+        state
             .signal
-            .tick_erased(ctx, &input, &*params, &mut *state, &mut |o| {
+            .tick_erased(ctx, &input, &mut *state.state, &mut |o| {
                 dest[i].write(o);
                 i += 1;
             });
@@ -230,12 +170,9 @@ where
 
     fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut F,
     ) {
-        parameters
-            .signal
-            .trace_slots_erased(&*state, &*parameters, inserter);
+        state.signal.trace_slots_erased(&*state.state, inserter);
     }
 }
 
@@ -262,9 +199,7 @@ where
 {
     type Signal = BoxedSignal<I, O>;
 
-    fn into_signal(
-        mut self,
-    ) -> Result<ReadySignal<Self::Signal, IntoSignalState<Self>, IntoSignalParameters<Self>>> {
+    fn into_signal(mut self) -> IntoSignalResult<Self> {
         self.signal.erased_into()
     }
 }

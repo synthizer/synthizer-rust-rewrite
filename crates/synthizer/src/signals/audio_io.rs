@@ -12,21 +12,15 @@ where
     type Input<'il> = S::Input<'il>;
     // The parent state, with a usize tacked on for tick1's counter.
     type State = (S::State, usize);
-    type Parameters = S::Parameters;
 
-    fn on_block_start(
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
-        state: &mut Self::State,
-    ) {
-        S::on_block_start(ctx, params, &mut state.0);
+    fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+        S::on_block_start(ctx, &mut state.0);
         state.1 = 0;
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -35,7 +29,7 @@ where
         D: SignalDestination<Self::Output<'ol>, N>,
     {
         let mut block = None;
-        S::tick::<_, N>(ctx, input, params, &mut state.0, |x: [f64; N]| {
+        S::tick::<_, N>(ctx, input, &mut state.0, |x: [f64; N]| {
             block = Some(x);
         });
         let block = block.unwrap();
@@ -55,10 +49,9 @@ where
         ),
     >(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut F,
     ) {
-        S::trace_slots(&state.0, parameters, inserter);
+        S::trace_slots(&state.0, inserter);
     }
 }
 
@@ -74,7 +67,6 @@ where
         Ok(ReadySignal {
             signal: AudioOutputSignal(inner.signal),
             state: (inner.state, 0),
-            parameters: inner.parameters,
         })
     }
 }

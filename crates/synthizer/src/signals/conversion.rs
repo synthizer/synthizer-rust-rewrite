@@ -30,21 +30,15 @@ where
 {
     type Output<'ol> = DType;
     type Input<'il> = Sig::Input<'il>;
-    type Parameters = Sig::Parameters;
     type State = Sig::State;
 
-    fn on_block_start(
-        ctx: &SignalExecutionContext<'_, '_>,
-        params: &Self::Parameters,
-        state: &mut Self::State,
-    ) {
-        Sig::on_block_start(ctx, params, state);
+    fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
+        Sig::on_block_start(ctx, state);
     }
 
     fn tick<'il, 'ol, D, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: [Self::Input<'il>; N],
-        params: &Self::Parameters,
         state: &mut Self::State,
         destination: D,
     ) where
@@ -52,7 +46,7 @@ where
         'il: 'ol,
         D: SignalDestination<Self::Output<'ol>, N>,
     {
-        Sig::tick::<_, N>(ctx, input, params, state, |x: [Sig::Output<'ol>; N]| {
+        Sig::tick::<_, N>(ctx, input, state, |x: [Sig::Output<'ol>; N]| {
             destination.send(x.map(Into::into));
         });
     }
@@ -64,10 +58,9 @@ where
         ),
     >(
         state: &Self::State,
-        parameters: &Self::Parameters,
         inserter: &mut F,
     ) {
-        Sig::trace_slots(state, parameters, inserter);
+        Sig::trace_slots(state, inserter);
     }
 }
 
@@ -89,7 +82,6 @@ where
         Ok(ReadySignal {
             signal: ConvertOutput::new(inner.signal),
             state: inner.state,
-            parameters: inner.parameters,
         })
     }
 }

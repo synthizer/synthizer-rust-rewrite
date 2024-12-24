@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
 use crate::unique_id::UniqueId;
 
 macro_rules! impl_scalar {
@@ -11,44 +10,37 @@ macro_rules! impl_scalar {
         unsafe impl Signal for $t {
             type Input<'il> = ();
             type Output<'ol> = $t;
-            type State = ();
-            type Parameters = $t;
+            type State = $t;
 
-            fn tick<
-            'il,
-            'ol,
-            D,
-            const N: usize,
-        >(
-            _ctx: &'_ SignalExecutionContext<'_, '_>,
-            input: [Self::Input<'il>; N],
-            params: &Self::Parameters,
-            _state: &mut Self::State,
-            destination: D,
-        ) where
-            Self::Input<'il>: 'ol,
-            'il: 'ol,
-            D: SignalDestination<Self::Output<'ol>, N>, {
-                destination.send(input.map(|_|*params));
+            fn tick<'il, 'ol, D, const N: usize>(
+                _ctx: &'_ SignalExecutionContext<'_, '_>,
+                input: [Self::Input<'il>; N],
+                state: &mut Self::State,
+                destination: D,
+            ) where
+                Self::Input<'il>: 'ol,
+                'il: 'ol,
+                D: SignalDestination<Self::Output<'ol>, N>,
+            {
+                destination.send(input.map(|_| *state));
             }
 
-            fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _params: &Self::Parameters, _state: &mut Self::State) {}
+            fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _state: &mut Self::State) {}
 
             fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
                 _state: &Self::State,
-                _parameters: &Self::Parameters,
                 _inserter: &mut F,
-            ) {}
+            ) {
+            }
         }
 
         impl IntoSignal for $t {
             type Signal = $t;
 
-            fn into_signal(self) -> Result<ReadySignal<Self::Signal,IntoSignalState<Self>,IntoSignalParameters<Self>>> {
+            fn into_signal(self) -> IntoSignalResult<Self> {
                 Ok(ReadySignal {
-                    signal:self,
-                    state:(),
-                    parameters:self,
+                    signal: self,
+                    state: self,
                 })
             }
         }
