@@ -11,49 +11,38 @@ arrayvec = "0.7.2"
 atomic_refcell = "0.1.9"
 bytemuck = "1.14.0"
 cc = "1.0.79"
-convert_case = "0.6.0"
 criterion = "0.4.0"
 crossbeam = "0.8.2"
-dashmap = "5.5.3"
-darling = "0.20.3"
 derivative = "2.2.0"
 derive_more = "0.99.17"
-enum_dispatch = "0.3.12"
 env_logger = "0.10.0"
 eye_dropper = { path = "crates/eye_dropper" }
 hound = "3.5.1"
-im = "15.1.0"
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 log = "0.4.17"
 loom = "0.5.6"
 num = "0.4.0"
 paste = "1.0.9"
-petgraph = "0.6.3"
 pretty_assertions = "1.3.0"
 primes = "0.3.0"
-proc-macro-error = "1.0.4"
-proc-macro2 = "1.0.47"
 proptest = "1.1.0"
 prost = "0.11.2"
 prost-build = "0.11.2"
-quote = "1.0.21"
 rand = "0.8.5"
 rand_xoshiro = "0.6.0"
 rayon = "1.8.0"
 reciprocal = "0.1.2"
 rpds = "1.1.0"
 rubato = "0.14.1"
-sharded-slab = "0.1.4"
 smallvec = { version = "1.10.0", features = ["write"] }
 spin = "0.9.8"
 symphonia = { version = "0.5.3", features = ["all-codecs"] }
-syn = { version = "2", features = ["full", "fold"] }
 synthizer_macros_internal = { path = "crates/synthizer_macros_internal" }
 synthizer_miniaudio = { path = "./crates/miniaudio" }
 synthizer_protos = { path = "crates/protos" }
 thingbuf = { version = "0.1.4", features = ["static"] }
-thiserror = "1.0.37"
+thiserror = "2.0.9"
 
 [profile.dev]
 panic = "abort"
