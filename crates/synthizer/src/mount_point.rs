@@ -39,9 +39,8 @@ impl<S: Mountable> ErasedMountPoint for MountPoint<S> {
         S::on_block_start(&ctx, &mut *sig_state);
         S::tick::<_, { config::BLOCK_SIZE }>(
             &ctx,
-            [(); config::BLOCK_SIZE],
+            ArrayProvider::new([(); config::BLOCK_SIZE]),
             &mut *sig_state,
-            |_: [(); config::BLOCK_SIZE]| {},
         );
     }
 }

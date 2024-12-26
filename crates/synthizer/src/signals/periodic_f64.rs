@@ -39,23 +39,22 @@ where
         SIncr::on_block_start(ctx, &mut state.freq_state);
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: [Self::Input<'il>; N],
+        input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        let mut increments: [f64; N] = [0.0; N];
-        SIncr::tick::<_, N>(ctx, input, &mut state.freq_state, |x: [f64; N]| {
-            increments.copy_from_slice(&x);
-        });
+        let par = SIncr::tick::<_, N>(ctx, input, &mut state.freq_state);
+        let increments = crate::array_utils::collect_iter::<_, N>(unsafe { par.become_iterator() });
+
         let results = increments.map(|x| inc1(state, x));
 
-        destination.send(results);
+        ArrayProvider::<_, N>::new(results)
     }
 
     fn trace_slots<

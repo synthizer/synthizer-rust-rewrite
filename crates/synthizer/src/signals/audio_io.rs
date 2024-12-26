@@ -24,21 +24,20 @@ where
         state.offset = 0;
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: [Self::Input<'il>; N],
+        input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<()>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        let mut block = None;
-        S::tick::<_, N>(ctx, input, &mut state.underlying_state, |x: [f64; N]| {
-            block = Some(x);
+        let mut block = crate::array_utils::collect_iter::<_, N>(unsafe {
+            S::tick::<_, N>(ctx, input, &mut state.underlying_state).become_iterator()
         });
-        let mut block = block.unwrap();
+
         let mut temp = [[0.0f64; 2]; N];
         crate::channel_conversion::convert_channels(
             &crate::audio_frames::DefaultingFrameWrapper::wrap_array(&mut block),
@@ -52,7 +51,7 @@ where
             state.offset += N;
         }
 
-        destination.send([(); N]);
+        FixedValueProvider::<_, N>::new(())
     }
 
     fn trace_slots<

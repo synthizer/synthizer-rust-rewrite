@@ -22,13 +22,13 @@ pub(crate) struct ConsumeInputSignalConfig<Wrapped, DiscardingInputType>(
 unsafe impl<S, I> Send for ConsumeInputSignal<S, I> where S: Send {}
 unsafe impl<S, I> Sync for ConsumeInputSignal<S, I> where S: Sync {}
 
-unsafe impl<S, I> Signal for ConsumeInputSignal<S, I>
+unsafe impl<S, OldInputTy> Signal for ConsumeInputSignal<S, OldInputTy>
 where
     S: Signal + 'static,
     for<'a> S::Input<'a>: Default,
-    I: 'static,
+    OldInputTy: 'static,
 {
-    type Input<'il> = I;
+    type Input<'il> = OldInputTy;
     type Output<'ol> = S::Output<'ol>;
     type State = S::State;
 
@@ -36,18 +36,21 @@ where
         S::on_block_start(ctx, state);
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        _input: [Self::Input<'il>; N],
+        _input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        let ni = [(); N].map(|_| Default::default());
-        S::tick::<_, N>(ctx, ni, state, destination);
+        S::tick::<_, N>(
+            ctx,
+            ClosureProvider::<_, _, N>::new(|_| Default::default()),
+            state,
+        )
     }
 
     fn trace_slots<
@@ -57,7 +60,6 @@ where
         ),
     >(
         state: &Self::State,
-
         inserter: &mut F,
     ) {
         S::trace_slots(state, inserter);

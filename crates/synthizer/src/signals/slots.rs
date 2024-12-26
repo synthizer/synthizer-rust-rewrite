@@ -147,22 +147,20 @@ where
         state.changed_this_block = true;
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        _input: [(); N],
+        _input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        let sending = [(); N].map(|_| SlotSignalOutput {
+        ClosureProvider::<_, _, N>::new(|_| SlotSignalOutput {
             value: (*state.value).clone(),
             changed_this_block: state.changed_this_block,
-        });
-
-        destination.send(sending);
+        })
     }
 
     fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(

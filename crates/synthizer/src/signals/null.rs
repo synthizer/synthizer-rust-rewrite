@@ -12,17 +12,17 @@ unsafe impl Signal for NullSignal {
     type Output<'ol> = ();
     type State = ();
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         _ctx: &'_ SignalExecutionContext<'_, '_>,
-        _input: [Self::Input<'il>; N],
+        _input: I,
         _state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        destination.send([(); N]);
+        FixedValueProvider::<_, N>::new(())
     }
 
     fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _state: &mut Self::State) {}

@@ -5,6 +5,9 @@ use crate::context::*;
 use crate::error::Result;
 use crate::unique_id::UniqueId;
 
+// These are "core" but it's a lot of code so we pull it out.
+pub(crate) use crate::value_provider::*;
+
 pub(crate) mod sealed {
     use super::*;
 
@@ -15,6 +18,8 @@ pub(crate) mod sealed {
     /// This trait is unsafe because the library relies on it to uphold the contracts documented with the method.  This
     /// lets us get performance out, especially in debug builds where things like immediate unwrapping of options will
     /// not be optimized away.
+    ///
+    /// See also the documentation on [ValueProvider].
     pub unsafe trait Signal: Sized + Send + Sync + 'static {
         type Input<'il>: Sized;
         type Output<'ol>: Sized;
@@ -25,22 +30,32 @@ pub(crate) mod sealed {
         /// Exactly `BLOCK_SIZE` ticks will occur between calls to `on_block_start`.  They may be broken up into smaller
         /// blocks, possibly down to 1 sample (for example, in recursive structures).
         ///
-        /// This method must uphold two important invariants:
+        /// Signals have two opportunities to perform work.  The first is in the body of this method.  The second is in
+        /// the value provider returned from this method.  So:
         ///
-        /// - `input(i)` must be called at minimum once on each input index in the range `0..N`.
-        /// - Exactly `N` outputs are sent to the destination.
+        /// - If the signal has a side effect or needs to compute the entire sequence to know what the next value is
+        ///   (e.g. convolution), it must do work in this method.  It is not guaranteed if or in what order the provider
+        ///   will be used.
+        /// - If the signal can compute any arbitrary value in this block, it may elect to do work in the output
+        ///   provider.  For example, `sin(x)` is effectively a map over the parent signal's output provider and, save
+        ///   for the possibility of duplicate work, it may simply perform the map-like operation.
         ///
-        /// Signals may choose to do work in either of those points instead, so they must be used to drive dependent
-        /// signals.
-        fn tick<'il, 'ol, D, const N: usize>(
+        /// For these reasons, it's important that signals not (ab)use the ability to use the same index in a provider
+        /// multiple times.  We allow it, but it may duplicate work.
+        ///
+        /// For a concrete example of why this matters, consider signals where we only care about the output for the
+        /// first sample of every block.  This is common to do when doing automation, since it's expensive to, e.g.,
+        /// redesign filters on every sample.  In this case, `tick` is called some number of times, but the provider
+        /// would only be used on the first tick call at the beginning of the block, and otherwise simply dropped.
+        fn tick<'il, 'ol, I, const N: usize>(
             ctx: &'_ SignalExecutionContext<'_, '_>,
-            input: [Self::Input<'il>; N],
+            input: I,
             state: &mut Self::State,
-            destination: D,
-        ) where
-            D: SignalDestination<Self::Output<'ol>, N>,
+        ) -> impl ValueProvider<Self::Output<'ol>>
+        where
             Self::Input<'il>: 'ol,
-            'il: 'ol;
+            'il: 'ol,
+            I: ValueProvider<Self::Input<'il>> + Sized;
 
         /// Called when a signal is starting a new block.
         ///

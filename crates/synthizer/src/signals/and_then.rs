@@ -25,19 +25,18 @@ where
         S2::on_block_start(ctx, &mut state.1);
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: [Self::Input<'il>; N],
+        input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        S1::tick::<_, N>(ctx, input, &mut state.0, |left_out| {
-            S2::tick::<_, N>(ctx, left_out, &mut state.1, destination);
-        });
+        let left = S1::tick::<_, N>(ctx, input, &mut state.0);
+        S2::tick::<_, N>(ctx, left, &mut state.1)
     }
 
     fn trace_slots<

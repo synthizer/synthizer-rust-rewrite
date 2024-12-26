@@ -12,26 +12,25 @@ where
     S: for<'ol> Signal<Output<'ol> = f64>,
 {
     type Input<'il> = S::Input<'il>;
-    type Output<'ol> = S::Output<'ol>;
+    type Output<'ol> = f64;
     type State = S::State;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
         S::on_block_start(ctx, state);
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: [Self::Input<'il>; N],
+        input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<f64>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        S::tick::<_, N>(ctx, input, state, |x: [f64; N]| {
-            destination.send(x.map(|x| x.sin()))
-        });
+        let mut par_provider = S::tick::<_, N>(ctx, input, state);
+        ClosureProvider::<_, _, N>::new(move |index| par_provider.get(index).sin())
     }
 
     fn trace_slots<

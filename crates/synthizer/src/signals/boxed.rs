@@ -116,9 +116,8 @@ where
         macro_rules! do_one {
             ($num: expr) => {
                 while let Some(this_input) = input.first_chunk::<$num>().copied() {
-                    T::tick::<_, $num>(ctx, this_input, state, |x: [O; $num]| {
-                        x.into_iter().for_each(&mut output);
-                    });
+                    let prov = T::tick::<_, $num>(ctx, ArrayProvider::new(this_input), state);
+                    unsafe { prov.become_iterator() }.for_each(&mut output);
                     input = &input[$num..];
                 }
             };
@@ -143,29 +142,31 @@ where
         state.signal.on_block_start_erased(ctx, &mut *state.state);
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, IProvider, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: [Self::Input<'il>; N],
+        input: IProvider,
         state: &mut Self::State,
-        destination: D,
-    ) where
-        D: SignalDestination<Self::Output<'ol>, N>,
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
+        IProvider: ValueProvider<Self::Input<'il>> + Sized,
     {
         let mut dest: [MaybeUninit<O>; N] = [const { MaybeUninit::uninit() }; N];
         let mut i = 0;
 
+        let in_arr = crate::array_utils::collect_iter::<_, N>(unsafe { input.become_iterator() });
+
         state
             .signal
-            .tick_erased(ctx, &input, &mut *state.state, &mut |o| {
+            .tick_erased(ctx, &in_arr, &mut *state.state, &mut |o| {
                 dest[i].write(o);
                 i += 1;
             });
 
         assert_eq!(i, N);
 
-        unsafe { destination.send(dest.map(|x| x.assume_init())) };
+        unsafe { ArrayProvider::<_, N>::new(dest.map(|x| x.assume_init())) }
     }
 
     fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(

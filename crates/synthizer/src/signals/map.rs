@@ -34,25 +34,20 @@ where
         ParSig::on_block_start(ctx, &mut state.parent_state);
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: [Self::Input<'il>; N],
+        input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        ParSig::tick::<_, N>(
-            ctx,
-            input,
-            &mut state.parent_state,
-            |x: [ParSig::Output<'ol>; N]| {
-                let mapped = x.map(&mut state.closure);
-                destination.send(mapped);
-            },
-        );
+        let parent = ParSig::tick::<_, N>(ctx, input, &mut state.parent_state);
+        let mapped = unsafe { parent.become_iterator() }.map(&mut state.closure);
+
+        ArrayProvider::<_, N>::new(crate::array_utils::collect_iter(mapped))
     }
 
     fn trace_slots<

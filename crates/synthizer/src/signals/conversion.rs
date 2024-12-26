@@ -36,19 +36,19 @@ where
         Sig::on_block_start(ctx, state);
     }
 
-    fn tick<'il, 'ol, D, const N: usize>(
+    fn tick<'il, 'ol, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: [Self::Input<'il>; N],
+        input: I,
         state: &mut Self::State,
-        destination: D,
-    ) where
+    ) -> impl ValueProvider<Self::Output<'ol>>
+    where
         Self::Input<'il>: 'ol,
         'il: 'ol,
-        D: SignalDestination<Self::Output<'ol>, N>,
+        I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        Sig::tick::<_, N>(ctx, input, state, |x: [Sig::Output<'ol>; N]| {
-            destination.send(x.map(Into::into));
-        });
+        let mut par = Sig::tick::<_, N>(ctx, input, state);
+
+        ClosureProvider::<_, _, N>::new(move |index| unsafe { par.get_owned(index).into() })
     }
 
     fn trace_slots<

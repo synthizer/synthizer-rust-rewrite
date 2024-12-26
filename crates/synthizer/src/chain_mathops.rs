@@ -47,36 +47,37 @@ macro_rules! impl_mathop {
                 S2::on_block_start(&ctx, &mut state.1);
             }
 
-            fn tick<'il, 'ol, D, const N: usize>(
+            fn tick<'il, 'ol, I, const N: usize>(
                 ctx: &'_ SignalExecutionContext<'_, '_>,
-                input: [Self::Input<'il>; N],
+                input: I,
                 state: &mut Self::State,
-                destination: D,
-            ) where
+            ) -> impl ValueProvider<Self::Output<'ol>>
+            where
                 Self::Input<'il>: 'ol,
                 'il: 'ol,
-                D: SignalDestination<Self::Output<'ol>, N>,
+                I: ValueProvider<Self::Input<'il>> + Sized,
             {
-                S1::tick::<_, N>(
+                let gathered_input =
+                    crate::array_utils::collect_iter::<_, N>(unsafe { input.become_iterator() });
+                let left = S1::tick::<_, N>(
                     ctx,
-                    input.clone(),
+                    ArrayProvider::new(gathered_input.clone()),
                     &mut state.0,
-                    |left: [S1::Output<'ol>; N]| {
-                        S2::tick(
-                            ctx,
-                            input.map(|x| x.into()),
-                            &mut state.1,
-                            |right: [S2::Output<'ol>; N]| {
-                                let outgoing = crate::array_utils::collect_iter::<_, N>(
-                                    left.into_iter()
-                                        .zip(right.into_iter())
-                                        .map(|(a, b)| a.$method(b)),
-                                );
-                                destination.send(outgoing);
-                            },
-                        );
-                    },
                 );
+                let right = S2::tick::<_, N>(
+                    ctx,
+                    ArrayProvider::new(gathered_input.map(Into::into)),
+                    &mut state.1,
+                );
+
+                // For now we will collect to an array. We may be able to do lazy computation later, but the bounds on
+                // this are a mess.
+                let left_iter = unsafe { left.become_iterator() };
+                let right_iter = unsafe { right.become_iterator() };
+                let arr = crate::array_utils::collect_iter::<_, N>(
+                    left_iter.zip(right_iter).map(|(l, r)| l.$method(r)),
+                );
+                ArrayProvider::new(arr)
             }
 
             fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(

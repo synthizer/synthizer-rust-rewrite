@@ -12,17 +12,17 @@ macro_rules! impl_scalar {
             type Output<'ol> = $t;
             type State = $t;
 
-            fn tick<'il, 'ol, D, const N: usize>(
+            fn tick<'il, 'ol, I, const N: usize>(
                 _ctx: &'_ SignalExecutionContext<'_, '_>,
-                input: [Self::Input<'il>; N],
+                _input: I,
                 state: &mut Self::State,
-                destination: D,
-            ) where
+            ) -> impl ValueProvider<$t>
+            where
                 Self::Input<'il>: 'ol,
                 'il: 'ol,
-                D: SignalDestination<Self::Output<'ol>, N>,
+                I: ValueProvider<()> + Sized,
             {
-                destination.send(input.map(|_| *state));
+                FixedValueProvider::<_, N>::new(*state)
             }
 
             fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _state: &mut Self::State) {}
