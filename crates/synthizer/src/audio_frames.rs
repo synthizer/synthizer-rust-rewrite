@@ -81,7 +81,7 @@ impl<T, const N: usize> AudioFrame<T> for [T; N] {
 }
 
 macro_rules! impl_tuple {
-    ($(($t:ident, $i: tt))*) => {
+    ($(($t:ident, $i: tt)),*,) => {
         impl<Elem, $($t),*> AudioFrame<Elem> for ($($t,)*) where
         $($t: AudioFrame<Elem>),*
         {
@@ -121,8 +121,8 @@ macro_rules! impl_tuple {
 
 macro_rules! repl_tuple {
     ($count: tt) => {
-        seq_macro::seq!(N in 0.$count {
-            impl_tuple!(#((T~N, N),#));
+        seq_macro::seq!(N in 0..$count {
+            impl_tuple!(#((T~N, N),)*);
         });
     }
 }
