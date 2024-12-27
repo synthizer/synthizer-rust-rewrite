@@ -79,7 +79,7 @@ impl<S: IntoSignal> Chain<S> {
     }
 
     /// Send this chain to the audio device.
-    /// 
+    ///
     /// You must specify the format.  Synthizer cannot autodetect this becasue of the flexibility it allows (e.g. what
     /// is the format of multiplying two signals with different formats?).  If you specify a format which has more
     /// channels than your signal outputs, the extra channels will be zeroed.  If you specify a format with less, the
