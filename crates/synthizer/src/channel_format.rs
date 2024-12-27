@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 /// A format for audio data.
-#[derive(Clone, Debug, Eq, PartialEq, derive_more::IsVariant)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, derive_more::IsVariant)]
 pub enum ChannelFormat {
     /// This is single-channel mono audio.
     Mono,

@@ -279,7 +279,7 @@ impl SampleSource for SymphoniaWrapper {
         let duration = self.format.tracks()[self.track_index].codec_params.n_frames;
 
         Descriptor {
-            channel_format: self.synthizer_channel_format.clone(),
+            channel_format: self.synthizer_channel_format,
             duration,
             sample_rate: NonZeroU64::new(self.sample_rate).unwrap(),
             seek_support: if duration.is_some() {

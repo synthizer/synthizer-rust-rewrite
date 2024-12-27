@@ -67,7 +67,7 @@ impl VecSourceBuilder {
 impl SampleSource for VecSource {
     fn get_descriptor(&self) -> Descriptor {
         Descriptor {
-            channel_format: self.channel_format.clone(),
+            channel_format: self.channel_format,
             duration: Some(self.frame_count as u64),
             sample_rate: self.sample_rate,
             seek_support: super::SeekSupport::SampleAccurate,

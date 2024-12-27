@@ -1,8 +1,12 @@
+use crate::channel_format::ChannelFormat;
 use crate::context::*;
 use crate::core_traits::*;
 
 pub struct AudioOutputSignal<S>(S);
-pub struct AudioOutputSignalConfig<S>(S);
+pub struct AudioOutputSignalConfig<S> {
+    parent_cfg: S,
+    format: ChannelFormat,
+}
 
 pub struct AudioOutputState<T> {
     offset: usize,
@@ -12,11 +16,11 @@ pub struct AudioOutputState<T> {
 
 unsafe impl<S> Signal for AudioOutputSignal<S>
 where
-    for<'a> S: Signal<Output<'a> = f64>,
+    for<'a> S: Signal,
+    for<'ol> SignalOutput<'ol, S>: AudioFrame<f64>,
 {
     type Output<'ol> = ();
     type Input<'il> = S::Input<'il>;
-    // The parent state, with a usize tacked on for tick1's counter.
     type State = AudioOutputState<S::State>;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
@@ -41,7 +45,7 @@ where
         let mut temp = [[0.0f64; 2]; N];
         crate::channel_conversion::convert_channels(
             &crate::audio_frames::DefaultingFrameWrapper::wrap_array(&mut block),
-            crate::ChannelFormat::Mono,
+            state.format,
             &mut temp,
             crate::ChannelFormat::Stereo,
         );
@@ -70,25 +74,28 @@ where
 impl<S> IntoSignal for AudioOutputSignalConfig<S>
 where
     S: IntoSignal,
-    for<'ol> S::Signal: Signal<Output<'ol> = f64>,
+    for<'ol> IntoSignalOutput<'ol, S>: AudioFrame<f64>,
 {
     type Signal = AudioOutputSignal<S::Signal>;
 
     fn into_signal(self) -> IntoSignalResult<Self> {
-        let inner = self.0.into_signal()?;
+        let inner = self.parent_cfg.into_signal()?;
         Ok(ReadySignal {
             signal: AudioOutputSignal(inner.signal),
             state: AudioOutputState {
                 offset: 0,
                 underlying_state: inner.state,
-                format: crate::ChannelFormat::Mono,
+                format: self.format,
             },
         })
     }
 }
 
 impl<S> AudioOutputSignalConfig<S> {
-    pub(crate) fn new(signal: S) -> Self {
-        Self(signal)
+    pub(crate) fn new(signal: S, format: ChannelFormat) -> Self {
+        Self {
+            parent_cfg: signal,
+            format,
+        }
     }
 }

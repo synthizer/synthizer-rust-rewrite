@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+use crate::channel_format::ChannelFormat;
 use crate::config;
 use crate::core_traits::*;
 use crate::signals as sigs;
@@ -79,16 +81,17 @@ impl<S: IntoSignal> Chain<S> {
     /// Send this chain to the audio device.
     pub fn to_audio_device(
         self,
+        format: ChannelFormat,
     ) -> Chain<
         impl IntoSignal<
             Signal = impl for<'a> Signal<Input<'a> = IntoSignalInput<'a, S>, Output<'a> = ()>,
         >,
     >
     where
-        S::Signal: for<'a> Signal<Output<'a> = f64>,
+        for<'a> IntoSignalOutput<'a, S>: AudioFrame<f64>,
     {
         Chain {
-            inner: sigs::AudioOutputSignalConfig::new(self.inner),
+            inner: sigs::AudioOutputSignalConfig::new(self.inner, format),
         }
     }
 
@@ -221,6 +224,25 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::BoxedSignalConfig::new(self.inner),
+        }
+    }
+
+    pub fn join<S2>(
+        self,
+        other: Chain<S2>,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl for<'il, 'ol> Signal<
+                Input<'il> = (IntoSignalInput<'il, S>, IntoSignalInput<'il, S2>),
+                Output<'ol> = (IntoSignalOutput<'ol, S>, IntoSignalOutput<'ol, S2>),
+            >,
+        >,
+    >
+    where
+        S2: IntoSignal,
+    {
+        Chain {
+            inner: sigs::JoinSignalConfig::new(self.inner, other.inner),
         }
     }
 }

@@ -42,7 +42,7 @@ fn main() -> Result<()> {
 
     let added = note1 + note2 + note3;
     let ready = added * Chain::new(0.1f64);
-    let to_dev = ready.to_audio_device();
+    let to_dev = ready.to_audio_device(ChannelFormat::Mono);
 
     let handle = {
         let mut batch = synth.batch();

@@ -3,5 +3,9 @@
     "editor.rulers": [
         120
     ],
-    "editor.insertSpaces": true
+    "editor.insertSpaces": true,
+    "Lua.workspace.userThirdParty": [
+        "c:\\Users\\Austin\\AppData\\Roaming\\Code\\User\\workspaceStorage\\4ec82e1d7f7f9e70c608dd5d24e4a9d2\\justarandomgeek.factoriomod-debug\\sumneko-3rd"
+    ],
+    "Lua.workspace.checkThirdParty": "ApplyInMemory"
 }
