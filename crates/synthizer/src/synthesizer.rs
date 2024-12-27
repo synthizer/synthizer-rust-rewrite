@@ -2,7 +2,6 @@ use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
-use arc_swap::{ArcSwap, ArcSwapOption};
 use atomic_refcell::AtomicRefCell;
 use rpds::{HashTrieMapSync, VectorSync};
 
@@ -18,7 +17,8 @@ type SynthMap<K, V> = HashTrieMapSync<K, V>;
 type SynthVec<T> = VectorSync<T>;
 
 pub struct Synthesizer {
-    published_state: Arc<ArcSwap<SynthesizerState>>,
+    state: Arc<crate::deferred_arc_swap::DeferredArcSwap<SynthesizerState>>,
+
     device: Option<synthizer_miniaudio::DeviceHandle>,
 }
 
@@ -47,11 +47,17 @@ pub(crate) struct MountContainer {
 /// trick however: this can indeed be a cycle.  We rely on the next batch creation to clear that cycle.
 #[derive(Clone)]
 pub(crate) struct SynthesizerState {
-    pub(crate) older_state: Arc<ArcSwapOption<Self>>,
+    arc_freelist: crate::deferred_arc_swap::ArcStash<Self>,
 
     pub(crate) mounts: SynthMap<UniqueId, MountContainer>,
 
     pub(crate) audio_thred_state: Arc<AtomicRefCell<AudioThreadState>>,
+}
+
+impl crate::deferred_arc_swap::GetArcStash for SynthesizerState {
+    fn get_stash(&self) -> &crate::deferred_arc_swap::ArcStash<Self> {
+        &self.arc_freelist
+    }
 }
 
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
@@ -86,13 +92,9 @@ impl Drop for MarkDropped {
     }
 }
 
-/// A handle which may be used to manipulate some object of type `T`.
+/// A handle which may be used to manipulate some object.
 ///
 /// Handles keep objects alive.  When the last handle drops, the object does as well.
-///
-/// Handles may alias the same object.  The `T` here is allowing you to manipulate some parameter of your signal in some
-/// fashion, but signals may have different parameters and "knobs" all of which may have a different handle (TODO:
-/// implement `Slot<T>` stuff).
 pub struct Handle {
     object_id: UniqueId,
     mark_drop: Arc<MarkDropped>,
@@ -107,9 +109,6 @@ impl Clone for Handle {
     }
 }
 
-/// A marker type used as a type parameters to handles which are for an entire mount point.
-pub struct MountPointHandleMarker;
-
 /// A batch of changes for the audio thread.
 ///
 /// You ask for a batch.  Then you manipulate things by asking the batch for their parameters.  The states all build up,
@@ -123,8 +122,8 @@ impl Drop for Batch<'_> {
     fn drop(&mut self) {
         self.handle_pending_drops();
         self.synthesizer
-            .published_state
-            .store(Arc::new(self.new_state.clone()));
+            .state
+            .publish(Arc::new(self.new_state.clone()));
     }
 }
 
@@ -135,35 +134,36 @@ impl Synthesizer {
             channel_format: Some(synthizer_miniaudio::DeviceChannelFormat::Stereo),
         };
 
-        let published_state = Arc::new(ArcSwap::new(Arc::new(SynthesizerState::new())));
+        let state = Arc::new(crate::deferred_arc_swap::DeferredArcSwap::new(Arc::new(
+            SynthesizerState::new(),
+        )));
 
         let mut dev = {
-            let published_state = published_state.clone();
+            let published_state = state.clone();
             synthizer_miniaudio::open_default_output_device(&opts, move |_cfg, dest| {
-                at_iter(&published_state.load(), dest);
+                let update = published_state.load_full();
+                at_iter(&update, dest);
+                published_state.defer_reclaim(update);
             })?
         };
 
         dev.start()?;
 
         Ok(Self {
-            published_state,
+            state,
             device: Some(dev),
         })
     }
 
     pub fn batch(&mut self) -> Batch<'_> {
-        let new_state = Arc::unwrap_or_clone(self.published_state.load_full());
+        let new_state = Arc::unwrap_or_clone(self.state.load_full());
 
         let mut ret = Batch {
             synthesizer: self,
             new_state,
         };
 
-        // Clear the state out.
-        ret.new_state.older_state = Arc::new(ArcSwapOption::new(None));
         ret.handle_pending_drops();
-
         ret
     }
 }
@@ -171,13 +171,13 @@ impl Synthesizer {
 impl SynthesizerState {
     fn new() -> Self {
         Self {
+            arc_freelist: Default::default(),
             audio_thred_state: Arc::new(AtomicRefCell::new(AudioThreadState {
                 buf_remaining: 0,
                 buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
                 time_in_blocks: 0,
             })),
             mounts: SynthMap::new_sync(),
-            older_state: Arc::new(ArcSwapOption::new(None)),
         }
     }
 }
