@@ -22,7 +22,6 @@ mod context;
 pub mod core_traits;
 mod data_structures;
 mod db;
-mod deferred_arc_swap;
 mod error;
 pub mod fast_xoroshiro;
 mod is_audio_thread;

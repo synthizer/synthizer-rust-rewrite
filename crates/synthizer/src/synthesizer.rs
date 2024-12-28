@@ -17,7 +17,7 @@ type SynthMap<K, V> = HashTrieMapSync<K, V>;
 type SynthVec<T> = VectorSync<T>;
 
 pub struct Synthesizer {
-    state: Arc<crate::deferred_arc_swap::DeferredArcSwap<SynthesizerState>>,
+    state: Arc<crate::data_structures::deferred_arc_swap::DeferredArcSwap<SynthesizerState>>,
 
     device: Option<synthizer_miniaudio::DeviceHandle>,
 }
@@ -47,15 +47,15 @@ pub(crate) struct MountContainer {
 /// trick however: this can indeed be a cycle.  We rely on the next batch creation to clear that cycle.
 #[derive(Clone)]
 pub(crate) struct SynthesizerState {
-    arc_freelist: crate::deferred_arc_swap::ArcStash<Self>,
+    arc_freelist: crate::data_structures::deferred_arc_swap::ArcStash<Self>,
 
     pub(crate) mounts: SynthMap<UniqueId, MountContainer>,
 
     pub(crate) audio_thred_state: Arc<AtomicRefCell<AudioThreadState>>,
 }
 
-impl crate::deferred_arc_swap::GetArcStash for SynthesizerState {
-    fn get_stash(&self) -> &crate::deferred_arc_swap::ArcStash<Self> {
+impl crate::data_structures::deferred_arc_swap::GetArcStash for SynthesizerState {
+    fn get_stash(&self) -> &crate::data_structures::deferred_arc_swap::ArcStash<Self> {
         &self.arc_freelist
     }
 }
@@ -134,9 +134,11 @@ impl Synthesizer {
             channel_format: Some(synthizer_miniaudio::DeviceChannelFormat::Stereo),
         };
 
-        let state = Arc::new(crate::deferred_arc_swap::DeferredArcSwap::new(Arc::new(
-            SynthesizerState::new(),
-        )));
+        let state = Arc::new(
+            crate::data_structures::deferred_arc_swap::DeferredArcSwap::new(Arc::new(
+                SynthesizerState::new(),
+            )),
+        );
 
         let mut dev = {
             let published_state = state.clone();
