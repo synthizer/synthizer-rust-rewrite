@@ -50,7 +50,7 @@ where
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
         let par = SIncr::tick::<_, N>(ctx, input, &mut state.freq_state);
-        let increments = crate::array_utils::collect_iter::<_, N>(unsafe { par.become_iterator() });
+        let increments = crate::array_utils::collect_iter::<_, N>(par.iter_cloned());
 
         let results = increments.map(|x| inc1(state, x));
 

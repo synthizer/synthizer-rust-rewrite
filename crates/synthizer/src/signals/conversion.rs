@@ -48,7 +48,7 @@ where
     {
         let mut par = Sig::tick::<_, N>(ctx, input, state);
 
-        ClosureProvider::<_, _, N>::new(move |index| unsafe { par.get_owned(index).into() })
+        ClosureProvider::<_, _, N>::new(move |index| par.get_cloned(index).into())
     }
 
     fn trace_slots<

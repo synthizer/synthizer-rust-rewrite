@@ -10,6 +10,10 @@ unsafe impl<ParSig1, ParSig2> Signal for JoinSignal<ParSig1, ParSig2>
 where
     ParSig1: Signal,
     ParSig2: Signal,
+    for<'il> SignalInput<'il, ParSig1>: Clone,
+    for<'il> SignalInput<'il, ParSig2>: Clone,
+    for<'ol> SignalOutput<'ol, ParSig1>: Clone,
+    for<'ol> SignalOutput<'ol, ParSig2>: Clone,
 {
     type Input<'il> = (SignalInput<'il, ParSig1>, SignalInput<'il, ParSig2>);
     type Output<'ol> = (SignalOutput<'ol, ParSig1>, SignalOutput<'ol, ParSig2>);
@@ -39,7 +43,7 @@ where
             [const { MaybeUninit::uninit() }; N];
 
         let mut last_i = 0;
-        for (i, (l, r)) in unsafe { input.become_iterator() }.enumerate() {
+        for (i, (l, r)) in input.iter_cloned().enumerate() {
             left_in[i].write(l);
             right_in[i].write(r);
             last_i = i;
@@ -59,8 +63,7 @@ where
         );
 
         let outgoing = crate::array_utils::collect_iter::<_, N>(
-            unsafe { par_left_out.become_iterator() }
-                .zip(unsafe { par_right_out.become_iterator() }),
+            par_left_out.iter_cloned().zip(par_right_out.iter_cloned()),
         );
         ArrayProvider::new(outgoing)
     }

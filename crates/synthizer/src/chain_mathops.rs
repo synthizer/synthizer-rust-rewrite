@@ -34,6 +34,8 @@ macro_rules! impl_mathop {
             for<'il, 'ol> S1: Signal<Input<'il> = I1, Output<'ol> = O1>,
             for<'il, 'ol> S2: Signal<Input<'il> = I2, Output<'ol> = O2>,
             O1: $trait<O2>,
+            O1: Clone,
+            O2: Clone,
             I1: Clone + 'static,
             I2: From<I1> + Clone + 'static,
         {
@@ -57,8 +59,7 @@ macro_rules! impl_mathop {
                 'il: 'ol,
                 I: ValueProvider<Self::Input<'il>> + Sized,
             {
-                let gathered_input =
-                    crate::array_utils::collect_iter::<_, N>(unsafe { input.become_iterator() });
+                let gathered_input = crate::array_utils::collect_iter::<_, N>(input.iter_cloned());
                 let left = S1::tick::<_, N>(
                     ctx,
                     ArrayProvider::new(gathered_input.clone()),
@@ -72,8 +73,8 @@ macro_rules! impl_mathop {
 
                 // For now we will collect to an array. We may be able to do lazy computation later, but the bounds on
                 // this are a mess.
-                let left_iter = unsafe { left.become_iterator() };
-                let right_iter = unsafe { right.become_iterator() };
+                let left_iter = left.iter_cloned();
+                let right_iter = right.iter_cloned();
                 let arr = crate::array_utils::collect_iter::<_, N>(
                     left_iter.zip(right_iter).map(|(l, r)| l.$method(r)),
                 );

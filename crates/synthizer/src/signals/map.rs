@@ -22,6 +22,7 @@ where
     ParSig: Signal,
     F: FnMut(SignalOutput<ParSig>) -> O + Send + Sync + 'static,
     O: Send + 'static,
+    for<'ol> SignalOutput<'ol, ParSig>: Clone,
 {
     type Input<'il> = SignalInput<'il, ParSig>;
     type Output<'ol> = O;
@@ -45,7 +46,7 @@ where
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
         let parent = ParSig::tick::<_, N>(ctx, input, &mut state.parent_state);
-        let mapped = unsafe { parent.become_iterator() }.map(&mut state.closure);
+        let mapped = parent.iter_cloned().map(&mut state.closure);
 
         ArrayProvider::<_, N>::new(crate::array_utils::collect_iter(mapped))
     }
@@ -68,6 +69,7 @@ where
     F: FnMut(IntoSignalOutput<ParSig>) -> O + Send + Sync + 'static,
     ParSig: IntoSignal,
     O: Send + 'static,
+    for<'ol> IntoSignalOutput<'ol, ParSig>: Clone,
 {
     type Signal = MapSignal<ParSig::Signal, F, O>;
 

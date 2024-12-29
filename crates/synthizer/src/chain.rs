@@ -93,7 +93,7 @@ impl<S: IntoSignal> Chain<S> {
         >,
     >
     where
-        for<'a> IntoSignalOutput<'a, S>: AudioFrame<f64>,
+        for<'a> IntoSignalOutput<'a, S>: AudioFrame<f64> + Clone,
     {
         Chain {
             inner: sigs::AudioOutputSignalConfig::new(self.inner, format),
@@ -245,6 +245,10 @@ impl<S: IntoSignal> Chain<S> {
     >
     where
         S2: IntoSignal,
+        for<'ol> IntoSignalOutput<'ol, S>: Clone,
+        for<'ol> IntoSignalOutput<'ol, S2>: Clone,
+        for<'il> IntoSignalInput<'il, S>: Clone,
+        for<'il> IntoSignalInput<'il, S2>: Clone,
     {
         Chain {
             inner: sigs::JoinSignalConfig::new(self.inner, other.inner),

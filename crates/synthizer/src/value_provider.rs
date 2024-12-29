@@ -23,7 +23,6 @@ mod sealed {
     ///
     /// Signals must not:
     ///
-    /// - Ask for an owned value for the same index twice.
     /// - Go beyond the end of the number of times `tick` has been instantiated for.
     /// - Assume that `get_mut` etc. are returning mutable references to different values on every call (this exists for
     ///   e.g. slots; the idea is that it's *supposed* to be the same value a lot of the time).
@@ -34,7 +33,6 @@ mod sealed {
     pub unsafe trait ValueProvider<T>: Sized {
         unsafe fn get_unchecked(&mut self, index: usize) -> &T;
         unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T;
-        unsafe fn get_unchecked_owned(&mut self, index: usize) -> T;
         fn len(&mut self) -> usize;
 
         fn get(&mut self, index: usize) -> &T {
@@ -53,34 +51,18 @@ mod sealed {
             unsafe { self.get_unchecked_mut(index) }
         }
 
-        /// Get an owned value.
-        ///
-        /// # Safety
-        ///
-        /// This method is unsafe because, while it checks the index bound, it cannot efficiently check that
-        /// `get_owned_unchecked` has been called more than once.
-        unsafe fn get_owned(&mut self, index: usize) -> T {
+        fn get_cloned(&mut self, index: usize) -> T
+        where
+            T: Clone,
+        {
             if index >= self.len() {
                 panic!("Index out of bounds");
             }
 
-            self.get_unchecked_owned(index)
+            unsafe { self.get_unchecked(index) }.clone()
         }
 
-        fn get_cloned(&mut self, index: usize) -> T
-        where
-            T: Clone + 'static,
-        {
-            self.get(index).clone()
-        }
-
-        /// Get an iterator over the owned values.
-        ///
-        /// # Safety
-        ///
-        /// Pretty much this is only safe to use as the first call.  Contractually, the requirement is that no index has
-        /// had `get_owned` called on it.
-        unsafe fn become_iterator(mut self) -> ValueProviderIterator<T, Self>
+        fn iter_cloned(mut self) -> ValueProviderIterator<T, Self>
         where
             Self: Sized,
         {
@@ -103,6 +85,7 @@ mod sealed {
     impl<T, P> std::iter::Iterator for ValueProviderIterator<T, P>
     where
         P: ValueProvider<T>,
+        T: Clone,
     {
         type Item = T;
 
@@ -111,7 +94,7 @@ mod sealed {
                 None
             } else {
                 self.index += 1;
-                Some(unsafe { self.provider.get_owned(self.index - 1) })
+                Some(self.provider.get_cloned(self.index - 1))
             }
         }
     }
@@ -136,11 +119,6 @@ where
     unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
         self.temp_storage = Some((self.closure)(index));
         self.temp_storage.as_mut().unwrap()
-    }
-
-    unsafe fn get_unchecked_owned(&mut self, index: usize) -> T {
-        self.temp_storage = Some((self.closure)(index));
-        self.temp_storage.take().unwrap()
     }
 
     fn len(&mut self) -> usize {
@@ -178,10 +156,6 @@ unsafe impl<T, const LEN: usize> ValueProvider<T> for ArrayProvider<T, LEN> {
         self.array[index].as_mut().unwrap()
     }
 
-    unsafe fn get_unchecked_owned(&mut self, index: usize) -> T {
-        self.array[index].take().unwrap()
-    }
-
     fn len(&mut self) -> usize {
         LEN
     }
@@ -211,9 +185,5 @@ where
 
     unsafe fn get_unchecked_mut(&mut self, _index: usize) -> &mut T {
         &mut self.value
-    }
-
-    unsafe fn get_unchecked_owned(&mut self, _index: usize) -> T {
-        self.value.clone()
     }
 }

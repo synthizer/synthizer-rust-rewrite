@@ -17,7 +17,7 @@ pub struct AudioOutputState<T> {
 unsafe impl<S> Signal for AudioOutputSignal<S>
 where
     for<'a> S: Signal,
-    for<'ol> SignalOutput<'ol, S>: AudioFrame<f64>,
+    for<'ol> SignalOutput<'ol, S>: AudioFrame<f64> + Clone,
 {
     type Output<'ol> = ();
     type Input<'il> = S::Input<'il>;
@@ -38,9 +38,9 @@ where
         'il: 'ol,
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        let mut block = crate::array_utils::collect_iter::<_, N>(unsafe {
-            S::tick::<_, N>(ctx, input, &mut state.underlying_state).become_iterator()
-        });
+        let mut block = crate::array_utils::collect_iter::<_, N>(
+            S::tick::<_, N>(ctx, input, &mut state.underlying_state).iter_cloned(),
+        );
 
         let mut temp = [[0.0f64; 2]; N];
         crate::channel_conversion::convert_channels(
@@ -74,7 +74,7 @@ where
 impl<S> IntoSignal for AudioOutputSignalConfig<S>
 where
     S: IntoSignal,
-    for<'ol> IntoSignalOutput<'ol, S>: AudioFrame<f64>,
+    for<'ol> IntoSignalOutput<'ol, S>: AudioFrame<f64> + Clone,
 {
     type Signal = AudioOutputSignal<S::Signal>;
 

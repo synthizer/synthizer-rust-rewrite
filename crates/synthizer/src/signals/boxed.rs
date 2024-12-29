@@ -117,7 +117,7 @@ where
             ($num: expr) => {
                 while let Some(this_input) = input.first_chunk::<$num>().copied() {
                     let prov = T::tick::<_, $num>(ctx, ArrayProvider::new(this_input), state);
-                    unsafe { prov.become_iterator() }.for_each(&mut output);
+                    prov.iter_cloned().for_each(&mut output);
                     input = &input[$num..];
                 }
             };
@@ -155,7 +155,7 @@ where
         let mut dest: [MaybeUninit<O>; N] = [const { MaybeUninit::uninit() }; N];
         let mut i = 0;
 
-        let in_arr = crate::array_utils::collect_iter::<_, N>(unsafe { input.become_iterator() });
+        let in_arr = crate::array_utils::collect_iter::<_, N>(input.iter_cloned());
 
         state
             .signal
