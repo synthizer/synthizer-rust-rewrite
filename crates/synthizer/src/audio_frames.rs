@@ -1,6 +1,3 @@
-//! Implementation of audio frames.
-//!
-//! Mostly we need a static frame and a dynamic frame and we're done.
 use crate::core_traits::*;
 
 impl AudioFrame<f64> for f64 {
@@ -44,6 +41,7 @@ where
 impl<T, Inner> AudioFrame<T> for DefaultingFrameWrapper<'_, T, Inner>
 where
     Inner: AudioFrame<T>,
+    T: Copy,
 {
     fn channel_count(&self) -> usize {
         self.0.channel_count()
@@ -66,7 +64,10 @@ where
     }
 }
 
-impl<T, const N: usize> AudioFrame<T> for [T; N] {
+impl<T, const N: usize> AudioFrame<T> for [T; N]
+where
+    T: Copy,
+{
     fn channel_count(&self) -> usize {
         N
     }
@@ -83,7 +84,7 @@ impl<T, const N: usize> AudioFrame<T> for [T; N] {
 macro_rules! impl_tuple {
     ($(($t:ident, $i: tt)),*,) => {
         impl<Elem, $($t),*> AudioFrame<Elem> for ($($t,)*) where
-        $($t: AudioFrame<Elem>),*
+        $($t: AudioFrame<Elem>,)* Elem: Copy,
         {
             fn channel_count(&self) -> usize {
                 0 $(+ self.$i.channel_count())*

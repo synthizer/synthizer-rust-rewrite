@@ -91,10 +91,10 @@ pub(crate) mod sealed {
     }
 
     /// A frame of audio data, which can be stored on the stack.
-    ///
-    /// Frames are basically scalars used to pass audio data around on the stack without taking the hit of an
-    /// allocation.  They are immutable after creation.  `f64` is a single-channel frame.
-    pub trait AudioFrame<T> {
+    pub trait AudioFrame<T>
+    where
+        T: Copy,
+    {
         fn channel_count(&self) -> usize;
         fn get(&self, index: usize) -> &T;
         fn set(&mut self, index: usize, value: T);
