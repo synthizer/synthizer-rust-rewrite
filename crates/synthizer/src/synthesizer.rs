@@ -2,16 +2,13 @@ use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
-use rpds::{HashTrieMapSync, VectorSync};
-
-use crate::chain::Chain;
 use crate::config;
-use crate::core_traits::*;
 use crate::error::{Error, Result};
 use crate::mount_point::ErasedMountPoint;
 use crate::signals::{Slot, SlotMap, SlotUpdateContext, SlotValueContainer};
 use crate::unique_id::UniqueId;
+use atomic_refcell::AtomicRefCell;
+use rpds::{HashTrieMapSync, VectorSync};
 
 type SynthMap<K, V> = HashTrieMapSync<K, V>;
 type SynthVec<T> = VectorSync<T>;
@@ -202,33 +199,23 @@ impl Batch<'_> {
         }
     }
 
-    pub fn mount<S: IntoSignal>(&mut self, chain: Chain<S>) -> Result<Handle>
-    where
-        S::Signal: Mountable,
-        SignalState<S::Signal>: Send + Sync + 'static,
-    {
+    pub fn mount<M: crate::mount_point::Mountable>(&mut self, new_mount: M) -> Result<Handle> {
         let object_id = UniqueId::new();
+        let mount = new_mount.into_mount(self)?;
+
         let pending_drop = MarkDropped::new();
 
-        let ready = chain.into_signal()?;
+        let mut slots = SlotMap::new_sync();
 
-        let mut slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>> = Default::default();
-
-        S::Signal::trace_slots(&ready.state, &mut |id, s| {
-            slots.insert_mut(id, s);
+        mount.trace_slots(&mut |id, val| {
+            slots.insert_mut(id, val);
         });
 
-        let mp = crate::mount_point::MountPoint {
-            signal: ready.signal,
-            state: ready.state,
-        };
-
         let inserting = MountContainer {
-            erased_mount: Arc::new(AtomicRefCell::new(Box::new(mp))),
+            erased_mount: Arc::new(AtomicRefCell::new(mount)),
             pending_drop: pending_drop.0.clone(),
             slots,
         };
-
         self.new_state.mounts.insert_mut(object_id, inserting);
 
         Ok(Handle {

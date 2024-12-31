@@ -132,25 +132,6 @@ where
     }
 }
 
-pub trait Generator: for<'a> Signal<Input<'a> = ()> {}
-impl<T> Generator for T where T: for<'a> Signal<Input<'a> = ()> {}
-
-/// A mountable signal has no inputs and no outputs, and its state and parameters are 'static.
-pub trait Mountable
-where
-    Self: Generator + Send + Sync + 'static,
-    Self: for<'a> Signal<Output<'a> = ()> + Generator,
-    SignalState<Self>: Send + Sync + 'static,
-{
-}
-
-impl<T> Mountable for T
-where
-    T: Generator + for<'a> Signal<Output<'a> = ()> + Send + Sync + 'static,
-    SignalState<T>: Send + Sync + 'static,
-{
-}
-
 // Workarounds for https://github.com/rust-lang/rust/issues/38078: rustc is not always able to determine when a type
 // isn't ambiguous, or at the very least it doesn't tell us what the options are, so we use this instead.
 pub(crate) type IntoSignalOutput<'a, S> = <<S as IntoSignal>::Signal as Signal>::Output<'a>;
