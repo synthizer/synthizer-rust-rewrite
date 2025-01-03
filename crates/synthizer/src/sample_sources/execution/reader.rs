@@ -10,9 +10,6 @@ use super::loop_driver::*;
 ///
 /// This tuype is what supports seeking and looping.  Resampling and where the source runs are built on top as other
 /// types.
-///
-/// At the moment, we get off the ground by just always running in the audio thread. This is insufficient for the
-/// finished implementation, which will need to call this logic in a background thread and funnel the samples across.
 pub(crate) struct SourceReader {
     source: Box<dyn SampleSource>,
     descriptor: Descriptor,
@@ -54,7 +51,7 @@ impl SourceReader {
 
     /// Write interleaved audio data to the given slice.
     ///
-    /// This function may be called on the audio thread.  Un-interleaving is handled elsewhere.
+    /// This function may be called on the audio thread depending on the underlying descriptor.
     ///
     /// Returns the number of *frames* written.  Returns 0 only for eof or the empty slice, but may return less than
     /// requested, particularly if the source hit a loop point.
@@ -121,7 +118,7 @@ impl SourceReader {
         }
     }
 
-    /// Configure seeking for this source by applying the loop specification.
+    /// Configure looping for this source by applying the loop specification.
     ///
     /// # Panics
     ///
@@ -131,6 +128,7 @@ impl SourceReader {
         self.loop_driver
             .config_looping(spec)
             .expect("Loop specifications should have been validated earlier");
+        self.become_playing_if_eof();
     }
 
     /// seek to the given sample, capped above by the descriptor's eof if any.

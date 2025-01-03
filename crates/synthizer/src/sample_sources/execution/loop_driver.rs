@@ -25,9 +25,6 @@ use crate::loop_spec::*;
 ///
 /// Users which need perfect accuracy will need to either use accurate sources (we cannot currently provide this because
 /// of limitations in symphonia), or switch to buffers.
-///
-/// The user-facing docs for all of this are on StreamingSourcePlayerNode, which provides more specific guarantees and
-/// advice as to what does and doesn't work.
 #[derive(Debug)]
 pub(crate) struct LoopDriver {
     /// The pointer to the predicted position of the underlying source.

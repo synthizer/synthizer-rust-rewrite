@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 
 use crate::config::*;
-use crate::data_structures::SplittableBuffer;
 
 use super::buffered::BufferedSourceReader;
 use super::reader::SourceReader;
@@ -57,8 +56,6 @@ impl Driver {
         &mut self,
         destination: &mut [f32],
     ) -> Result<u64, SampleSourceError> {
-        // If we aren't resampling, we must round-trip through an intermediate block to uninterleave. Rather than
-        // allocating those all over, thread locals are suitable.
         const SIZE: usize = BLOCK_SIZE * MAX_CHANNELS;
         thread_local! {
             static TMP_BUF: RefCell<[f32; SIZE]> = const { RefCell::new([0.0f32; SIZE]) };
@@ -66,38 +63,27 @@ impl Driver {
 
         match &mut self.kind {
             SampleSourceDriverKind::Resampled(r) => {
-                // In this case, we can go directly to the destination and we're done.
-                r.read_samples(destination)?;
-                Ok(BLOCK_SIZE as u64)
-            }
-            SampleSourceDriverKind::Buffered(r) => {
-                // In this case, we must go via the temporary thread-local buffer.  Because the destination slice is
-                // un-interleaved, we will un-interleave the whole buffer which handles getting the zeros in the right
-                // place.
+                // Our resampler outputs uninterleaved, so we must interleave them.
                 TMP_BUF.with(|tmp_buf| -> Result<u64, SampleSourceError> {
                     let mut tmp_buf = tmp_buf.borrow_mut();
 
                     let chans = r.descriptor().get_channel_count();
                     let slice = &mut tmp_buf[0..(chans * BLOCK_SIZE)];
-                    let got = r.read_samples(slice)?;
-                    slice[(got as usize * chans)..].fill(0.0f32);
+                    r.read_samples(slice)?;
 
-                    let mut splittable = SplittableBuffer::new(
-                        destination,
-                        r.descriptor().channel_format.get_channel_count(),
-                    );
-                    let mut split = splittable.split_mut();
-
-                    for c in 0..chans {
-                        let d = &mut split[c];
-                        for i in 0..BLOCK_SIZE {
-                            let src_ind = chans * i + c;
-                            d[i] = tmp_buf[src_ind];
+                    for f in 0..BLOCK_SIZE {
+                        for c in 0..chans {
+                            let d_pos = f * chans + c;
+                            let src_pos = c * BLOCK_SIZE + f;
+                            destination[d_pos] = tmp_buf[src_pos];
                         }
                     }
-
-                    Ok(got)
+                    Ok(BLOCK_SIZE as u64)
                 })
+            }
+            SampleSourceDriverKind::Buffered(r) => {
+                // In this case, we can go directly to the destination and we're done.
+                r.read_samples(destination)
             }
         }
     }

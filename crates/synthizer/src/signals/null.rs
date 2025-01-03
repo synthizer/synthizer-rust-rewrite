@@ -1,5 +1,6 @@
 use crate::context::*;
 use crate::core_traits::*;
+use crate::error::*;
 
 /// The null signal: a signal which takes nothing and outputs nothing.
 ///
@@ -26,17 +27,6 @@ unsafe impl Signal for NullSignal {
     }
 
     fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _state: &mut Self::State) {}
-
-    fn trace_slots<
-        F: FnMut(
-            crate::unique_id::UniqueId,
-            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
-        ),
-    >(
-        _state: &Self::State,
-        _inserter: &mut F,
-    ) {
-    }
 }
 
 impl IntoSignal for NullSignal {
@@ -47,6 +37,12 @@ impl IntoSignal for NullSignal {
             signal: NullSignal::new(),
             state: (),
         })
+    }
+    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        _inserter: &mut F,
+    ) -> Result<()> {
+        Ok(())
     }
 }
 

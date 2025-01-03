@@ -2,6 +2,7 @@ use std::marker::PhantomData as PD;
 
 use crate::context::*;
 use crate::core_traits::*;
+use crate::error::Result;
 
 /// Consume the input of this signal.  Then replace it with the `Default::default()` value of a new input type.
 ///
@@ -52,18 +53,6 @@ where
             state,
         )
     }
-
-    fn trace_slots<
-        F: FnMut(
-            crate::unique_id::UniqueId,
-            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
-        ),
-    >(
-        state: &Self::State,
-        inserter: &mut F,
-    ) {
-        S::trace_slots(state, inserter);
-    }
 }
 
 impl<S, DiscardingInputType> IntoSignal for ConsumeInputSignalConfig<S, DiscardingInputType>
@@ -82,6 +71,14 @@ where
             signal: ConsumeInputSignal(inner.signal, PD),
             state: inner.state,
         })
+    }
+
+    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        inserter: &mut F,
+    ) -> Result<()> {
+        self.0.trace(inserter)?;
+        Ok(())
     }
 }
 

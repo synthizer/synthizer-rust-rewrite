@@ -1121,9 +1121,9 @@ dependencies = [
 
 [[package]]
 name = "rubato"
-version = "0.14.1"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6dd52e80cfc21894deadf554a5673002938ae4625f7a283e536f9cf7c17b0d5"
+checksum = "cdd96992d7e24b3d7f35fdfe02af037a356ac90d41b466945cf3333525a86eea"
 dependencies = [
  "num-complex",
  "num-integer",

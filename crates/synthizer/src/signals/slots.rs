@@ -2,9 +2,10 @@ use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
-use crate::core_traits::*;
 use rpds::HashTrieMapSync;
 
+use crate::core_traits::*;
+use crate::error::Result;
 use crate::unique_id::UniqueId;
 
 pub(crate) type SlotMap<K, V> = HashTrieMapSync<K, V>;
@@ -26,7 +27,9 @@ pub(crate) type SlotMap<K, V> = HashTrieMapSync<K, V>;
 /// Note that reading the value outside the audio thread is slow, on the order of a couple tree traversals and some
 /// dynamic casting, and it may get slower in the future.  All optimization effort goes toward writing values.
 ///
-/// Slots are signals in the same way that scalars are, and so you can then pass the slot to `Chain::new`.
+/// Slots are signals in the same way that scalars are, and so you can then pass the slot to `Chain::new`.  Behavior is
+/// undefined if you use a slot with more than one mount at a time, but it is fine to use the slot multiple times in one
+/// given mount.
 ///
 /// If you mix up slots on the audio thread such that a chain is mounted in a different mount than the chain from which
 /// you got the slot, mounting will error.
@@ -162,18 +165,6 @@ where
             changed_this_block: state.changed_this_block,
         })
     }
-
-    fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
-        state: &Self::State,
-        inserter: &mut F,
-    ) {
-        let ns = SlotValueContainer {
-            update_id: UniqueId::new(),
-            value: state.value.clone(),
-        };
-
-        inserter(state.slot_id, Arc::new(ns));
-    }
 }
 
 impl<T> IntoSignal for SlotSignalConfig<T>
@@ -193,6 +184,16 @@ where
                 value: Arc::new(self.initial_value),
             },
         })
+    }
+
+    fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> Result<()> {
+        let ns = SlotValueContainer {
+            update_id: UniqueId::new(),
+            value: Arc::new(self.initial_value.clone()),
+        };
+
+        inserter(self.slot_id, TracedResource::Slot(Arc::new(ns)));
+        Ok(())
     }
 }
 

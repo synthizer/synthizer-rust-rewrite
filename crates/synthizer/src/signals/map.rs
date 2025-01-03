@@ -1,6 +1,7 @@
 use std::marker::PhantomData as PD;
 
 use crate::core_traits::*;
+use crate::error::Result;
 
 pub struct MapSignal<ParSig, F, O>(PD<*const (ParSig, F, O)>);
 unsafe impl<ParSig, F, O> Send for MapSignal<ParSig, F, O> {}
@@ -50,18 +51,6 @@ where
 
         ArrayProvider::<_, N>::new(crate::array_utils::collect_iter(mapped))
     }
-
-    fn trace_slots<
-        Tracer: FnMut(
-            crate::unique_id::UniqueId,
-            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
-        ),
-    >(
-        state: &Self::State,
-        inserter: &mut Tracer,
-    ) {
-        ParSig::trace_slots(&state.parent_state, inserter);
-    }
 }
 
 impl<ParSig, F, O> IntoSignal for MapSignalConfig<ParSig, F, O>
@@ -83,6 +72,14 @@ where
             },
             signal: MapSignal(PD),
         })
+    }
+
+    fn trace<Tracer: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        inserter: &mut Tracer,
+    ) -> Result<()> {
+        self.parent.trace(inserter)?;
+        Ok(())
     }
 }
 

@@ -21,6 +21,7 @@ pub(crate) trait GetArcStash: Sized {
 /// As long as there is only one consumer, deferring is as waitfree as ArcSwap (e.g. for practical purposes always).
 ///
 /// The point is not to enter the kernel from (possibly) audio threads.
+#[derive(Default)]
 pub(crate) struct DeferredArcSwap<T: GetArcStash + Send + Sync + 'static> {
     current: ArcSwap<T>,
     freelist: ArcSwapOption<T>,

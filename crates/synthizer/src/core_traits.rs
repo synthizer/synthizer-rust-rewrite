@@ -1,8 +1,10 @@
+#![allow(private_interfaces)]
 use std::any::Any;
 use std::sync::Arc;
 
 use crate::context::*;
 use crate::error::Result;
+use crate::sample_sources::execution::Executor as MediaExecutor;
 use crate::unique_id::UniqueId;
 
 // These are "core" but it's a lot of code so we pull it out.
@@ -10,6 +12,12 @@ pub(crate) use crate::value_provider::*;
 
 pub(crate) mod sealed {
     use super::*;
+
+    /// Traced resources.
+    pub enum TracedResource {
+        Slot(Arc<dyn Any + Send + Sync + 'static>),
+        Media(Arc<MediaExecutor>),
+    }
 
     /// This internal trait is the actual magic.
     ///
@@ -65,29 +73,6 @@ pub(crate) mod sealed {
         ///
         /// No default impl is provided.  All signals need to consider what they want to do so we force the issue.
         fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State);
-
-        /// Trace slots.
-        ///
-        /// This is "private" to the slot machinery, but must be implemented on combinators.  Combinators should forward
-        /// to their parents.  Everything else should leave the implementation empty.
-        ///
-        /// This is called when mounting, in the thread that mounts.  It calls the callback with ids and states for new
-        /// slots.  The only implementor which does anything but pass to other signals is `SlotSignal`.
-        ///
-        /// If the user tries to use a slot which is not traced they get an error.  If the algorithm tries to use a slot
-        /// which is not traced, we panic.  The latter is an internal bug.  It is on us to always know what slots the
-        /// user made.
-        ///
-        /// The callback gets called with an Arc to the *value* of the slot.  The rest is wrapped up by the generic
-        /// machinery.
-        fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
-            state: &Self::State,
-            inserter: &mut F,
-        );
-    }
-
-    pub trait SignalDestination<Input: Sized, const N: usize> {
-        fn send(self, values: [Input; N]);
     }
 
     /// A frame of audio data, which can be stored on the stack.
@@ -114,6 +99,23 @@ pub(crate) mod sealed {
         type Signal: Signal;
 
         fn into_signal(self) -> Result<ReadySignal<Self::Signal, IntoSignalState<Self>>>;
+
+        /// Trace a signal's resource usage, and allocate objects.
+        ///
+        /// The synthesizer must use erased `Any` to store objects in the maps.  That means that it is necessary to let
+        /// signals allocate such objects, then hand them off.  It's also required that we trace signals to figure out
+        /// other things, for example which things might be used before others.
+        ///
+        /// Implementations should:
+        ///
+        /// - If a combinator or other signal with "parents": call this on the parents, in the order that the signal
+        ///   would call `tick` on those parents.
+        /// - If a "leaf" which uses resources (e.g. slots) call the callback.
+        /// - If a "leaf" which doesn't need resources, add an empty impl.
+        /// - If a combinator which uses resources, call the tracer either before calling the parents (if the resource
+        ///   is used before ticking them) or after (if the resource is used after).  Using resources "in the middle"
+        ///   should be avoided.
+        fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> Result<()>;
     }
 
     pub(crate) type IntoSignalResult<S> =
@@ -121,16 +123,6 @@ pub(crate) mod sealed {
 }
 
 pub(crate) use sealed::*;
-
-impl<F, Input, const N: usize> SignalDestination<Input, N> for F
-where
-    Input: Sized,
-    F: FnOnce([Input; N]),
-{
-    fn send(self, value: [Input; N]) {
-        self(value)
-    }
-}
 
 // Workarounds for https://github.com/rust-lang/rust/issues/38078: rustc is not always able to determine when a type
 // isn't ambiguous, or at the very least it doesn't tell us what the options are, so we use this instead.

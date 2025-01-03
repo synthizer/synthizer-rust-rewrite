@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 /// The fixed sample rate of the library.
 ///
 /// For efficiency and simplicity, the internals use this sample rate and only this sample rate, converting as needed at
@@ -22,3 +24,6 @@ pub(crate) const BLOCK_SIZE: usize = 128;
 ///
 /// We have unsafe code which depends on this always being a float array.
 pub(crate) type BlockArray = [f64; BLOCK_SIZE];
+
+/// Number of worker threads for e.g. media decoding per synthesizer.
+pub(crate) const WORKER_POOL_THREADS: NonZeroUsize = NonZeroUsize::new(4).unwrap();

@@ -1,5 +1,6 @@
 use crate::context::*;
 use crate::core_traits::*;
+use crate::error::Result;
 
 pub struct SinSignalConfig<S: IntoSignal> {
     pub(crate) wrapped: S,
@@ -32,18 +33,6 @@ where
         let mut par_provider = S::tick::<_, N>(ctx, input, state);
         ClosureProvider::<_, _, N>::new(move |index| par_provider.get(index).sin())
     }
-
-    fn trace_slots<
-        F: FnMut(
-            crate::unique_id::UniqueId,
-            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
-        ),
-    >(
-        state: &Self::State,
-        inserter: &mut F,
-    ) {
-        S::trace_slots(state, inserter);
-    }
 }
 
 impl<S> IntoSignal for SinSignalConfig<S>
@@ -59,5 +48,13 @@ where
             signal: SinSignal(wrapped.signal),
             state: wrapped.state,
         })
+    }
+
+    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        inserter: &mut F,
+    ) -> Result<()> {
+        self.wrapped.trace(inserter)?;
+        Ok(())
     }
 }

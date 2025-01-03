@@ -1,5 +1,4 @@
 #![allow(private_interfaces)]
-use std::any::Any;
 use std::sync::Arc;
 
 use crate::config;
@@ -26,8 +25,6 @@ pub(crate) trait ErasedMountPoint: Send + Sync + 'static {
         mount_id: &UniqueId,
         shared_ctx: &FixedSignalExecutionContext,
     );
-
-    fn trace_slots(&self, tracer: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>));
 }
 
 pub mod sealed {
@@ -35,11 +32,6 @@ pub mod sealed {
 
     pub trait ExecutableMount: Send + Sync + 'static + Sized {
         type State: Send + Sync + 'static;
-
-        fn trace_slots(
-            state: &Self::State,
-            inserter: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>),
-        );
 
         fn run(
             mount: &mut MountPoint<Self>,
@@ -54,6 +46,8 @@ pub mod sealed {
             self,
             batch: &mut crate::synthesizer::Batch,
         ) -> Result<Box<dyn ErasedMountPoint>>;
+
+        fn trace(&mut self, inserter: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()>;
     }
 }
 
@@ -64,13 +58,6 @@ where
     for<'il, 'ol> S: Signal<Input<'il> = (), Output<'ol> = ()>,
 {
     type State = SignalState<S>;
-
-    fn trace_slots(
-        state: &Self::State,
-        mut inserter: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>),
-    ) {
-        Self::trace_slots(state, &mut inserter);
-    }
 
     fn run(
         mount: &mut MountPoint<Self>,
@@ -100,13 +87,6 @@ impl<S: ExecutableMount> ErasedMountPoint for MountPoint<S> {
     ) {
         S::run(self, state, mount_id, shared_ctx);
     }
-
-    fn trace_slots(
-        &self,
-        mut tracer: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>),
-    ) {
-        <S as ExecutableMount>::trace_slots(&self.state, &mut tracer);
-    }
 }
 
 impl<S: IntoSignal> Mountable for Chain<S>
@@ -125,5 +105,10 @@ where
         };
 
         Ok(Box::new(mp))
+    }
+
+    fn trace(&mut self, mut inserter: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()> {
+        self.inner.trace(&mut inserter)?;
+        Ok(())
     }
 }

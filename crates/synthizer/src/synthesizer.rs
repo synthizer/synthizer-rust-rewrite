@@ -2,13 +2,19 @@ use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
-use crate::config;
-use crate::error::{Error, Result};
-use crate::mount_point::ErasedMountPoint;
-use crate::signals::{Slot, SlotMap, SlotUpdateContext, SlotValueContainer};
-use crate::unique_id::UniqueId;
 use atomic_refcell::AtomicRefCell;
 use rpds::{HashTrieMapSync, VectorSync};
+
+use crate::config;
+use crate::core_traits::*;
+use crate::error::{Error, Result};
+use crate::mount_point::ErasedMountPoint;
+use crate::sample_sources::{execution::Executor as MediaExecutor, SampleSource};
+use crate::signals as sigs;
+use crate::signals::{
+    MediaEntry, MediaExecutorMap, Slot, SlotMap, SlotUpdateContext, SlotValueContainer,
+};
+use crate::unique_id::UniqueId;
 
 type SynthMap<K, V> = HashTrieMapSync<K, V>;
 type SynthVec<T> = VectorSync<T>;
@@ -17,6 +23,8 @@ pub struct Synthesizer {
     state: Arc<crate::data_structures::deferred_arc_swap::DeferredArcSwap<SynthesizerState>>,
 
     device: Option<synthizer_miniaudio::DeviceHandle>,
+
+    worker_pool: crate::worker_pool::WorkerPoolHandle,
 }
 
 #[derive(Clone)]
@@ -27,6 +35,7 @@ pub(crate) struct MountContainer {
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
 
     pub(crate) slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
+    pub(crate) media: MediaExecutorMap,
 }
 
 /// This is the state published to the audio thread.
@@ -137,12 +146,16 @@ impl Synthesizer {
             )),
         );
 
+        let worker_pool =
+            crate::worker_pool::WorkerPoolHandle::new_threaded(config::WORKER_POOL_THREADS);
         let mut dev = {
             let published_state = state.clone();
+            let wp_cloned = worker_pool.clone();
             synthizer_miniaudio::open_default_output_device(&opts, move |_cfg, dest| {
                 let update = published_state.load_full();
                 at_iter(&update, dest);
                 published_state.defer_reclaim(update);
+                wp_cloned.signal_audio_tick_complete();
             })?
         };
 
@@ -151,6 +164,7 @@ impl Synthesizer {
         Ok(Self {
             state,
             device: Some(dev),
+            worker_pool,
         })
     }
 
@@ -199,22 +213,25 @@ impl Batch<'_> {
         }
     }
 
-    pub fn mount<M: crate::mount_point::Mountable>(&mut self, new_mount: M) -> Result<Handle> {
+    pub fn mount<M: crate::mount_point::Mountable>(&mut self, mut new_mount: M) -> Result<Handle> {
+        let mut slots = SlotMap::new_sync();
+        let mut media = MediaExecutorMap::new_sync();
+
+        new_mount.trace(&mut |id, val| match val {
+            TracedResource::Slot(s) => slots.insert_mut(id, s),
+            TracedResource::Media(m) => media.insert_mut(id, MediaEntry::new(m)),
+        })?;
+
         let object_id = UniqueId::new();
         let mount = new_mount.into_mount(self)?;
 
         let pending_drop = MarkDropped::new();
 
-        let mut slots = SlotMap::new_sync();
-
-        mount.trace_slots(&mut |id, val| {
-            slots.insert_mut(id, val);
-        });
-
         let inserting = MountContainer {
             erased_mount: Arc::new(AtomicRefCell::new(mount)),
             pending_drop: pending_drop.0.clone(),
             slots,
+            media,
         };
         self.new_state.mounts.insert_mut(object_id, inserting);
 
@@ -257,6 +274,99 @@ impl Batch<'_> {
             .replace(new_val);
         *slot = Arc::new(newslot);
 
+        Ok(())
+    }
+
+    /// Convert a [SampleSource] into media in this synthesizer, and return a reference to it.
+    ///
+    /// The reference is not valid for media operations until a signal referencing it is mounted.
+    pub fn make_media<S>(&mut self, source: S) -> Result<sigs::Media>
+    where
+        S: SampleSource,
+    {
+        let executor = MediaExecutor::new(&self.synthesizer.worker_pool, source)?;
+
+        Ok(sigs::Media {
+            media_id: UniqueId::new(),
+            descriptor: executor.descriptor().clone(),
+            executor: Some(Arc::new(executor)),
+        })
+    }
+
+    /// Seek some media on this handle.
+    ///
+    /// In some cases, this happens on an asynchronous background thread.  In all cases, the change will take place
+    /// immediately, not when the batch is dropped.  This is one of the two operations discussed in [Media]'s docs as
+    /// requiring an exception to our rule of applying all at once atomicly at batch drop.    ///
+    /// Seeks past the end are converted to seeks to the end.
+    ///
+    /// If the underlying media is not seekable or some other I/O error results then an error is logged later from a
+    /// background thread.
+    pub fn media_seek(&mut self, handle: &Handle, media: &sigs::Media, new_pos: u64) -> Result<()> {
+        let mount = self.new_state
+        .mounts.get_mut(&handle.object_id)
+        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
+        let media = mount
+            .media
+            .get(&media.media_id)
+            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
+        media.executor.seek(new_pos);
+        Ok(())
+    }
+
+    /// Configure how this media loops.
+    ///
+    /// In some cases, this happens on an asynchronous background thread.  In all cases, the change will take place
+    /// immediately, not when the batch is dropped.  This is one of the two operations discussed in [sigs::Media]'s docs
+    /// as requiring an exception to our rule of applying all at once atomicly at batch drop.
+    ///
+    /// Disabling looping is done with [crate::LoopSpec::no_looping], not an alternative method on the batch.
+    pub fn media_config_looping(
+        &mut self,
+        handle: &Handle,
+        media: &sigs::Media,
+        spec: crate::LoopSpec,
+    ) -> Result<()> {
+        let mount = self.new_state
+        .mounts.get_mut(&handle.object_id)
+        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
+        let media = mount
+            .media
+            .get(&media.media_id)
+            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
+        media.executor.config_looping(spec);
+        Ok(())
+    }
+
+    /// Pause this media.
+    ///
+    /// If you don't have a mechanism for fadeout, this can click.
+    pub fn media_pause(&mut self, handle: &Handle, media: &sigs::Media) -> Result<()> {
+        let mount = self.new_state
+        .mounts.get_mut(&handle.object_id)
+        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
+        let media = mount
+            .media
+            .get_mut(&media.media_id)
+            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
+        media.playing = false;
+        Ok(())
+    }
+
+    /// Start this media playing again.
+    ///
+    /// Media starts in the playing state, so this is only needed if pausing it.
+    ///
+    /// If you don't also put a mechanism in place for fade-in, this can click.
+    pub fn media_play(&mut self, handle: &Handle, media: &sigs::Media) -> Result<()> {
+        let mount = self.new_state
+        .mounts.get_mut(&handle.object_id)
+        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
+        let media = mount
+            .media
+            .get_mut(&media.media_id)
+            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
+        media.playing = true;
         Ok(())
     }
 }
@@ -317,6 +427,7 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
                     slots: &SlotUpdateContext {
                         mount_slots: &m.slots,
                     },
+                    media: &m.media,
                 },
             );
         }

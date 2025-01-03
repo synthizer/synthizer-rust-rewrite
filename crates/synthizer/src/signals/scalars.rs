@@ -1,8 +1,6 @@
-use std::any::Any;
-use std::sync::Arc;
-
 use crate::context::*;
 use crate::core_traits::*;
+use crate::error::Result;
 use crate::unique_id::UniqueId;
 
 macro_rules! impl_scalar {
@@ -26,12 +24,6 @@ macro_rules! impl_scalar {
             }
 
             fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _state: &mut Self::State) {}
-
-            fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
-                _state: &Self::State,
-                _inserter: &mut F,
-            ) {
-            }
         }
 
         impl IntoSignal for $t {
@@ -42,6 +34,13 @@ macro_rules! impl_scalar {
                     signal: self,
                     state: self,
                 })
+            }
+
+            fn trace<F: FnMut(UniqueId, TracedResource)>(
+                &mut self,
+                _inserter: &mut F,
+            ) -> Result<()> {
+                Ok(())
             }
         }
     };

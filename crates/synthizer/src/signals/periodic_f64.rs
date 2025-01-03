@@ -1,5 +1,6 @@
 use crate::context::*;
 use crate::core_traits::*;
+use crate::error::Result;
 
 /// A signal which produces an f64 value in the range (0..period) by summing the value of an input signal. e.g.
 /// modulation is allowed.  The period must be fixed.
@@ -56,18 +57,6 @@ where
 
         ArrayProvider::<_, N>::new(results)
     }
-
-    fn trace_slots<
-        F: FnMut(
-            crate::unique_id::UniqueId,
-            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
-        ),
-    >(
-        state: &Self::State,
-        inserter: &mut F,
-    ) {
-        SIncr::trace_slots(&state.freq_state, inserter);
-    }
 }
 
 impl<SIncrCfg> IntoSignal for PeriodicF64Config<SIncrCfg>
@@ -87,5 +76,13 @@ where
                 period: self.period,
             },
         })
+    }
+
+    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        inserter: &mut F,
+    ) -> Result<()> {
+        self.frequency.trace(inserter)?;
+        Ok(())
     }
 }

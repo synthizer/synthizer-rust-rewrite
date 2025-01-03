@@ -4,79 +4,19 @@ use std::sync::Arc;
 use audio_synchronization::spsc_ring as sring;
 
 use crate::config::BLOCK_SIZE;
+use crate::data_structures::ChangeTrackerToken;
+use crate::error::Result;
 use crate::loop_spec::LoopSpec;
-use crate::option_recycler::OptionRecycler;
 use crate::sample_sources::{Descriptor, SampleSourceError};
 use crate::worker_pool as wp;
 
 use super::driver::Driver;
-
-// Design notes:
-//
-// First, samples go back over an uninterleaved ring, which always contains single blocks of data, even if zeroing is
-// required.  For streaming sources, we can push pitch bending to the background thread if we ever decide to go there,
-// then tell users if they want no latency they need to use a buffer.
-//
-// This leaves the question of what to do in two cases: what happens when the source dies?  How do we get user commands
-// to the background thread?
-//
-// Source death is easy.  In that case, we simply close the spsc ring (which is why audio_synchronization supports
-// closing).
-//
-// Getting commands across is a  bit more complex.  Observe that we have the operations of seeking and configuring
-// loops, and suppose that the user does both in one audio tick.  It doesn't matter which order they happen in.  Indeed,
-// it never matters even across multiple blocks.  In this way, the operations are orthogonal.  It also doesn't matter
-// whether or not multiple operations exist if they arrive at the background task at the same time, because while we
-// might run them all, only the final ones apply.  This means that we can coalesce commands into a struct of orthogonal
-// operations, rather than dealing with a list of commands.  We can merge those structs together as we go, and then send
-// exactly one struct across per audio tick, then merge it in the background task if the background task gets more than
-// one because it fell behind.  This lets us use a very small command ring.
-//
-// Unfortunately we must use thingbuf for the command queue. This is because our types are too complex to be pod, and so
-// we cannot use the audio_synchronization ring which is designed primarily for sample data and so assumes zeroing
-// memory is valid initialization.
-//
-// The interleaving versus uninterleaving question here chooses uninterleaving because the common case requires
-// resampling, currently via Rubato, and that forces uninterleaved data.  There's no point interleaving that, then
-// uninterleaving it one more time on the audio thread.
-//
-// Recall that the ring works such that one can always work in a multiple on both sides, and if doing so always get
-// single slices which are one block in length.  We use that here.
-
-const COMMAND_QUEUE_LEN: usize = 16;
+use super::executor::ExecutionConfig;
 
 /// Number of samples to be latent by.
 const LATENCY: usize = 4410;
 
-type CommandQueue = Arc<thingbuf::ThingBuf<Option<ConfigPatch>, OptionRecycler>>;
-
-/// Given two fields, return the first which is not `None`.
-fn merge_opts<T>(first: Option<T>, second: Option<T>) -> Option<T> {
-    match (first, second) {
-        (Some(x), None) => Some(x),
-        (None, Some(x)) => Some(x),
-        (Some(_), Some(x)) => Some(x),
-        (None, None) => None,
-    }
-}
-
-/// A patch to apply to the background thread.
-#[derive(Clone, Debug, Default)]
-struct ConfigPatch {
-    loop_spec: Option<LoopSpec>,
-    seek_to: Option<u64>,
-}
-
-impl ConfigPatch {
-    /// Merge this patch with `newer`, so that the output patch has the fields from `newer` if those fields are set,
-    /// otherwise the fields from ourself.
-    fn merge_newer(self, newer: ConfigPatch) -> Self {
-        Self {
-            loop_spec: merge_opts(self.loop_spec, newer.loop_spec),
-            seek_to: merge_opts(self.seek_to, newer.seek_to),
-        }
-    }
-}
+type ConfigHolder = Arc<arc_swap::ArcSwap<ExecutionConfig>>;
 
 /// The task which is run in the background thread.
 ///
@@ -90,49 +30,49 @@ struct Task {
     /// Handles are closed by dropping them, so this becomes `None` if the source dies.
     ring_handle: Option<sring::RingWriter<f32>>,
 
-    command_queue: CommandQueue,
+    config: ConfigHolder,
+    loop_config_token: ChangeTrackerToken<LoopSpec>,
+    seek_token: ChangeTrackerToken<Option<u64>>,
 
     driver: Driver,
 }
 
-/// Note: pending patches only move to the background thread when `read` is called.  Otherwise, it's incrementally
-/// building them locally.
-pub(super) struct BackgroundSourceHandle {
+/// Handle through which one may read samples.
+pub(super) struct BackgroundSourceSampleReader {
     /// When we see that the writer is closed, goes to `None` so that the underlying ring can free the memory.
     reader: Option<sring::RingReader<f32>>,
+
+    config: ConfigHolder,
 
     /// Copy of the descriptor, which would otherwise only be on the background thread.
     descriptor: Descriptor,
 
     /// Holds the task alive to prevent cancellation.
     worker_task_handle: wp::TaskHandle,
+}
 
-    command_queue: CommandQueue,
-
-    next_patch: Option<ConfigPatch>,
+/// Allows any thread(s) to configure the background source.
+///
+/// Does not keep the background source alive.
+pub(super) struct BackgroundSourceController {
+    config: ConfigHolder,
 }
 
 impl Task {
-    /// Get any config patches we may wish to apply this time.
-    fn get_config_patch(&self) -> ConfigPatch {
-        let mut ret = ConfigPatch::default();
+    /// Pick up config changes.
+    fn update_config(&mut self) -> Result<(), SampleSourceError> {
+        let cfg = self.config.load();
 
-        while let Some(p) = self.command_queue.pop() {
-            let p  = p.expect("The command queue uses Option because thingbuf needs a recycler, but we only ever write Some to it");
-            ret = ret.merge_newer(p);
+        if let Some((val, t)) = cfg.loop_spec.get_if_changed(&self.loop_config_token) {
+            self.driver.config_looping(*val);
+            self.loop_config_token = t;
         }
 
-        ret
-    }
-
-    /// Apply the set fields in the config patch to the driver.
-    fn apply_patch(&mut self, patch: ConfigPatch) -> Result<(), SampleSourceError> {
-        if let Some(loop_spec) = patch.loop_spec {
-            self.driver.config_looping(loop_spec);
-        }
-
-        if let Some(seek_to) = patch.seek_to {
-            self.driver.seek(seek_to)?;
+        if let Some((seek_to, t)) = cfg.seek_to.get_if_changed(&self.seek_token) {
+            if let Some(pos) = seek_to {
+                self.driver.seek(*pos)?;
+            }
+            self.seek_token = t;
         }
 
         Ok(())
@@ -143,8 +83,7 @@ impl Task {
         let chans = self.driver.descriptor().get_channel_count();
         let needed = BLOCK_SIZE * chans;
 
-        let patch = self.get_config_patch();
-        self.apply_patch(patch)?;
+        self.update_config()?;
 
         let ring = self.ring_handle.as_mut().expect("Should be set unless the ring is closed, in which case tick_fallible shouldn't get called");
 
@@ -163,17 +102,21 @@ impl Task {
             // If the ring gave us a slice at all, it should be at least one block.
             assert!(first.len() >= needed);
 
-            // The driver writes blocks. We get a multiple of blocks from the ring, so windows() etc. work.  The driver
-            // fills blocks with zeros if there's nothing to do.  Q.E.D. iterate over block-sized subslices all the way.
+            // The driver writes blocks. We get a multiple of blocks from the ring, so windows() etc. work.
+            //
+            // We zero blocks so that partial blocks won't just leave data around.  This is already a cross-thread ring
+            // doing disk I/O; that's not expensive by comparison.
             for block in first
                 .chunks_mut(needed)
                 .chain(second.iter_mut().flat_map(|x| x.chunks_mut(needed)))
             {
+                block.fill(0.0);
+
                 // We'll just always do zeros, so if we errored out take the hit this time and the logic one level up will never call this again anyway.
                 if ret_result.is_err() {
-                    block.fill(0.0);
                     continue;
                 }
+
                 ret_result = self.driver.read_samples(block).map(|_| ());
             }
 
@@ -185,7 +128,7 @@ impl Task {
 
     /// Tick this source forward if needed.
     ///
-    /// If the channel is closed or an error occurs, return false.
+    /// If an error occurs, return false.
     fn tick(&mut self) -> bool {
         if self.ring_handle.is_none() {
             // A previous tick failed, so we must abort.
@@ -212,49 +155,12 @@ impl wp::Task for Task {
     }
 }
 
-impl BackgroundSourceHandle {
-    pub(super) fn new_in_pool(pool: &wp::WorkerPoolHandle, driver: Driver) -> Self {
-        let descriptor = driver.descriptor().clone();
-        let command_queue = Arc::new(thingbuf::ThingBuf::with_recycle(
-            COMMAND_QUEUE_LEN,
-            OptionRecycler,
-        ));
-        let latency_rounded_up = LATENCY.next_multiple_of(BLOCK_SIZE);
-        let (sring_reader, sring_writer) =
-            sring::create_ring(latency_rounded_up * descriptor.get_channel_count());
-
-        let task = Task {
-            command_queue: command_queue.clone(),
-            driver,
-            ring_handle: Some(sring_writer),
-        };
-
-        let worker_task_handle = pool.register_task(task);
-
-        BackgroundSourceHandle {
-            command_queue,
-            reader: Some(sring_reader),
-            descriptor,
-            worker_task_handle,
-            next_patch: None,
-        }
-    }
-
+impl BackgroundSourceSampleReader {
     /// Read exactly one block of audio data.
     pub(super) fn read_block(&mut self, destination: &mut [f32]) -> Result<u64, SampleSourceError> {
         // Actually this is infallible, but errorability is good practice.
         let chans = self.descriptor.get_channel_count();
         let needed = BLOCK_SIZE * chans;
-
-        // Before doing anything else, push the pending patch if necessary.
-        if let Some(p) = self.next_patch.as_ref() {
-            if self.command_queue.push(Some((*p).clone())).is_ok() {
-                // We sent, so we don't need to accumulate into this config anymore.
-                self.next_patch = None;
-            }
-
-            // Else, we'll just accumulate more changes and get them next time.
-        }
 
         let mut did = 0;
 
@@ -277,21 +183,56 @@ impl BackgroundSourceHandle {
         assert_eq!(did % chans, 0);
         Ok((did / chans) as u64)
     }
+}
 
-    fn get_next_patch_mut(&mut self) -> &mut ConfigPatch {
-        self.next_patch.get_or_insert_with(Default::default)
+impl BackgroundSourceController {
+    pub(super) fn config_looping(&self, loop_spec: LoopSpec) {
+        self.config.rcu(|val| {
+            let mut val = val.clone();
+            let nv = Arc::make_mut(&mut val);
+            nv.loop_spec.replace(loop_spec);
+            val
+        });
     }
 
-    pub(super) fn config_looping(&mut self, loop_spec: LoopSpec) {
-        self.get_next_patch_mut().loop_spec = Some(loop_spec);
+    pub(super) fn seek(&self, new_pos: u64) {
+        self.config.rcu(|val| {
+            let mut val = val.clone();
+            let nv = Arc::make_mut(&mut val);
+            nv.seek_to.replace(Some(new_pos));
+            val
+        });
     }
+}
 
-    pub(super) fn seek(&mut self, new_pos: u64) -> Result<(), SampleSourceError> {
-        self.get_next_patch_mut().seek_to = Some(new_pos);
-        Ok(())
-    }
+pub(super) fn new_in_pool(
+    pool: &wp::WorkerPoolHandle,
+    driver: Driver,
+) -> Result<(BackgroundSourceSampleReader, BackgroundSourceController)> {
+    let descriptor = driver.descriptor().clone();
+    let cfg = ConfigHolder::default();
 
-    pub(crate) fn descriptor(&self) -> &Descriptor {
-        &self.descriptor
-    }
+    let latency_rounded_up = LATENCY.next_multiple_of(BLOCK_SIZE);
+    let (sring_reader, sring_writer) =
+        sring::create_ring(latency_rounded_up * descriptor.get_channel_count());
+
+    let task = Task {
+        driver,
+        ring_handle: Some(sring_writer),
+        config: cfg.clone(),
+        loop_config_token: Default::default(),
+        seek_token: Default::default(),
+    };
+
+    let worker_task_handle = pool.register_task(task);
+
+    Ok((
+        BackgroundSourceSampleReader {
+            config: cfg.clone(),
+            reader: Some(sring_reader),
+            descriptor,
+            worker_task_handle,
+        },
+        BackgroundSourceController { config: cfg },
+    ))
 }

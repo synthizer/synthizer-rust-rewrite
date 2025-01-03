@@ -1,12 +1,10 @@
 //! Implements the mathematical operations between `IntoSignal`s.
-use std::any::Any;
-
 use std::ops::*;
-use std::sync::Arc;
 
 use crate::chain::Chain;
 use crate::context::SignalExecutionContext;
 use crate::core_traits::*;
+use crate::error::Result;
 use crate::unique_id::UniqueId;
 
 macro_rules! impl_mathop {
@@ -80,14 +78,6 @@ macro_rules! impl_mathop {
                 );
                 ArrayProvider::new(arr)
             }
-
-            fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
-                state: &Self::State,
-                inserter: &mut F,
-            ) {
-                S1::trace_slots(&state.0, inserter);
-                S2::trace_slots(&state.1, inserter);
-            }
         }
 
         impl<I1, I2, S1, S2> IntoSignal for $signal_config<S1, S2>
@@ -108,6 +98,15 @@ macro_rules! impl_mathop {
                     signal: $signal_name(l.signal, r.signal),
                     state: (l.state, r.state),
                 })
+            }
+
+            fn trace<F: FnMut(UniqueId, TracedResource)>(
+                &mut self,
+                inserter: &mut F,
+            ) -> Result<()> {
+                self.0.trace(inserter)?;
+                self.1.trace(inserter)?;
+                Ok(())
             }
         }
     };

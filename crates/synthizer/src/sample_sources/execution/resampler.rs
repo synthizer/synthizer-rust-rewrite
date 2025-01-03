@@ -72,6 +72,7 @@ impl Resampler {
 
         // Now set up our buffers.
         let max_input_frames = resampler.input_frames_max();
+
         let max_output_frames = resampler.output_frames_max();
         // I don't trust Rubato yet.  This assert doesn't hurt anything.
         assert_eq!(max_output_frames, BLOCK_SIZE);
@@ -117,7 +118,11 @@ impl Resampler {
         let needed_frames = resampler.input_frames_next();
         assert_eq!(resampler.output_frames_next(), BLOCK_SIZE);
         let needed_samples = needed_frames * self.reader.descriptor().get_channel_count();
-        assert!(needed_samples <= self.interleaved_buffer.len());
+        assert!(
+            needed_samples <= self.interleaved_buffer.len(),
+            "{needed_samples} {}",
+            self.interleaved_buffer.len()
+        );
 
         // First fill the uninterleaved buffer
         let got = self

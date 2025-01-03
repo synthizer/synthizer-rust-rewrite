@@ -1,6 +1,7 @@
 use std::mem::MaybeUninit;
 
 use crate::core_traits::*;
+use crate::error::Result;
 
 pub struct JoinSignalConfig<ParSigCfg1, ParSigCfg2>(ParSigCfg1, ParSigCfg2);
 pub struct JoinSignal<ParSig1, ParSig2>(ParSig1, ParSig2);
@@ -67,19 +68,6 @@ where
         );
         ArrayProvider::new(outgoing)
     }
-
-    fn trace_slots<
-        F: FnMut(
-            crate::unique_id::UniqueId,
-            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
-        ),
-    >(
-        state: &Self::State,
-        mut inserter: &mut F,
-    ) {
-        ParSig1::trace_slots(&state.0, &mut inserter);
-        ParSig2::trace_slots(&state.1, &mut inserter);
-    }
 }
 
 impl<ParSigCfg1, ParSigCfg2> IntoSignal for JoinSignalConfig<ParSigCfg1, ParSigCfg2>
@@ -99,6 +87,15 @@ where
             signal: JoinSignal(par_l.signal, par_r.signal),
             state: JoinSignalState(par_l.state, par_r.state),
         })
+    }
+
+    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        inserter: &mut F,
+    ) -> Result<()> {
+        self.0.trace(inserter)?;
+        self.1.trace(inserter)?;
+        Ok(())
     }
 }
 

@@ -62,7 +62,7 @@ impl<T: Copy + Default + 'static> RefillableWrapped for Vec<T> {
 ///
 /// Usage is to use `refill_start` and `refill_end` to fill the buffer up if needed, then `consume_start` and
 /// `consume_end` to read it.  We avoid closures because closures tend to lead to borrow checker fun should this API
-/// ever be extended.
+/// ever be extended: Rust won't let us say that we always run them.
 pub(crate) struct RefillableWrapper<Buffer: RefillableWrapped> {
     buffer: Buffer,
 

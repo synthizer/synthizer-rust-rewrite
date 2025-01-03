@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::mem::MaybeUninit;
-use std::sync::Arc;
 
 use crate::context::*;
 use crate::core_traits::*;
@@ -37,12 +36,6 @@ where
 {
     fn on_block_start_erased(&self, ctx: &SignalExecutionContext<'_, '_>, state: &mut dyn Any);
 
-    fn trace_slots_erased(
-        &self,
-        state: &dyn Any,
-        tracer: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>),
-    );
-
     fn tick_erased(
         &self,
         ctx: &SignalExecutionContext<'_, '_>,
@@ -60,6 +53,8 @@ where
 {
     #[allow(clippy::type_complexity)]
     fn erased_into(&mut self) -> Result<ReadySignal<BoxedSignal<I, O>, BoxedSignalState<I, O>>>;
+
+    fn trace_erased(&mut self, tracer: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()>;
 }
 
 impl<T, I, O> ErasedIntoSignal<I, O> for Option<T>
@@ -82,6 +77,13 @@ where
             },
         })
     }
+
+    fn trace_erased(&mut self, mut tracer: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()> {
+        self.as_mut()
+            .expect("Should not trace after conversion into a signal")
+            .trace(&mut tracer)?;
+        Ok(())
+    }
 }
 
 impl<I, O, T> ErasedSignal<I, O> for T
@@ -90,15 +92,6 @@ where
     I: 'static + Copy,
     O: 'static + Copy,
 {
-    fn trace_slots_erased(
-        &self,
-        state: &dyn Any,
-        mut tracer: &mut dyn FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>),
-    ) {
-        let state = state.downcast_ref::<T::State>().unwrap();
-        T::trace_slots(state, &mut tracer);
-    }
-
     fn on_block_start_erased(&self, ctx: &SignalExecutionContext<'_, '_>, state: &mut dyn Any) {
         let state = state.downcast_mut::<T::State>().unwrap();
         T::on_block_start(ctx, state);
@@ -168,13 +161,6 @@ where
 
         unsafe { ArrayProvider::<_, N>::new(dest.map(|x| x.assume_init())) }
     }
-
-    fn trace_slots<F: FnMut(UniqueId, Arc<dyn Any + Send + Sync + 'static>)>(
-        state: &Self::State,
-        inserter: &mut F,
-    ) {
-        state.signal.trace_slots_erased(&*state.state, inserter);
-    }
 }
 
 impl<I, O> BoxedSignalConfig<I, O>
@@ -202,5 +188,10 @@ where
 
     fn into_signal(mut self) -> IntoSignalResult<Self> {
         self.signal.erased_into()
+    }
+
+    fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> Result<()> {
+        self.signal.trace_erased(inserter)?;
+        Ok(())
     }
 }

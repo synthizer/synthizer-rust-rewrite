@@ -40,6 +40,14 @@ where
     fn into_signal(self) -> IntoSignalResult<Self> {
         self.inner.into_signal()
     }
+
+    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        inserter: &mut F,
+    ) -> crate::Result<()> {
+        self.inner.trace(inserter)?;
+        Ok(())
+    }
 }
 
 /// Start a chain which reads from a slot.

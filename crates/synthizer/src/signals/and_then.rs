@@ -1,5 +1,6 @@
 use crate::context::*;
 use crate::core_traits::*;
+use crate::error::Result;
 
 /// Takes the signal on the left, and feeds its output to the signal on the right.  The signal on the left will be
 /// evaluated first.
@@ -38,19 +39,6 @@ where
         let left = S1::tick::<_, N>(ctx, input, &mut state.0);
         S2::tick::<_, N>(ctx, left, &mut state.1)
     }
-
-    fn trace_slots<
-        F: FnMut(
-            crate::unique_id::UniqueId,
-            std::sync::Arc<dyn std::any::Any + Send + Sync + 'static>,
-        ),
-    >(
-        state: &Self::State,
-        inserter: &mut F,
-    ) {
-        S1::trace_slots(&state.0, inserter);
-        S2::trace_slots(&state.1, inserter);
-    }
 }
 
 pub struct AndThenConfig<S1, S2> {
@@ -75,6 +63,15 @@ where
             signal: AndThen::new(s1.signal, s2.signal),
             state: (s1.state, s2.state),
         })
+    }
+
+    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
+        &mut self,
+        inserter: &mut F,
+    ) -> Result<()> {
+        self.left.trace(inserter)?;
+        self.right.trace(inserter)?;
+        Ok(())
     }
 }
 
