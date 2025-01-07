@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
+use std::time::Duration;
 
 use atomic_refcell::AtomicRefCell;
 use rpds::{HashTrieMapSync, VectorSync};
@@ -177,6 +178,14 @@ impl Synthesizer {
         };
 
         ret.handle_pending_drops();
+        ret
+    }
+
+    /// Convert a duration to time in samples, rounding up.
+    pub fn duration_to_samples(&self, dur: Duration) -> usize {
+        let s = dur.as_secs_f64();
+        let ret = (s * config::SR as f64).ceil() as usize;
+        debug_assert!(Duration::from_secs_f64(ret as f64 / config::SR as f64) >= dur);
         ret
     }
 }
@@ -368,6 +377,10 @@ impl Batch<'_> {
             .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
         media.playing = true;
         Ok(())
+    }
+
+    pub fn duration_to_samples(&self, dur: Duration) -> usize {
+        self.synthesizer.duration_to_samples(dur)
     }
 }
 

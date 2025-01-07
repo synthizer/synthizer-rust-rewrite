@@ -55,14 +55,15 @@ pub(crate) mod sealed {
         /// first sample of every block.  This is common to do when doing automation, since it's expensive to, e.g.,
         /// redesign filters on every sample.  In this case, `tick` is called some number of times, but the provider
         /// would only be used on the first tick call at the beginning of the block, and otherwise simply dropped.
-        fn tick<'il, 'ol, I, const N: usize>(
+        fn tick<'il, 'ol, 's, I, const N: usize>(
             ctx: &'_ SignalExecutionContext<'_, '_>,
             input: I,
-            state: &mut Self::State,
+            state: &'s mut Self::State,
         ) -> impl ValueProvider<Self::Output<'ol>>
         where
             Self::Input<'il>: 'ol,
             'il: 'ol,
+            's: 'ol,
             I: ValueProvider<Self::Input<'il>> + Sized;
 
         /// Called when a signal is starting a new block.

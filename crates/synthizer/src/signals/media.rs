@@ -149,14 +149,15 @@ unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
         }
     }
 
-    fn tick<'il, 'ol, I, const N: usize>(
+    fn tick<'il, 'ol, 's, I, const N: usize>(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         _input: I,
-        state: &mut Self::State,
+        state: &'s mut Self::State,
     ) -> impl ValueProvider<Self::Output<'ol>>
     where
         Self::Input<'il>: 'ol,
         'il: 'ol,
+        's: 'ol,
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
         let mut intermediate_this_time: [[f64; MAX_CHANS]; N] = [[0.0f64; MAX_CHANS]; N];

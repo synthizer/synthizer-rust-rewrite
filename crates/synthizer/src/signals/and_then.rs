@@ -26,14 +26,15 @@ where
         S2::on_block_start(ctx, &mut state.1);
     }
 
-    fn tick<'il, 'ol, I, const N: usize>(
+    fn tick<'il, 'ol, 's, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: I,
-        state: &mut Self::State,
+        state: &'s mut Self::State,
     ) -> impl ValueProvider<Self::Output<'ol>>
     where
         Self::Input<'il>: 'ol,
         'il: 'ol,
+        's: 'ol,
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
         let left = S1::tick::<_, N>(ctx, input, &mut state.0);

@@ -13,14 +13,15 @@ unsafe impl Signal for NullSignal {
     type Output<'ol> = ();
     type State = ();
 
-    fn tick<'il, 'ol, I, const N: usize>(
+    fn tick<'il, 'ol, 's, I, const N: usize>(
         _ctx: &'_ SignalExecutionContext<'_, '_>,
         _input: I,
-        _state: &mut Self::State,
+        _state: &'s mut Self::State,
     ) -> impl ValueProvider<Self::Output<'ol>>
     where
         Self::Input<'il>: 'ol,
         'il: 'ol,
+        's: 'ol,
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
         FixedValueProvider::<_, N>::new(())

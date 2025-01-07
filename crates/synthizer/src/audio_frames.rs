@@ -131,3 +131,20 @@ macro_rules! repl_tuple {
 seq_macro::seq!(N in 1..32 {
     repl_tuple!(N);
 });
+
+impl<T> AudioFrame<T> for ()
+where
+    T: Copy,
+{
+    fn channel_count(&self) -> usize {
+        0
+    }
+
+    fn get(&self, _: usize) -> &T {
+        panic!("Index out of bounds");
+    }
+
+    fn set(&mut self, _: usize, _: T) {
+        panic!("Index out of bounds");
+    }
+}

@@ -40,14 +40,15 @@ where
         SIncr::on_block_start(ctx, &mut state.freq_state);
     }
 
-    fn tick<'il, 'ol, I, const N: usize>(
+    fn tick<'il, 'ol, 's, I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: I,
-        state: &mut Self::State,
+        state: &'s mut Self::State,
     ) -> impl ValueProvider<Self::Output<'ol>>
     where
         Self::Input<'il>: 'ol,
         'il: 'ol,
+        's: 'ol,
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
         let par = SIncr::tick::<_, N>(ctx, input, &mut state.freq_state);

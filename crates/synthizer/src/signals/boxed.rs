@@ -135,14 +135,15 @@ where
         state.signal.on_block_start_erased(ctx, &mut *state.state);
     }
 
-    fn tick<'il, 'ol, IProvider, const N: usize>(
+    fn tick<'il, 'ol, 's, IProvider, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: IProvider,
-        state: &mut Self::State,
+        state: &'s mut Self::State,
     ) -> impl ValueProvider<Self::Output<'ol>>
     where
         Self::Input<'il>: 'ol,
         'il: 'ol,
+        's: 'ol,
         IProvider: ValueProvider<Self::Input<'il>> + Sized,
     {
         let mut dest: [MaybeUninit<O>; N] = [const { MaybeUninit::uninit() }; N];

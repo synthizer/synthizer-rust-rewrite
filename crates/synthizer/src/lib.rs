@@ -42,4 +42,5 @@ pub use config::SR;
 pub use db::DbExt;
 pub use error::{Error, Result};
 pub use loop_spec::*;
+pub use signals::DelayLineHandle;
 pub use synthesizer::Synthesizer;

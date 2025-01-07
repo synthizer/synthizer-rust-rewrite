@@ -10,14 +10,15 @@ macro_rules! impl_scalar {
             type Output<'ol> = $t;
             type State = $t;
 
-            fn tick<'il, 'ol, I, const N: usize>(
+            fn tick<'il, 'ol, 's, I, const N: usize>(
                 _ctx: &'_ SignalExecutionContext<'_, '_>,
                 _input: I,
-                state: &mut Self::State,
+                state: &'s mut Self::State,
             ) -> impl ValueProvider<$t>
             where
                 Self::Input<'il>: 'ol,
                 'il: 'ol,
+                's: 'ol,
                 I: ValueProvider<()> + Sized,
             {
                 FixedValueProvider::<_, N>::new(*state)
