@@ -61,6 +61,17 @@ impl Chain<ChainConstructors> {
         Chain { inner: initial }
     }
 
+    /// Start a chain which wants an input of type `I`, which will be available as the output.
+    ///
+    /// This is used e.g. to set up recursion, as such chains can be tacked onto the end of other chains, should the output and input types match up.
+    pub fn taking_input<I: 'static>(
+    ) -> Chain<impl IntoSignal<Signal = impl for<'il, 'ol> Signal<Input<'il> = I, Output<'ol> = I>>>
+    {
+        Chain {
+            inner: sigs::StartFromInputSignalConfig::new(),
+        }
+    }
+
     /// Start a chain which reads from a slot.
     pub fn read_slot<T>(
         slot: &sigs::Slot<T>,
@@ -265,6 +276,74 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::JoinSignalConfig::new(self.inner, other.inner),
+        }
+    }
+
+    pub fn map<F, I, O>(
+        self,
+        func: F,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl for<'il, 'ol> Signal<Input<'il> = IntoSignalInput<'il, S>, Output<'ol> = O>,
+        >,
+    >
+    where
+        F: FnMut(I) -> O + Send + Sync + 'static,
+        for<'il, 'ol> S::Signal: Signal<Output<'ol> = I>,
+        I: Clone,
+        O: Send + Sync + 'static,
+    {
+        Chain {
+            inner: sigs::MapSignalConfig::new(self.inner, func),
+        }
+    }
+
+    pub fn map_input<F, I, IResult>(
+        self,
+        func: F,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl for<'il, 'ol> Signal<Input<'il> = I, Output<'ol> = IntoSignalOutput<'ol, S>>,
+        >,
+    >
+    where
+        F: FnMut(I) -> IResult + Send + Sync + 'static,
+        for<'il, 'ol> S::Signal: Signal<Input<'il> = IResult>,
+        I: Clone + Send + 'static,
+        IResult: Send + Sync + 'static,
+    {
+        Chain {
+            inner: sigs::MapInputSignalConfig::new(self.inner, func),
+        }
+    }
+
+    /// Bypass another chain.
+    ///
+    /// This is a little bit like join.  The output is a tuple `(original, other)`.  The difference is that the input of
+    /// `other` is the output of `original`.  Put more simply, the resulting chain outputs the value of this chain
+    /// right now, plus the result of processing this chain's output through the other chain.
+    ///
+    /// As a concrete application, this can be used to get a signal and a delayed copy, if the bypassed chain is into
+    /// and then from a delay line.
+    pub fn bypass<C>(
+        self,
+        other: Chain<C>,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl for<'il, 'ol> Signal<
+                Input<'il> = IntoSignalInput<'il, S>,
+                Output<'ol> = (IntoSignalOutput<'ol, S>, IntoSignalOutput<'ol, C>),
+            >,
+        >,
+    >
+    where
+        C: IntoSignal,
+        for<'ol> IntoSignalOutput<'ol, S>: Clone,
+        for<'ol> IntoSignalOutput<'ol, C>: Clone,
+        for<'il, 'ol> C::Signal: Signal<Input<'il> = IntoSignalOutput<'il, S>>,
+    {
+        Chain {
+            inner: sigs::BypassSignalConfig::new(self.inner, other.inner),
         }
     }
 }

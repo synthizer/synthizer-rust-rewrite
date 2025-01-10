@@ -22,17 +22,28 @@ fn main() -> Result<()> {
     );
 
     let delconst = Chain::new(synth.duration_to_samples(Duration::from_secs(2)));
+    let delchain = Chain::taking_input::<[f64; 2]>();
+
+    let writer = delay_line.write(delchain).boxed();
+    let reader = delay_line.read(delconst).boxed();
+    const V: f64 = 0.1;
+    let delchain = writer
+        .join(reader)
+        .map(|x| x.1)
+        .boxed()
+        .map_input::<_, [f64; 2], _>(|x| (x, ()))
+        .map(|x| [x[0] * V, x[1] * V]);
 
     let _handle = {
         let mut batch = synth.batch();
 
         media = batch.make_media(source)?;
 
-        let m = media.start_chain::<2>(ChannelFormat::Stereo);
-        let writer = delay_line.write(m).boxed();
-        let reader = delay_line.read(delconst).boxed();
-        let full = writer
-            .join(reader)
+        let full = media
+            .start_chain::<2>(ChannelFormat::Stereo)
+            .bypass(delchain)
+            .boxed()
+            .map(|(l, r)| [l[0] + r[0], l[1] + r[1]])
             .to_audio_device(ChannelFormat::Stereo)
             .discard_and_default();
 
