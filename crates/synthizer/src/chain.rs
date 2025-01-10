@@ -50,42 +50,47 @@ where
     }
 }
 
-/// Start a chain which reads from a slot.
-pub fn read_slot<T>(
-    slot: &sigs::Slot<T>,
-    initial_value: T,
-) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = T>>>
-where
-    T: Clone + Send + Sync + 'static,
-{
-    Chain {
-        inner: slot.read_signal(initial_value),
-    }
-}
+#[doc(hidden)]
+pub struct ChainConstructors;
 
-/// Start a chain which reads from a slot, then includes whether or not the slot changed this block.
-///
-/// Returns `(T, bool)`.
-pub fn read_slot_and_changed<T>(
-    slot: &sigs::Slot<T>,
-    initial_value: T,
-) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = (T, bool)>>>
-where
-    T: Send + Sync + Clone + 'static,
-{
-    Chain {
-        inner: slot.read_signal_and_change_flag(initial_value),
+impl Chain<ChainConstructors> {
+    /// Start a chain.
+    ///
+    /// `initial` can be one of a few things.  The two most common are another chain or a constant.
+    pub fn new<S: IntoSignal>(initial: S) -> Chain<S> {
+        Chain { inner: initial }
+    }
+
+    /// Start a chain which reads from a slot.
+    pub fn read_slot<T>(
+        slot: &sigs::Slot<T>,
+        initial_value: T,
+    ) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = T>>>
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        Chain {
+            inner: slot.read_signal(initial_value),
+        }
+    }
+
+    /// Start a chain which reads from a slot, then includes whether or not the slot changed this block.
+    ///
+    /// Returns `(T, bool)`.
+    pub fn read_slot_and_changed<T>(
+        slot: &sigs::Slot<T>,
+        initial_value: T,
+    ) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = (T, bool)>>>
+    where
+        T: Send + Sync + Clone + 'static,
+    {
+        Chain {
+            inner: slot.read_signal_and_change_flag(initial_value),
+        }
     }
 }
 
 impl<S: IntoSignal> Chain<S> {
-    /// Start a chain.
-    ///
-    /// `initial` can be one of a few things.  The two most common are another chain or a constant.
-    pub fn new(initial: S) -> Chain<S> {
-        Chain { inner: initial }
-    }
-
     /// Send this chain to the audio device.
     ///
     /// You must specify the format.  Synthizer cannot autodetect this becasue of the flexibility it allows (e.g. what
