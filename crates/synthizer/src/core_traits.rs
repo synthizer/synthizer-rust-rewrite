@@ -90,6 +90,7 @@ pub(crate) mod sealed {
 
         fn channel_count(&self) -> usize;
         fn get(&self, index: usize) -> &T;
+        fn get_mut(&mut self, index: usize) -> &mut T;
         fn set(&mut self, index: usize, value: T);
 
         fn get_or_default(&self, index: usize) -> T {

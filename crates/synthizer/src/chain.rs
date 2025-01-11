@@ -317,6 +317,33 @@ impl<S: IntoSignal> Chain<S> {
         }
     }
 
+    /// Map a closure over each entry in each audio frame.
+    ///
+    /// The closure gets the channel index and a reference to the value, and should return the new value.
+    ///
+    /// For example, this could be used to multiply each channel by a constant.
+    ///
+    /// `T` is the type of the data in the frame, usually inferred.
+    pub fn map_frame<T, F>(
+        self,
+        closure: F,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl for<'il, 'ol> Signal<
+                Input<'il> = IntoSignalInput<'il, S>,
+                Output<'ol> = IntoSignalOutput<'ol, S>,
+            >,
+        >,
+    >
+    where
+        for<'ol> IntoSignalOutput<'ol, S>: AudioFrame<T>,
+        F: FnMut(usize, &T) -> T + Send + Sync + 'static,
+        T: Copy + Default + 'static,
+    {
+        Chain {
+            inner: sigs::MapFrameSignalConfig::new(self.inner, closure),
+        }
+    }
     /// Bypass another chain.
     ///
     /// This is a little bit like join.  The output is a tuple `(original, other)`.  The difference is that the input of

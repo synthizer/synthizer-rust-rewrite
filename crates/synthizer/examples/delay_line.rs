@@ -32,7 +32,7 @@ fn main() -> Result<()> {
         .map(|x| x.1)
         .boxed()
         .map_input::<_, [f64; 2], _>(|x| (x, ()))
-        .map(|x| [x[0] * V, x[1] * V]);
+        .map_frame(|_, s| V * *s);
 
     let _handle = {
         let mut batch = synth.batch();

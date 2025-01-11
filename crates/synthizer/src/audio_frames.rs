@@ -14,6 +14,11 @@ impl AudioFrame<f64> for f64 {
         self
     }
 
+    fn get_mut(&mut self, index: usize) -> &mut f64 {
+        debug_assert_eq!(index, 0);
+        self
+    }
+
     fn set(&mut self, index: usize, value: f64) {
         debug_assert_eq!(index, 0);
         *self = value;
@@ -36,6 +41,10 @@ where
         &self[index]
     }
 
+    fn get_mut(&mut self, index: usize) -> &mut T {
+        &mut self[index]
+    }
+
     fn set(&mut self, index: usize, value: T) {
         self[index] = value;
     }
@@ -50,7 +59,6 @@ macro_rules! impl_tuple {
                 ($($t::default_frame(),)*)
             }
 
-
             fn channel_count(&self) -> usize {
                 0 $(+ self.$i.channel_count())*
             }
@@ -60,6 +68,18 @@ macro_rules! impl_tuple {
                 $(
                     if index < self.$i.channel_count() {
                         return &self.$i.get(index);
+                    }
+                    #[allow(unused_assignments)] {
+                        index -= self.$i.channel_count();
+                    }
+                )*
+                panic!("Index out of bounds");
+            }
+
+            fn get_mut(&mut self, mut index: usize) -> &mut Elem {
+                $(
+                    if index < self.$i.channel_count() {
+                        return self.$i.get_mut(index);
                     }
                     #[allow(unused_assignments)] {
                         index -= self.$i.channel_count();
@@ -108,6 +128,10 @@ where
     }
 
     fn get(&self, _: usize) -> &T {
+        panic!("Index out of bounds");
+    }
+
+    fn get_mut(&mut self, _index: usize) -> &mut T {
         panic!("Index out of bounds");
     }
 
