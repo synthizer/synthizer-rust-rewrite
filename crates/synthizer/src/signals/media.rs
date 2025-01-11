@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use rpds::HashTrieMapSync as Map;
 
-use crate::audio_frames::*;
 use crate::config;
 use crate::core_traits::*;
 use crate::sample_sources::execution::Executor;
@@ -181,7 +180,7 @@ unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
         state.buffer_consumed += N;
 
         crate::channel_conversion::convert_channels(
-            &DefaultingFrameWrapper::wrap_array(&mut intermediate_this_time),
+            &intermediate_this_time,
             state.descriptor.channel_format,
             &mut outgoing,
             state.wanted_format,

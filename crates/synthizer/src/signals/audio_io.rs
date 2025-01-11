@@ -40,13 +40,13 @@ where
         's: 'ol,
         I: ValueProvider<Self::Input<'il>> + Sized,
     {
-        let mut block = crate::array_utils::collect_iter::<_, N>(
+        let block = crate::array_utils::collect_iter::<_, N>(
             S::tick::<_, N>(ctx, input, &mut state.underlying_state).iter_cloned(),
         );
 
         let mut temp = [[0.0f64; 2]; N];
         crate::channel_conversion::convert_channels(
-            &crate::audio_frames::DefaultingFrameWrapper::wrap_array(&mut block),
+            &block,
             state.format,
             &mut temp,
             crate::ChannelFormat::Stereo,

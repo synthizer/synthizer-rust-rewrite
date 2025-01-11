@@ -79,11 +79,32 @@ pub(crate) mod sealed {
     /// A frame of audio data, which can be stored on the stack.
     pub trait AudioFrame<T>
     where
-        T: Copy,
+        T: Copy + Default,
+        Self: Clone,
     {
+        /// Make a default/empty/whatever frame.
+        ///
+        /// We can't use Default because it's not implemented for all arrays and tuples due to backward compatibility in
+        /// stdlib.
+        fn default_frame() -> Self;
+
         fn channel_count(&self) -> usize;
         fn get(&self, index: usize) -> &T;
         fn set(&mut self, index: usize, value: T);
+
+        fn get_or_default(&self, index: usize) -> T {
+            if index > self.channel_count() {
+                Default::default()
+            } else {
+                *self.get(index)
+            }
+        }
+
+        fn set_or_ignore(&mut self, index: usize, value: T) {
+            if index < self.channel_count() {
+                self.set(index, value);
+            }
+        }
     }
 
     pub struct ReadySignal<SigT, StateT> {

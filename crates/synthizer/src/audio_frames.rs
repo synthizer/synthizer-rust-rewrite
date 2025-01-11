@@ -1,6 +1,10 @@
 use crate::core_traits::*;
 
 impl AudioFrame<f64> for f64 {
+    fn default_frame() -> Self {
+        0.0f64
+    }
+
     fn channel_count(&self) -> usize {
         1
     }
@@ -16,58 +20,14 @@ impl AudioFrame<f64> for f64 {
     }
 }
 
-/// A wrapper over a frame which will return the default value of some `T` for indices outside the given range of the
-/// underlying frame.
-pub(crate) struct DefaultingFrameWrapper<'a, T, Inner>(&'a mut Inner, T);
-
-impl<'a, T, Inner> DefaultingFrameWrapper<'a, T, Inner>
-where
-    T: Default,
-{
-    pub(crate) fn new(inner: &'a mut Inner) -> Self {
-        DefaultingFrameWrapper(inner, Default::default())
-    }
-
-    /// Convert an array of frames to an array of wrappers.
-    pub(crate) fn wrap_array<const N: usize>(array: &'a mut [Inner; N]) -> [Self; N] {
-        crate::array_utils::collect_iter(
-            array
-                .iter_mut()
-                .map(|x: &'a mut Inner| Self(x, Default::default())),
-        )
-    }
-}
-
-impl<T, Inner> AudioFrame<T> for DefaultingFrameWrapper<'_, T, Inner>
-where
-    Inner: AudioFrame<T>,
-    T: Copy,
-{
-    fn channel_count(&self) -> usize {
-        self.0.channel_count()
-    }
-
-    fn get(&self, index: usize) -> &T {
-        if index >= self.0.channel_count() {
-            return &self.1;
-        }
-
-        self.0.get(index)
-    }
-
-    fn set(&mut self, index: usize, value: T) {
-        if index > self.0.channel_count() {
-            return;
-        }
-
-        self.0.set(index, value);
-    }
-}
-
 impl<T, const N: usize> AudioFrame<T> for [T; N]
 where
-    T: Copy,
+    T: Copy + Default,
 {
+    fn default_frame() -> Self {
+        [(); N].map(|_| Default::default())
+    }
+
     fn channel_count(&self) -> usize {
         N
     }
@@ -84,8 +44,13 @@ where
 macro_rules! impl_tuple {
     ($(($t:ident, $i: tt)),*,) => {
         impl<Elem, $($t),*> AudioFrame<Elem> for ($($t,)*) where
-        $($t: AudioFrame<Elem>,)* Elem: Copy,
+        $($t: AudioFrame<Elem>,)* Elem: Copy + Default,
         {
+            fn default_frame() -> Self {
+                ($($t::default_frame(),)*)
+            }
+
+
             fn channel_count(&self) -> usize {
                 0 $(+ self.$i.channel_count())*
             }
@@ -128,14 +93,16 @@ macro_rules! repl_tuple {
     }
 }
 
-seq_macro::seq!(N in 1..32 {
+seq_macro::seq!(N in 1..8 {
     repl_tuple!(N);
 });
 
 impl<T> AudioFrame<T> for ()
 where
-    T: Copy,
+    T: Copy + Default,
 {
+    fn default_frame() -> Self {}
+
     fn channel_count(&self) -> usize {
         0
     }
