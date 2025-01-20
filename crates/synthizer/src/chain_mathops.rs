@@ -29,16 +29,16 @@ macro_rules! impl_mathop {
 
         unsafe impl<I1, I2, O1, O2, S1, S2> Signal for $signal_name<S1, S2>
         where
-            for<'il, 'ol> S1: Signal<Input<'il> = I1, Output<'ol> = O1>,
-            for<'il, 'ol> S2: Signal<Input<'il> = I2, Output<'ol> = O2>,
+            S1: Signal<Input = I1, Output = O1>,
+            S2: Signal<Input = I2, Output = O2>,
             O1: $trait<O2>,
             O1: Clone,
             O2: Clone,
             I1: Clone + 'static,
             I2: From<I1> + Clone + 'static,
         {
-            type Input<'il> = SignalInput<'il, S1>;
-            type Output<'ol> = <SignalOutput<'ol, S1> as $trait<SignalOutput<'ol, S2>>>::Output;
+            type Input = SignalInput<S1>;
+            type Output = <SignalOutput<S1> as $trait<SignalOutput<S2>>>::Output;
 
             type State = (SignalState<S1>, SignalState<S2>);
 
@@ -47,16 +47,13 @@ macro_rules! impl_mathop {
                 S2::on_block_start(&ctx, &mut state.1);
             }
 
-            fn tick<'il, 'ol, 's, I, const N: usize>(
+            fn tick<I, const N: usize>(
                 ctx: &'_ SignalExecutionContext<'_, '_>,
                 input: I,
-                state: &'s mut Self::State,
-            ) -> impl ValueProvider<Self::Output<'ol>>
+                state: &mut Self::State,
+            ) -> impl ValueProvider<Self::Output>
             where
-                Self::Input<'il>: 'ol,
-                'il: 'ol,
-                's: 'ol,
-                I: ValueProvider<Self::Input<'il>> + Sized,
+                I: ValueProvider<Self::Input> + Sized,
             {
                 let gathered_input = crate::array_utils::collect_iter::<_, N>(input.iter_cloned());
                 let left = S1::tick::<_, N>(
@@ -85,8 +82,8 @@ macro_rules! impl_mathop {
         where
             S1: IntoSignal + Send + Sync,
             S2: IntoSignal + Send + Sync,
-            for<'il, 'ol> S1::Signal: Signal<Input<'il> = I1, Output<'ol> = f64>,
-            for<'il, 'ol> S2::Signal: Signal<Input<'il> = I2, Output<'ol> = f64>,
+            S1::Signal: Signal<Input = I1, Output = f64>,
+            S2::Signal: Signal<Input = I2, Output = f64>,
             I1: Clone + 'static,
             I2: From<I1> + Clone + 'static,
         {

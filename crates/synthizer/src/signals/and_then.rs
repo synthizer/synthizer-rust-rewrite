@@ -13,12 +13,12 @@ pub struct AndThen<S1, S2>(S1, S2);
 unsafe impl<S1, S2> Signal for AndThen<S1, S2>
 where
     S1: Signal,
-    for<'a> S2: Signal<Input<'a> = S1::Output<'a>>,
+    S2: Signal<Input = S1::Output>,
     S1: 'static,
     S2: 'static,
 {
-    type Input<'il> = S1::Input<'il>;
-    type Output<'ol> = S2::Output<'ol>;
+    type Input = S1::Input;
+    type Output = S2::Output;
     type State = (S1::State, S2::State);
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
@@ -26,16 +26,13 @@ where
         S2::on_block_start(ctx, &mut state.1);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let left = S1::tick::<_, N>(ctx, input, &mut state.0);
         S2::tick::<_, N>(ctx, left, &mut state.1)
@@ -51,7 +48,7 @@ impl<S1, S2> IntoSignal for AndThenConfig<S1, S2>
 where
     S1: IntoSignal + 'static,
     S2: IntoSignal + 'static,
-    for<'a> S1::Signal: Signal<Output<'a> = <S2::Signal as Signal>::Input<'a>>,
+    S1::Signal: Signal<Output = <S2::Signal as Signal>::Input>,
     S1::Signal: 'static,
     S2::Signal: 'static,
 {

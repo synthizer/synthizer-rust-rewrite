@@ -22,12 +22,12 @@ pub struct BypassSignalState<ParSigState, BypassSigState> {
 unsafe impl<ParSig, BypassSig> Signal for BypassSignal<ParSig, BypassSig>
 where
     ParSig: Signal,
-    BypassSig: for<'il> Signal<Input<'il> = ParSig::Output<'il>>,
-    for<'ol> ParSig::Output<'ol>: Clone,
-    for<'ol> BypassSig::Output<'ol>: Clone,
+    BypassSig: Signal<Input = ParSig::Output>,
+    ParSig::Output: Clone,
+    BypassSig::Output: Clone,
 {
-    type Input<'il> = ParSig::Input<'il>;
-    type Output<'ol> = (ParSig::Output<'ol>, BypassSig::Output<'ol>);
+    type Input = ParSig::Input;
+    type Output = (ParSig::Output, BypassSig::Output);
     type State = BypassSignalState<ParSig::State, BypassSig::State>;
 
     fn on_block_start(
@@ -38,16 +38,13 @@ where
         BypassSig::on_block_start(ctx, &mut state.bypass_sig_state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let orig = crate::array_utils::collect_iter::<_, N>(
             ParSig::tick::<_, N>(ctx, input, &mut state.parent_sig_state).iter_cloned(),

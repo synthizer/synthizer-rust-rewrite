@@ -20,13 +20,13 @@ pub struct MapInputSignalState<ParSig: Signal, F> {
 
 unsafe impl<ParSig, F, I, IResult> Signal for MapInputSignal<ParSig, F, I>
 where
-    ParSig: for<'il> Signal<Input<'il> = IResult>,
+    ParSig: Signal<Input = IResult>,
     F: FnMut(I) -> IResult + Send + Sync + 'static,
     I: Send + Clone + 'static,
     IResult: 'static,
 {
-    type Input<'il> = I;
-    type Output<'ol> = ParSig::Output<'ol>;
+    type Input = I;
+    type Output = ParSig::Output;
     type State = MapInputSignalState<ParSig, F>;
 
     fn on_block_start(
@@ -36,16 +36,13 @@ where
         ParSig::on_block_start(ctx, &mut state.parent_state);
     }
 
-    fn tick<'il, 'ol, 's, I2, const N: usize>(
+    fn tick<I2, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I2,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I2: ValueProvider<Self::Input<'il>> + Sized,
+        I2: ValueProvider<Self::Input> + Sized,
     {
         let mapped_input = input.iter_cloned().map(&mut state.closure);
         ParSig::tick::<_, N>(

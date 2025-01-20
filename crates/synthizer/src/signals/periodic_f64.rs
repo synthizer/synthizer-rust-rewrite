@@ -30,26 +30,23 @@ fn inc1<SIncr: Signal>(state: &mut PeriodicF64State<SIncr>, increment: f64) -> f
 
 unsafe impl<SIncr> Signal for PeriodicF64Signal<SIncr>
 where
-    SIncr: for<'a> Signal<Output<'a> = f64>,
+    SIncr: Signal<Output = f64>,
 {
-    type Output<'ol> = f64;
-    type Input<'il> = SIncr::Input<'il>;
+    type Output = f64;
+    type Input = SIncr::Input;
     type State = PeriodicF64State<SIncr>;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
         SIncr::on_block_start(ctx, &mut state.freq_state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let par = SIncr::tick::<_, N>(ctx, input, &mut state.freq_state);
         let increments = crate::array_utils::collect_iter::<_, N>(par.iter_cloned());
@@ -63,7 +60,7 @@ where
 impl<SIncrCfg> IntoSignal for PeriodicF64Config<SIncrCfg>
 where
     SIncrCfg: IntoSignal,
-    SIncrCfg::Signal: for<'ol> Signal<Output<'ol> = f64>,
+    SIncrCfg::Signal: Signal<Output = f64>,
 {
     type Signal = PeriodicF64Signal<SIncrCfg::Signal>;
 

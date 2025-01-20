@@ -6,19 +6,16 @@ use crate::unique_id::UniqueId;
 macro_rules! impl_scalar {
     ($t: ty) => {
         unsafe impl Signal for $t {
-            type Input<'il> = ();
-            type Output<'ol> = $t;
+            type Input = ();
+            type Output = $t;
             type State = $t;
 
-            fn tick<'il, 'ol, 's, I, const N: usize>(
+            fn tick<I, const N: usize>(
                 _ctx: &'_ SignalExecutionContext<'_, '_>,
                 _input: I,
-                state: &'s mut Self::State,
+                state: &mut Self::State,
             ) -> impl ValueProvider<$t>
             where
-                Self::Input<'il>: 'ol,
-                'il: 'ol,
-                's: 'ol,
                 I: ValueProvider<()> + Sized,
             {
                 FixedValueProvider::<_, N>::new(*state)

@@ -65,11 +65,7 @@ impl Media {
     pub fn start_chain<const MAX_CHANS: usize>(
         &mut self,
         wanted_format: ChannelFormat,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<Input<'il> = (), Output<'ol> = [f64; MAX_CHANS]>,
-        >,
-    > {
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = [f64; MAX_CHANS]>>> {
         Chain {
             inner: MediaSignalConfig::<MAX_CHANS> {
                 wanted_format,
@@ -124,8 +120,8 @@ struct MediaSignalConfig<const MAX_CHANS: usize> {
 struct MediaSignal<const CHANS: usize>(());
 
 unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
-    type Input<'il> = ();
-    type Output<'ol> = [f64; MAX_CHANS];
+    type Input = ();
+    type Output = [f64; MAX_CHANS];
     type State = MediaSignalState;
 
     fn on_block_start(
@@ -148,16 +144,13 @@ unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
         }
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         _input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let mut intermediate_this_time: [[f64; MAX_CHANS]; N] = [[0.0f64; MAX_CHANS]; N];
         let mut outgoing: [[f64; MAX_CHANS]; N] = [[0.0f64; MAX_CHANS]; N];

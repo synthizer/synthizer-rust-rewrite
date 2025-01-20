@@ -16,8 +16,8 @@ unsafe impl<T> Signal for StartFromInputSignal<T>
 where
     T: 'static,
 {
-    type Input<'il> = T;
-    type Output<'ol> = T;
+    type Input = T;
+    type Output = T;
     type State = ();
 
     fn on_block_start(
@@ -27,16 +27,13 @@ where
         // Nothing to do.
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        _state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        _state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         input
     }

@@ -62,7 +62,7 @@ where
     I: 'static + Copy,
     O: 'static + Copy,
     T: IntoSignal + Send + Sync + 'static,
-    for<'il, 'ol> T::Signal: Signal<Input<'il> = I, Output<'ol> = O> + 'static,
+    T::Signal: Signal<Input = I, Output = O> + 'static,
 {
     fn erased_into(&mut self) -> Result<ReadySignal<BoxedSignal<I, O>, BoxedSignalState<I, O>>> {
         let underlying = self
@@ -88,7 +88,7 @@ where
 
 impl<I, O, T> ErasedSignal<I, O> for T
 where
-    for<'il, 'ol> T: Signal<Input<'il> = I, Output<'ol> = O>,
+    T: Signal<Input = I, Output = O>,
     I: 'static + Copy,
     O: 'static + Copy,
 {
@@ -127,24 +127,21 @@ where
     I: Copy + Send + Sync + 'static,
     O: Copy + Send + Sync + 'static,
 {
-    type Input<'il> = I;
-    type Output<'ol> = O;
+    type Input = I;
+    type Output = O;
     type State = BoxedSignalState<I, O>;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
         state.signal.on_block_start_erased(ctx, &mut *state.state);
     }
 
-    fn tick<'il, 'ol, 's, IProvider, const N: usize>(
+    fn tick<IProvider, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: IProvider,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        IProvider: ValueProvider<Self::Input<'il>> + Sized,
+        IProvider: ValueProvider<Self::Input> + Sized,
     {
         let mut dest: [MaybeUninit<O>; N] = [const { MaybeUninit::uninit() }; N];
         let mut i = 0;
@@ -172,7 +169,7 @@ where
     pub(crate) fn new<S>(underlying: S) -> Self
     where
         S: IntoSignal + Send + Sync + 'static,
-        for<'il, 'ol> S::Signal: Signal<Input<'il> = I, Output<'ol> = O>,
+        S::Signal: Signal<Input = I, Output = O>,
     {
         Self {
             signal: Box::new(Some(underlying)),

@@ -23,10 +23,10 @@ where
     ParSig: Signal,
     F: FnMut(SignalOutput<ParSig>) -> O + Send + Sync + 'static,
     O: Send + 'static,
-    for<'ol> SignalOutput<'ol, ParSig>: Clone,
+    SignalOutput<ParSig>: Clone,
 {
-    type Input<'il> = SignalInput<'il, ParSig>;
-    type Output<'ol> = O;
+    type Input = SignalInput<ParSig>;
+    type Output = O;
     type State = MapSignalState<ParSig, F>;
 
     fn on_block_start(
@@ -36,16 +36,13 @@ where
         ParSig::on_block_start(ctx, &mut state.parent_state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let parent = ParSig::tick::<_, N>(ctx, input, &mut state.parent_state);
         let mapped = parent.iter_cloned().map(&mut state.closure);
@@ -59,7 +56,7 @@ where
     F: FnMut(IntoSignalOutput<ParSig>) -> O + Send + Sync + 'static,
     ParSig: IntoSignal,
     O: Send + 'static,
-    for<'ol> IntoSignalOutput<'ol, ParSig>: Clone,
+    IntoSignalOutput<ParSig>: Clone,
 {
     type Signal = MapSignal<ParSig::Signal, F, O>;
 

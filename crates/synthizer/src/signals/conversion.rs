@@ -26,27 +26,24 @@ impl<Sig, DType> ConvertOutputConfig<Sig, DType> {
 unsafe impl<Sig, DType> Signal for ConvertOutput<Sig, DType>
 where
     Sig: Signal,
-    for<'a> Sig::Output<'a>: Into<DType> + Clone,
+    Sig::Output: Into<DType> + Clone,
     DType: 'static,
 {
-    type Output<'ol> = DType;
-    type Input<'il> = Sig::Input<'il>;
+    type Output = DType;
+    type Input = Sig::Input;
     type State = Sig::State;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
         Sig::on_block_start(ctx, state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let mut par = Sig::tick::<_, N>(ctx, input, state);
 
@@ -62,7 +59,7 @@ unsafe impl<Sig: Sync, DType> Sync for ConvertOutput<Sig, DType> {}
 impl<Sig, DType> IntoSignal for ConvertOutputConfig<Sig, DType>
 where
     Sig: IntoSignal,
-    for<'a> IntoSignalOutput<'a, Sig>: Into<DType> + Clone,
+    IntoSignalOutput<Sig>: Into<DType> + Clone,
     DType: 'static,
 {
     type Signal = ConvertOutput<Sig::Signal, DType>;

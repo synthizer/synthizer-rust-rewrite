@@ -55,7 +55,7 @@ pub(crate) use sealed::*;
 
 impl<S> ExecutableMount for S
 where
-    for<'il, 'ol> S: Signal<Input<'il> = (), Output<'ol> = ()>,
+    S: Signal<Input = (), Output = ()>,
 {
     type State = SignalState<S>;
 
@@ -91,7 +91,7 @@ impl<S: ExecutableMount> ErasedMountPoint for MountPoint<S> {
 
 impl<S: IntoSignal> Mountable for Chain<S>
 where
-    for<'il, 'ol> S::Signal: Signal<Input<'il> = (), Output<'ol> = ()>,
+    S::Signal: Signal<Input = (), Output = ()>,
 {
     fn into_mount(
         self,

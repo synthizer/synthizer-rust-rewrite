@@ -63,11 +63,11 @@ unsafe impl<T, S> Sync for DelayLineReadSignal<T, S> {}
 
 unsafe impl<T, S> Signal for DelayLineReadSignal<T, S>
 where
-    S: for<'ol> Signal<Output<'ol> = usize>,
+    S: Signal<Output = usize>,
     T: Clone + Send + 'static,
 {
-    type Input<'il> = S::Input<'il>;
-    type Output<'ol> = T;
+    type Input = S::Input;
+    type Output = T;
     type State = DelayLineSignalState<T, S::State, ()>;
 
     fn on_block_start(
@@ -77,16 +77,13 @@ where
         S::on_block_start(ctx, &mut state.par_sig_state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let vp = S::tick::<_, N>(ctx, input, &mut state.par_sig_state);
         let line = state.line.borrow();
@@ -118,11 +115,11 @@ unsafe impl<T, S, M> Sync for DelayLineWriteSignal<T, S, M> {}
 unsafe impl<T, S, M> Signal for DelayLineWriteSignal<T, S, M>
 where
     T: Send + 'static,
-    S: for<'ol> Signal<Output<'ol> = T>,
+    S: Signal<Output = T>,
     M: FnMut(&mut T, &T) + Send + Sync + 'static,
 {
-    type Input<'il> = S::Input<'il>;
-    type Output<'ol> = ();
+    type Input = S::Input;
+    type Output = ();
     type State = DelayLineSignalState<T, S::State, M>;
 
     fn on_block_start(
@@ -132,16 +129,13 @@ where
         S::on_block_start(ctx, &mut state.par_sig_state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let mut vp = S::tick::<_, N>(ctx, input, &mut state.par_sig_state);
         let line = state.line.borrow();
@@ -170,12 +164,12 @@ unsafe impl<T, S, M> Send for DelayLineRwSignal<T, S, M> {}
 unsafe impl<T, S, M> Sync for DelayLineRwSignal<T, S, M> {}
 unsafe impl<T, S, M> Signal for DelayLineRwSignal<T, S, M>
 where
-    S: for<'ol> Signal<Output<'ol> = (usize, T)>,
+    S: Signal<Output = (usize, T)>,
     T: Clone + Send + 'static,
     M: FnMut(&mut T, &T) + Send + Sync + 'static,
 {
-    type Input<'il> = S::Input<'il>;
-    type Output<'ol> = T;
+    type Input = S::Input;
+    type Output = T;
     type State = DelayLineSignalState<T, S::State, M>;
 
     fn on_block_start(
@@ -185,16 +179,13 @@ where
         S::on_block_start(ctx, &mut state.par_sig_state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let mut vp = S::tick::<_, N>(ctx, input, &mut state.par_sig_state);
         let line = state.line.borrow();
@@ -368,14 +359,10 @@ impl<T> DelayLineHandle<T> {
     pub fn read<S>(
         &self,
         parent: Chain<S>,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<Input<'il> = IntoSignalInput<'il, S>, Output<'ol> = T>,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = T>>>
     where
         S: IntoSignal,
-        S::Signal: for<'ol> Signal<Output<'ol> = usize>,
+        S::Signal: Signal<Output = usize>,
         T: Clone + Send + 'static,
     {
         Chain {
@@ -394,14 +381,10 @@ impl<T> DelayLineHandle<T> {
         &self,
         parent: S,
         merger: M,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<Input<'il> = IntoSignalInput<'il, S>, Output<'ol> = ()>,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
     where
         S: IntoSignal,
-        S::Signal: for<'ol> Signal<Output<'ol> = T>,
+        S::Signal: Signal<Output = T>,
         M: FnMut(&mut T, &T) + Send + Sync + 'static,
         T: Send + 'static,
     {
@@ -417,14 +400,10 @@ impl<T> DelayLineHandle<T> {
     pub fn write<S>(
         &self,
         parent: S,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<Input<'il> = IntoSignalInput<'il, S>, Output<'ol> = ()>,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
     where
         S: IntoSignal,
-        S::Signal: for<'ol> Signal<Output<'ol> = T>,
+        S::Signal: Signal<Output = T>,
         T: Clone + Send + 'static,
     {
         self.write_with_merger(parent, |a, b| *a = b.clone())

@@ -28,13 +28,13 @@ pub struct MapFrameSignalState<ParState, F> {
 
 unsafe impl<T, F, ParSig> Signal for MapFrameSignal<T, F, ParSig>
 where
-    F: for<'ol> FnMut(usize, &T) -> T + Send + Sync + 'static,
+    F: FnMut(usize, &T) -> T + Send + Sync + 'static,
     ParSig: Signal,
-    for<'ol> ParSig::Output<'ol>: AudioFrame<T>,
+    ParSig::Output: AudioFrame<T>,
     T: Copy + Default + 'static,
 {
-    type Input<'il> = ParSig::Input<'il>;
-    type Output<'ol> = ParSig::Output<'ol>;
+    type Input = ParSig::Input;
+    type Output = ParSig::Output;
     type State = MapFrameSignalState<ParSig::State, F>;
 
     fn on_block_start(
@@ -44,16 +44,13 @@ where
         ParSig::on_block_start(ctx, &mut state.par_state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let par_provider = ParSig::tick::<_, N>(ctx, input, &mut state.par_state);
         let res_iter = par_provider.iter_cloned().map(|mut frame| {

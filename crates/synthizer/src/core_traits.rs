@@ -29,8 +29,8 @@ pub(crate) mod sealed {
     ///
     /// See also the documentation on [ValueProvider].
     pub unsafe trait Signal: Sized + Send + Sync + 'static {
-        type Input<'il>: Sized;
-        type Output<'ol>: Sized;
+        type Input: Sized;
+        type Output: Sized;
         type State: Sized + Send + Sync + 'static;
 
         /// Tick this signal.
@@ -55,16 +55,13 @@ pub(crate) mod sealed {
         /// first sample of every block.  This is common to do when doing automation, since it's expensive to, e.g.,
         /// redesign filters on every sample.  In this case, `tick` is called some number of times, but the provider
         /// would only be used on the first tick call at the beginning of the block, and otherwise simply dropped.
-        fn tick<'il, 'ol, 's, I, const N: usize>(
+        fn tick<I, const N: usize>(
             ctx: &'_ SignalExecutionContext<'_, '_>,
             input: I,
-            state: &'s mut Self::State,
-        ) -> impl ValueProvider<Self::Output<'ol>>
+            state: &mut Self::State,
+        ) -> impl ValueProvider<Self::Output>
         where
-            Self::Input<'il>: 'ol,
-            'il: 'ol,
-            's: 'ol,
-            I: ValueProvider<Self::Input<'il>> + Sized;
+            I: ValueProvider<Self::Input> + Sized;
 
         /// Called when a signal is starting a new block.
         ///
@@ -149,9 +146,9 @@ pub(crate) use sealed::*;
 
 // Workarounds for https://github.com/rust-lang/rust/issues/38078: rustc is not always able to determine when a type
 // isn't ambiguous, or at the very least it doesn't tell us what the options are, so we use this instead.
-pub(crate) type IntoSignalOutput<'a, S> = <<S as IntoSignal>::Signal as Signal>::Output<'a>;
-pub(crate) type IntoSignalInput<'a, S> = <<S as IntoSignal>::Signal as Signal>::Input<'a>;
+pub(crate) type IntoSignalOutput<S> = <<S as IntoSignal>::Signal as Signal>::Output;
+pub(crate) type IntoSignalInput<S> = <<S as IntoSignal>::Signal as Signal>::Input;
 pub(crate) type IntoSignalState<S> = <<S as IntoSignal>::Signal as Signal>::State;
-pub(crate) type SignalInput<'a, T> = <T as Signal>::Input<'a>;
-pub(crate) type SignalOutput<'a, T> = <T as Signal>::Output<'a>;
+pub(crate) type SignalInput<T> = <T as Signal>::Input;
+pub(crate) type SignalOutput<T> = <T as Signal>::Output;
 pub(crate) type SignalState<S> = <S as Signal>::State;

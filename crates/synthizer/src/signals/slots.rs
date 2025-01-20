@@ -124,8 +124,8 @@ unsafe impl<T: Send + Sync + 'static + Clone> Signal for SlotSignal<T>
 where
     T: Clone,
 {
-    type Input<'il> = ();
-    type Output<'ol> = SlotSignalOutput<T>;
+    type Input = ();
+    type Output = SlotSignalOutput<T>;
     type State = SlotAudioThreadState<T>;
 
     fn on_block_start(
@@ -150,16 +150,13 @@ where
         state.changed_this_block = true;
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         _input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         ClosureProvider::<_, _, N>::new(|_| SlotSignalOutput {
             value: (*state.value).clone(),
@@ -206,7 +203,7 @@ where
     pub(crate) fn read_signal(
         &self,
         initial_value: T,
-    ) -> impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = T>> {
+    ) -> impl IntoSignal<Signal = impl Signal<Input = (), Output = T>> {
         crate::signals::MapSignalConfig::new(
             SlotSignalConfig {
                 initial_value,
@@ -220,7 +217,7 @@ where
     pub(crate) fn read_signal_and_change_flag(
         &self,
         initial_value: T,
-    ) -> impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = (T, bool)>> {
+    ) -> impl IntoSignal<Signal = impl Signal<Input = (), Output = (T, bool)>> {
         crate::signals::MapSignalConfig::new(
             SlotSignalConfig {
                 initial_value,

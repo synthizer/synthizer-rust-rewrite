@@ -11,13 +11,13 @@ unsafe impl<ParSig1, ParSig2> Signal for JoinSignal<ParSig1, ParSig2>
 where
     ParSig1: Signal,
     ParSig2: Signal,
-    for<'il> SignalInput<'il, ParSig1>: Clone,
-    for<'il> SignalInput<'il, ParSig2>: Clone,
-    for<'ol> SignalOutput<'ol, ParSig1>: Clone,
-    for<'ol> SignalOutput<'ol, ParSig2>: Clone,
+    SignalInput<ParSig1>: Clone,
+    SignalInput<ParSig2>: Clone,
+    SignalOutput<ParSig1>: Clone,
+    SignalOutput<ParSig2>: Clone,
 {
-    type Input<'il> = (SignalInput<'il, ParSig1>, SignalInput<'il, ParSig2>);
-    type Output<'ol> = (SignalOutput<'ol, ParSig1>, SignalOutput<'ol, ParSig2>);
+    type Input = (SignalInput<ParSig1>, SignalInput<ParSig2>);
+    type Output = (SignalOutput<ParSig1>, SignalOutput<ParSig2>);
     type State = JoinSignalState<SignalState<ParSig1>, SignalState<ParSig2>>;
 
     fn on_block_start(
@@ -28,20 +28,17 @@ where
         ParSig2::on_block_start(ctx, &mut state.1);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
-        let mut left_in: [MaybeUninit<SignalInput<'il, ParSig1>>; N] =
+        let mut left_in: [MaybeUninit<SignalInput<ParSig1>>; N] =
             [const { MaybeUninit::uninit() }; N];
-        let mut right_in: [MaybeUninit<SignalInput<'il, ParSig2>>; N] =
+        let mut right_in: [MaybeUninit<SignalInput<ParSig2>>; N] =
             [const { MaybeUninit::uninit() }; N];
 
         let mut last_i = 0;

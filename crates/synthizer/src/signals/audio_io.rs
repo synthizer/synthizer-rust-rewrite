@@ -18,10 +18,10 @@ pub struct AudioOutputState<T> {
 unsafe impl<S> Signal for AudioOutputSignal<S>
 where
     for<'a> S: Signal,
-    for<'ol> SignalOutput<'ol, S>: AudioFrame<f64> + Clone,
+    SignalOutput<S>: AudioFrame<f64> + Clone,
 {
-    type Output<'ol> = ();
-    type Input<'il> = S::Input<'il>;
+    type Output = ();
+    type Input = S::Input;
     type State = AudioOutputState<S::State>;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
@@ -29,16 +29,13 @@ where
         state.offset = 0;
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         input: I,
-        state: &'s mut Self::State,
+        state: &mut Self::State,
     ) -> impl ValueProvider<()>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         let block = crate::array_utils::collect_iter::<_, N>(
             S::tick::<_, N>(ctx, input, &mut state.underlying_state).iter_cloned(),
@@ -64,7 +61,7 @@ where
 impl<S> IntoSignal for AudioOutputSignalConfig<S>
 where
     S: IntoSignal,
-    for<'ol> IntoSignalOutput<'ol, S>: AudioFrame<f64> + Clone,
+    IntoSignalOutput<S>: AudioFrame<f64> + Clone,
 {
     type Signal = AudioOutputSignal<S::Signal>;
 

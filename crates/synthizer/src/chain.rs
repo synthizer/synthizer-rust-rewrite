@@ -65,8 +65,7 @@ impl Chain<ChainConstructors> {
     ///
     /// This is used e.g. to set up recursion, as such chains can be tacked onto the end of other chains, should the output and input types match up.
     pub fn taking_input<I: 'static>(
-    ) -> Chain<impl IntoSignal<Signal = impl for<'il, 'ol> Signal<Input<'il> = I, Output<'ol> = I>>>
-    {
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = I, Output = I>>> {
         Chain {
             inner: sigs::StartFromInputSignalConfig::new(),
         }
@@ -76,7 +75,7 @@ impl Chain<ChainConstructors> {
     pub fn read_slot<T>(
         slot: &sigs::Slot<T>,
         initial_value: T,
-    ) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = T>>>
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
     where
         T: Clone + Send + Sync + 'static,
     {
@@ -91,7 +90,7 @@ impl Chain<ChainConstructors> {
     pub fn read_slot_and_changed<T>(
         slot: &sigs::Slot<T>,
         initial_value: T,
-    ) -> Chain<impl IntoSignal<Signal = impl for<'a> Signal<Input<'a> = (), Output<'a> = (T, bool)>>>
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = (T, bool)>>>
     where
         T: Send + Sync + Clone + 'static,
     {
@@ -104,20 +103,16 @@ impl Chain<ChainConstructors> {
 impl<S: IntoSignal> Chain<S> {
     /// Send this chain to the audio device.
     ///
-    /// You must specify the format.  Synthizer cannot autodetect this becasue of the flexibility it allows (e.g. what
+    /// You must specify the format.  Synthizer cannot autodetect this because of the flexibility it allows (e.g. what
     /// is the format of multiplying two signals with different formats?).  If you specify a format which has more
     /// channels than your signal outputs, the extra channels will be zeroed.  If you specify a format with less, the
     /// extra channels are dropped.
     pub fn to_audio_device(
         self,
         format: ChannelFormat,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'a> Signal<Input<'a> = IntoSignalInput<'a, S>, Output<'a> = ()>,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
     where
-        for<'a> IntoSignalOutput<'a, S>: AudioFrame<f64> + Clone,
+        IntoSignalOutput<S>: AudioFrame<f64> + Clone,
     {
         Chain {
             inner: sigs::AudioOutputSignalConfig::new(self.inner, format),
@@ -138,15 +133,15 @@ impl<S: IntoSignal> Chain<S> {
         self,
     ) -> Chain<
         impl IntoSignal<
-            Signal = impl for<'a> Signal<
-                Input<'a> = NewInputType,
-                Output<'a> = IntoSignalOutput<'a, S>,
+            Signal = impl Signal<
+                Input = NewInputType,
+                Output = IntoSignalOutput<S>,
                 State = IntoSignalState<S>,
             >,
         >,
     >
     where
-        for<'a> IntoSignalInput<'a, S>: Default,
+        IntoSignalInput<S>: Default,
         S::Signal: 'static,
         NewInputType: 'static,
     {
@@ -160,15 +155,11 @@ impl<S: IntoSignal> Chain<S> {
     /// This is mostly used to convert a frequency (HZ) to an increment per sample, e.g. when building sine waves.
     pub fn divide_by_sr(
         self,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'a> Signal<Input<'a> = IntoSignalInput<'a, S>, Output<'a> = f64>,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = f64>>>
     where
-        for<'a> S::Signal: Signal<Output<'a> = f64>,
-        for<'a> IntoSignalInput<'a, S>: Default + Clone,
-        for<'a> IntoSignalOutput<'a, S>: Clone,
+        S::Signal: Signal<Output = f64>,
+        IntoSignalInput<S>: Default + Clone,
+        IntoSignalOutput<S>: Clone,
     {
         let newsig = sigs::MapSignalConfig::new(self.inner, |x| x / (config::SR as f64));
         Chain { inner: newsig }
@@ -179,16 +170,12 @@ impl<S: IntoSignal> Chain<S> {
         self,
     ) -> Chain<
         impl IntoSignal<
-            Signal = impl for<'a> Signal<
-                Input<'a> = IntoSignalInput<'a, S>,
-                Output<'a> = T,
-                State = IntoSignalState<S>,
-            >,
+            Signal = impl Signal<Input = IntoSignalInput<S>, Output = T, State = IntoSignalState<S>>,
         >,
     >
     where
-        for<'a> T: From<IntoSignalOutput<'a, S>>,
-        for<'a> IntoSignalOutput<'a, S>: Clone,
+        T: From<IntoSignalOutput<S>>,
+        IntoSignalOutput<S>: Clone,
         T: 'static,
     {
         Chain {
@@ -204,7 +191,7 @@ impl<S: IntoSignal> Chain<S> {
     pub fn periodic_sum(self, period: f64, initial_value: f64) -> Chain<sigs::PeriodicF64Config<S>>
     where
         S: IntoSignal,
-        for<'a> S::Signal: Signal<Output<'a> = f64>,
+        S::Signal: Signal<Output = f64>,
     {
         Chain {
             inner: sigs::PeriodicF64Config {
@@ -219,7 +206,7 @@ impl<S: IntoSignal> Chain<S> {
     pub fn sin(self) -> Chain<sigs::SinSignalConfig<S>>
     where
         S: IntoSignal,
-        for<'a> S::Signal: Signal<Output<'a> = f64>,
+        S::Signal: Signal<Output = f64>,
     {
         Chain {
             inner: sigs::SinSignalConfig {
@@ -234,7 +221,7 @@ impl<S: IntoSignal> Chain<S> {
     pub fn inline_mul<T>(self, other: Chain<T>) -> <Self as std::ops::Mul<Chain<T>>>::Output
     where
         Self: std::ops::Mul<Chain<T>>,
-        for<'il> IntoSignalInput<'il, S>: Clone,
+        IntoSignalInput<S>: Clone,
         T: IntoSignal,
     {
         self * other
@@ -249,7 +236,7 @@ impl<S: IntoSignal> Chain<S> {
         I: Copy + Send + Sync + 'static,
         O: Copy + Send + Sync + 'static,
         S: Send + Sync + 'static,
-        for<'il, 'ol> S::Signal: Signal<Input<'il> = I, Output<'ol> = O>,
+        S::Signal: Signal<Input = I, Output = O>,
     {
         Chain {
             inner: sigs::BoxedSignalConfig::new(self.inner),
@@ -261,18 +248,18 @@ impl<S: IntoSignal> Chain<S> {
         other: Chain<S2>,
     ) -> Chain<
         impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<
-                Input<'il> = (IntoSignalInput<'il, S>, IntoSignalInput<'il, S2>),
-                Output<'ol> = (IntoSignalOutput<'ol, S>, IntoSignalOutput<'ol, S2>),
+            Signal = impl Signal<
+                Input = (IntoSignalInput<S>, IntoSignalInput<S2>),
+                Output = (IntoSignalOutput<S>, IntoSignalOutput<S2>),
             >,
         >,
     >
     where
         S2: IntoSignal,
-        for<'ol> IntoSignalOutput<'ol, S>: Clone,
-        for<'ol> IntoSignalOutput<'ol, S2>: Clone,
-        for<'il> IntoSignalInput<'il, S>: Clone,
-        for<'il> IntoSignalInput<'il, S2>: Clone,
+        IntoSignalOutput<S>: Clone,
+        IntoSignalOutput<S2>: Clone,
+        IntoSignalInput<S>: Clone,
+        IntoSignalInput<S2>: Clone,
     {
         Chain {
             inner: sigs::JoinSignalConfig::new(self.inner, other.inner),
@@ -282,14 +269,10 @@ impl<S: IntoSignal> Chain<S> {
     pub fn map<F, I, O>(
         self,
         func: F,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<Input<'il> = IntoSignalInput<'il, S>, Output<'ol> = O>,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = O>>>
     where
         F: FnMut(I) -> O + Send + Sync + 'static,
-        for<'il, 'ol> S::Signal: Signal<Output<'ol> = I>,
+        S::Signal: Signal<Output = I>,
         I: Clone,
         O: Send + Sync + 'static,
     {
@@ -301,14 +284,10 @@ impl<S: IntoSignal> Chain<S> {
     pub fn map_input<F, I, IResult>(
         self,
         func: F,
-    ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<Input<'il> = I, Output<'ol> = IntoSignalOutput<'ol, S>>,
-        >,
-    >
+    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = I, Output = IntoSignalOutput<S>>>>
     where
         F: FnMut(I) -> IResult + Send + Sync + 'static,
-        for<'il, 'ol> S::Signal: Signal<Input<'il> = IResult>,
+        S::Signal: Signal<Input = IResult>,
         I: Clone + Send + 'static,
         IResult: Send + Sync + 'static,
     {
@@ -328,15 +307,10 @@ impl<S: IntoSignal> Chain<S> {
         self,
         closure: F,
     ) -> Chain<
-        impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<
-                Input<'il> = IntoSignalInput<'il, S>,
-                Output<'ol> = IntoSignalOutput<'ol, S>,
-            >,
-        >,
+        impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = IntoSignalOutput<S>>>,
     >
     where
-        for<'ol> IntoSignalOutput<'ol, S>: AudioFrame<T>,
+        IntoSignalOutput<S>: AudioFrame<T>,
         F: FnMut(usize, &T) -> T + Send + Sync + 'static,
         T: Copy + Default + 'static,
     {
@@ -357,17 +331,17 @@ impl<S: IntoSignal> Chain<S> {
         other: Chain<C>,
     ) -> Chain<
         impl IntoSignal<
-            Signal = impl for<'il, 'ol> Signal<
-                Input<'il> = IntoSignalInput<'il, S>,
-                Output<'ol> = (IntoSignalOutput<'ol, S>, IntoSignalOutput<'ol, C>),
+            Signal = impl Signal<
+                Input = IntoSignalInput<S>,
+                Output = (IntoSignalOutput<S>, IntoSignalOutput<C>),
             >,
         >,
     >
     where
         C: IntoSignal,
-        for<'ol> IntoSignalOutput<'ol, S>: Clone,
-        for<'ol> IntoSignalOutput<'ol, C>: Clone,
-        for<'il, 'ol> C::Signal: Signal<Input<'il> = IntoSignalOutput<'il, S>>,
+        IntoSignalOutput<S>: Clone,
+        IntoSignalOutput<C>: Clone,
+        C::Signal: Signal<Input = IntoSignalOutput<S>>,
     {
         Chain {
             inner: sigs::BypassSignalConfig::new(self.inner, other.inner),

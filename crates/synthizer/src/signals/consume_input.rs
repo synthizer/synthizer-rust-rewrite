@@ -26,27 +26,24 @@ unsafe impl<S, I> Sync for ConsumeInputSignal<S, I> where S: Sync {}
 unsafe impl<S, OldInputTy> Signal for ConsumeInputSignal<S, OldInputTy>
 where
     S: Signal + 'static,
-    for<'a> S::Input<'a>: Default,
+    S::Input: Default,
     OldInputTy: 'static,
 {
-    type Input<'il> = OldInputTy;
-    type Output<'ol> = S::Output<'ol>;
+    type Input = OldInputTy;
+    type Output = S::Output;
     type State = S::State;
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
         S::on_block_start(ctx, state);
     }
 
-    fn tick<'il, 'ol, 's, I, const N: usize>(
+    fn tick<I, const N: usize>(
         ctx: &'_ SignalExecutionContext<'_, '_>,
         _input: I,
-        state: &'s mut Self::State,
-    ) -> impl ValueProvider<Self::Output<'ol>>
+        state: &mut Self::State,
+    ) -> impl ValueProvider<Self::Output>
     where
-        Self::Input<'il>: 'ol,
-        'il: 'ol,
-        's: 'ol,
-        I: ValueProvider<Self::Input<'il>> + Sized,
+        I: ValueProvider<Self::Input> + Sized,
     {
         S::tick::<_, N>(
             ctx,
@@ -59,7 +56,7 @@ where
 impl<S, DiscardingInputType> IntoSignal for ConsumeInputSignalConfig<S, DiscardingInputType>
 where
     S: IntoSignal,
-    for<'a> IntoSignalInput<'a, S>: Default,
+    IntoSignalInput<S>: Default,
     S::Signal: 'static,
     DiscardingInputType: 'static,
 {
