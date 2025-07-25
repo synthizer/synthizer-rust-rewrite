@@ -10,15 +10,12 @@ macro_rules! impl_scalar {
             type Output = $t;
             type State = $t;
 
-            fn tick<I, const N: usize>(
+            fn tick_frame(
                 _ctx: &'_ SignalExecutionContext<'_, '_>,
-                _input: I,
+                _input: Self::Input,
                 state: &mut Self::State,
-            ) -> impl ValueProvider<$t>
-            where
-                I: ValueProvider<()> + Sized,
-            {
-                FixedValueProvider::<_, N>::new(*state)
+            ) -> Self::Output {
+                *state
             }
 
             fn on_block_start(_ctx: &SignalExecutionContext<'_, '_>, _state: &mut Self::State) {}

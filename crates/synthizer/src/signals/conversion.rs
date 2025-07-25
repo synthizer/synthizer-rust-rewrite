@@ -26,7 +26,7 @@ impl<Sig, DType> ConvertOutputConfig<Sig, DType> {
 unsafe impl<Sig, DType> Signal for ConvertOutput<Sig, DType>
 where
     Sig: Signal,
-    Sig::Output: Into<DType> + Clone,
+    Sig::Output: Into<DType>,
     DType: 'static,
 {
     type Output = DType;
@@ -37,17 +37,13 @@ where
         Sig::on_block_start(ctx, state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let mut par = Sig::tick::<_, N>(ctx, input, state);
-
-        ClosureProvider::<_, _, N>::new(move |index| par.get_cloned(index).into())
+    ) -> Self::Output {
+        let output = Sig::tick_frame(ctx, input, state);
+        output.into()
     }
 }
 
@@ -59,7 +55,7 @@ unsafe impl<Sig: Sync, DType> Sync for ConvertOutput<Sig, DType> {}
 impl<Sig, DType> IntoSignal for ConvertOutputConfig<Sig, DType>
 where
     Sig: IntoSignal,
-    IntoSignalOutput<Sig>: Into<DType> + Clone,
+    IntoSignalOutput<Sig>: Into<DType>,
     DType: 'static,
 {
     type Signal = ConvertOutput<Sig::Signal, DType>;

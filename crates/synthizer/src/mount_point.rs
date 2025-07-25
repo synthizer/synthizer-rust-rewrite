@@ -70,11 +70,11 @@ where
         let ctx = SignalExecutionContext { fixed: shared_ctx };
 
         S::on_block_start(&ctx, &mut *sig_state);
-        S::tick::<_, { config::BLOCK_SIZE }>(
-            &ctx,
-            ArrayProvider::new([(); config::BLOCK_SIZE]),
-            &mut *sig_state,
-        );
+
+        // Process the block frame by frame
+        for _ in 0..config::BLOCK_SIZE {
+            S::tick_frame(&ctx, (), &mut *sig_state);
+        }
     }
 }
 

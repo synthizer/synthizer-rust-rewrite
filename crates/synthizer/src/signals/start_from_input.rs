@@ -27,14 +27,11 @@ where
         // Nothing to do.
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         _state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
+    ) -> Self::Output {
         input
     }
 }

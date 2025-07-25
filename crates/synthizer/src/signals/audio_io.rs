@@ -18,7 +18,7 @@ pub struct AudioOutputState<T> {
 unsafe impl<S> Signal for AudioOutputSignal<S>
 where
     for<'a> S: Signal,
-    SignalOutput<S>: AudioFrame<f64> + Clone,
+    SignalOutput<S>: AudioFrame<f64>,
 {
     type Output = ();
     type Input = S::Input;
@@ -29,32 +29,28 @@ where
         state.offset = 0;
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<()>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let block = crate::array_utils::collect_iter::<_, N>(
-            S::tick::<_, N>(ctx, input, &mut state.underlying_state).iter_cloned(),
-        );
+    ) -> Self::Output {
+        let frame = S::tick_frame(ctx, input, &mut state.underlying_state);
 
-        let mut temp = [[0.0f64; 2]; N];
+        // Convert single frame using the convert_channels function
+        let input_array = [frame];
+        let mut output_array = [[0.0f64; 2]];
         crate::channel_conversion::convert_channels(
-            &block,
+            &input_array,
             state.format,
-            &mut temp,
+            &mut output_array,
             crate::ChannelFormat::Stereo,
         );
+
         {
             let mut dest = ctx.fixed.audio_destinationh.borrow_mut();
-            dest[state.offset..(state.offset + N)].copy_from_slice(&temp);
-            state.offset += N;
+            dest[state.offset] = output_array[0];
+            state.offset += 1;
         }
-
-        FixedValueProvider::<_, N>::new(())
     }
 }
 

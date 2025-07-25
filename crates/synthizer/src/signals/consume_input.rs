@@ -37,19 +37,12 @@ where
         S::on_block_start(ctx, state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        _input: I,
+        _input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        S::tick::<_, N>(
-            ctx,
-            ClosureProvider::<_, _, N>::new(|_| Default::default()),
-            state,
-        )
+    ) -> Self::Output {
+        S::tick_frame(ctx, Default::default(), state)
     }
 }
 

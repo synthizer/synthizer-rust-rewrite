@@ -22,7 +22,7 @@ unsafe impl<ParSig, F, I, IResult> Signal for MapInputSignal<ParSig, F, I>
 where
     ParSig: Signal<Input = IResult>,
     F: FnMut(I) -> IResult + Send + Sync + 'static,
-    I: Send + Clone + 'static,
+    I: Send + 'static,
     IResult: 'static,
 {
     type Input = I;
@@ -36,20 +36,13 @@ where
         ParSig::on_block_start(ctx, &mut state.parent_state);
     }
 
-    fn tick<I2, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I2,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I2: ValueProvider<Self::Input> + Sized,
-    {
-        let mapped_input = input.iter_cloned().map(&mut state.closure);
-        ParSig::tick::<_, N>(
-            ctx,
-            ArrayProvider::<_, N>::new(crate::array_utils::collect_iter::<_, N>(mapped_input)),
-            &mut state.parent_state,
-        )
+    ) -> Self::Output {
+        let mapped_input = (state.closure)(input);
+        ParSig::tick_frame(ctx, mapped_input, &mut state.parent_state)
     }
 }
 

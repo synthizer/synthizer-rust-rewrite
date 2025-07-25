@@ -32,10 +32,8 @@ macro_rules! impl_mathop {
             S1: Signal<Input = I1, Output = O1>,
             S2: Signal<Input = I2, Output = O2>,
             O1: $trait<O2>,
-            O1: Clone,
-            O2: Clone,
             I1: Clone + 'static,
-            I2: From<I1> + Clone + 'static,
+            I2: From<I1> + 'static,
         {
             type Input = SignalInput<S1>;
             type Output = <SignalOutput<S1> as $trait<SignalOutput<S2>>>::Output;
@@ -47,34 +45,15 @@ macro_rules! impl_mathop {
                 S2::on_block_start(&ctx, &mut state.1);
             }
 
-            fn tick<I, const N: usize>(
+            fn tick_frame(
                 ctx: &'_ SignalExecutionContext<'_, '_>,
-                input: I,
+                input: Self::Input,
                 state: &mut Self::State,
-            ) -> impl ValueProvider<Self::Output>
-            where
-                I: ValueProvider<Self::Input> + Sized,
-            {
-                let gathered_input = crate::array_utils::collect_iter::<_, N>(input.iter_cloned());
-                let left = S1::tick::<_, N>(
-                    ctx,
-                    ArrayProvider::new(gathered_input.clone()),
-                    &mut state.0,
-                );
-                let right = S2::tick::<_, N>(
-                    ctx,
-                    ArrayProvider::new(gathered_input.map(Into::into)),
-                    &mut state.1,
-                );
-
-                // For now we will collect to an array. We may be able to do lazy computation later, but the bounds on
-                // this are a mess.
-                let left_iter = left.iter_cloned();
-                let right_iter = right.iter_cloned();
-                let arr = crate::array_utils::collect_iter::<_, N>(
-                    left_iter.zip(right_iter).map(|(l, r)| l.$method(r)),
-                );
-                ArrayProvider::new(arr)
+            ) -> Self::Output {
+                let input_for_right: I2 = input.clone().into();
+                let left_output = S1::tick_frame(ctx, input, &mut state.0);
+                let right_output = S2::tick_frame(ctx, input_for_right, &mut state.1);
+                left_output.$method(right_output)
             }
         }
 

@@ -20,16 +20,13 @@ where
         S::on_block_start(ctx, state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<f64>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let mut par_provider = S::tick::<_, N>(ctx, input, state);
-        ClosureProvider::<_, _, N>::new(move |index| par_provider.get(index).sin())
+    ) -> Self::Output {
+        let parent_output = S::tick_frame(ctx, input, state);
+        parent_output.sin()
     }
 }
 

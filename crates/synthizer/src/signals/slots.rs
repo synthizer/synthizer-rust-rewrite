@@ -150,18 +150,15 @@ where
         state.changed_this_block = true;
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        _input: I,
+        _input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        ClosureProvider::<_, _, N>::new(|_| SlotSignalOutput {
+    ) -> Self::Output {
+        SlotSignalOutput {
             value: (*state.value).clone(),
             changed_this_block: state.changed_this_block,
-        })
+        }
     }
 }
 

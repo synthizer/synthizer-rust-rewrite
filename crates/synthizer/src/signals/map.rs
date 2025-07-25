@@ -23,7 +23,6 @@ where
     ParSig: Signal,
     F: FnMut(SignalOutput<ParSig>) -> O + Send + Sync + 'static,
     O: Send + 'static,
-    SignalOutput<ParSig>: Clone,
 {
     type Input = SignalInput<ParSig>;
     type Output = O;
@@ -36,18 +35,13 @@ where
         ParSig::on_block_start(ctx, &mut state.parent_state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let parent = ParSig::tick::<_, N>(ctx, input, &mut state.parent_state);
-        let mapped = parent.iter_cloned().map(&mut state.closure);
-
-        ArrayProvider::<_, N>::new(crate::array_utils::collect_iter(mapped))
+    ) -> Self::Output {
+        let parent_output = ParSig::tick_frame(ctx, input, &mut state.parent_state);
+        (state.closure)(parent_output)
     }
 }
 
@@ -56,7 +50,6 @@ where
     F: FnMut(IntoSignalOutput<ParSig>) -> O + Send + Sync + 'static,
     ParSig: IntoSignal,
     O: Send + 'static,
-    IntoSignalOutput<ParSig>: Clone,
 {
     type Signal = MapSignal<ParSig::Signal, F, O>;
 

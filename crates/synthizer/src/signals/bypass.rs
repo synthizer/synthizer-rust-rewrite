@@ -24,7 +24,6 @@ where
     ParSig: Signal,
     BypassSig: Signal<Input = ParSig::Output>,
     ParSig::Output: Clone,
-    BypassSig::Output: Clone,
 {
     type Input = ParSig::Input;
     type Output = (ParSig::Output, BypassSig::Output);
@@ -38,24 +37,15 @@ where
         BypassSig::on_block_start(ctx, &mut state.bypass_sig_state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let orig = crate::array_utils::collect_iter::<_, N>(
-            ParSig::tick::<_, N>(ctx, input, &mut state.parent_sig_state).iter_cloned(),
-        );
-        let bypassed = BypassSig::tick::<_, N>(
-            ctx,
-            ArrayProvider::new(orig.clone()),
-            &mut state.bypass_sig_state,
-        );
-        let res = orig.into_iter().zip(bypassed.iter_cloned());
-        ArrayProvider::<_, N>::new(crate::array_utils::collect_iter::<_, N>(res))
+    ) -> Self::Output {
+        let parent_output = ParSig::tick_frame(ctx, input, &mut state.parent_sig_state);
+        let bypass_output =
+            BypassSig::tick_frame(ctx, parent_output.clone(), &mut state.bypass_sig_state);
+        (parent_output, bypass_output)
     }
 }
 

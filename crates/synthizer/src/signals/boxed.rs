@@ -1,10 +1,10 @@
 use std::any::Any;
 use std::marker::PhantomData as PD;
-use std::mem::MaybeUninit;
 
 use crate::context::*;
 use crate::core_traits::*;
 use crate::error::Result;
+use crate::signals::FrameBatcher;
 use crate::unique_id::UniqueId;
 
 /// A signal behind a box, whose input is `I` and output is `O`.
@@ -26,6 +26,7 @@ pub struct BoxedSignal<I, O> {
 pub struct BoxedSignalState<I, O> {
     signal: Box<dyn ErasedSignal<I, O>>,
     state: Box<dyn Any + Send + Sync + 'static>,
+    batcher: FrameBatcher<I, O>,
 }
 
 trait ErasedSignal<I, O>
@@ -36,12 +37,13 @@ where
 {
     fn on_block_start_erased(&self, ctx: &SignalExecutionContext<'_, '_>, state: &mut dyn Any);
 
-    fn tick_erased(
+    /// Process multiple frames at once for efficiency
+    fn tick_frames_erased(
         &self,
         ctx: &SignalExecutionContext<'_, '_>,
-        input: &[I],
+        inputs: &[I],
+        outputs: &mut [O],
         state: &mut dyn Any,
-        output: &mut dyn FnMut(O),
     );
 }
 
@@ -60,7 +62,7 @@ where
 impl<T, I, O> ErasedIntoSignal<I, O> for Option<T>
 where
     I: 'static + Copy,
-    O: 'static + Copy,
+    O: 'static + Copy + Default,
     T: IntoSignal + Send + Sync + 'static,
     T::Signal: Signal<Input = I, Output = O> + 'static,
 {
@@ -74,6 +76,7 @@ where
             state: BoxedSignalState {
                 signal: Box::new(underlying.signal),
                 state: Box::new(underlying.state),
+                batcher: FrameBatcher::new(),
             },
         })
     }
@@ -97,35 +100,26 @@ where
         T::on_block_start(ctx, state);
     }
 
-    fn tick_erased(
+    fn tick_frames_erased(
         &self,
         ctx: &SignalExecutionContext<'_, '_>,
-        mut input: &[I],
+        inputs: &[I],
+        outputs: &mut [O],
         state: &mut dyn Any,
-        mut output: &mut dyn FnMut(O),
     ) {
         let state = state.downcast_mut::<T::State>().unwrap();
 
-        macro_rules! do_one {
-            ($num: expr) => {
-                while let Some(this_input) = input.first_chunk::<$num>().copied() {
-                    let prov = T::tick::<_, $num>(ctx, ArrayProvider::new(this_input), state);
-                    prov.iter_cloned().for_each(&mut output);
-                    input = &input[$num..];
-                }
-            };
+        // Process each frame
+        for (input, output) in inputs.iter().zip(outputs.iter_mut()) {
+            *output = T::tick_frame(ctx, *input, state);
         }
-
-        do_one!(8);
-        do_one!(4);
-        do_one!(1);
     }
 }
 
 unsafe impl<I, O> Signal for BoxedSignal<I, O>
 where
     I: Copy + Send + Sync + 'static,
-    O: Copy + Send + Sync + 'static,
+    O: Copy + Send + Sync + 'static + Default,
 {
     type Input = I;
     type Output = O;
@@ -133,38 +127,26 @@ where
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
         state.signal.on_block_start_erased(ctx, &mut *state.state);
+        state.batcher.reset();
     }
 
-    fn tick<IProvider, const N: usize>(
+    fn tick_frame(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: IProvider,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        IProvider: ValueProvider<Self::Input> + Sized,
-    {
-        let mut dest: [MaybeUninit<O>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut i = 0;
-
-        let in_arr = crate::array_utils::collect_iter::<_, N>(input.iter_cloned());
-
-        state
-            .signal
-            .tick_erased(ctx, &in_arr, &mut *state.state, &mut |o| {
-                dest[i].write(o);
-                i += 1;
-            });
-
-        assert_eq!(i, N);
-
-        unsafe { ArrayProvider::<_, N>::new(dest.map(|x| x.assume_init())) }
+    ) -> Self::Output {
+        state.batcher.process_frame(input, |inputs, outputs| {
+            state
+                .signal
+                .tick_frames_erased(ctx, inputs, outputs, &mut *state.state);
+        })
     }
 }
 
 impl<I, O> BoxedSignalConfig<I, O>
 where
     I: Copy + 'static,
-    O: Copy + 'static,
+    O: Copy + 'static + Default,
 {
     pub(crate) fn new<S>(underlying: S) -> Self
     where
@@ -180,7 +162,7 @@ where
 impl<I, O> IntoSignal for BoxedSignalConfig<I, O>
 where
     I: Copy + Send + Sync + 'static,
-    O: Copy + Send + Sync + 'static,
+    O: Copy + Send + Sync + 'static + Default,
 {
     type Signal = BoxedSignal<I, O>;
 

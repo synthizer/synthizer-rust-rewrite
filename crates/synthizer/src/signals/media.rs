@@ -144,42 +144,34 @@ unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
         }
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         _ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        _input: I,
+        _input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let mut intermediate_this_time: [[f64; MAX_CHANS]; N] = [[0.0f64; MAX_CHANS]; N];
-        let mut outgoing: [[f64; MAX_CHANS]; N] = [[0.0f64; MAX_CHANS]; N];
+    ) -> Self::Output {
+        let mut intermediate_frame = [0.0f64; MAX_CHANS];
+        let output_frame = [0.0f64; MAX_CHANS];
 
         let chan_count = state.descriptor.channel_format.get_channel_count().get();
-        intermediate_this_time
-            .iter_mut()
-            .enumerate()
-            .for_each(|(i, dest)| {
-                let frame_off = (state.buffer_consumed + i) * chan_count;
+        let frame_off = state.buffer_consumed * chan_count;
 
-                dest.iter_mut()
-                    .enumerate()
-                    .take(chan_count)
-                    .for_each(|(c, s)| {
-                        *s = state.buffer[frame_off + c] as f64;
-                    });
-            });
+        // Copy from f32 buffer to f64 frame
+        for c in 0..chan_count.min(MAX_CHANS) {
+            intermediate_frame[c] = state.buffer[frame_off + c] as f64;
+        }
 
-        state.buffer_consumed += N;
+        state.buffer_consumed += 1;
 
+        // Convert channels for single frame
+        let mut output_array = [output_frame];
         crate::channel_conversion::convert_channels(
-            &intermediate_this_time,
+            &[intermediate_frame],
             state.descriptor.channel_format,
-            &mut outgoing,
+            &mut output_array,
             state.wanted_format,
         );
 
-        ArrayProvider::<_, N>::new(outgoing)
+        output_array[0]
     }
 }
 

@@ -1,5 +1,3 @@
-use std::mem::MaybeUninit;
-
 use crate::core_traits::*;
 use crate::error::Result;
 
@@ -11,10 +9,6 @@ unsafe impl<ParSig1, ParSig2> Signal for JoinSignal<ParSig1, ParSig2>
 where
     ParSig1: Signal,
     ParSig2: Signal,
-    SignalInput<ParSig1>: Clone,
-    SignalInput<ParSig2>: Clone,
-    SignalOutput<ParSig1>: Clone,
-    SignalOutput<ParSig2>: Clone,
 {
     type Input = (SignalInput<ParSig1>, SignalInput<ParSig2>);
     type Output = (SignalOutput<ParSig1>, SignalOutput<ParSig2>);
@@ -28,43 +22,15 @@ where
         ParSig2::on_block_start(ctx, &mut state.1);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let mut left_in: [MaybeUninit<SignalInput<ParSig1>>; N] =
-            [const { MaybeUninit::uninit() }; N];
-        let mut right_in: [MaybeUninit<SignalInput<ParSig2>>; N] =
-            [const { MaybeUninit::uninit() }; N];
-
-        let mut last_i = 0;
-        for (i, (l, r)) in input.iter_cloned().enumerate() {
-            left_in[i].write(l);
-            right_in[i].write(r);
-            last_i = i;
-        }
-
-        assert_eq!(last_i, N - 1);
-
-        let par_left_out = ParSig1::tick::<_, N>(
-            ctx,
-            ArrayProvider::new(left_in.map(|x| unsafe { x.assume_init() })),
-            &mut state.0,
-        );
-        let par_right_out = ParSig2::tick::<_, N>(
-            ctx,
-            ArrayProvider::new(right_in.map(|x| unsafe { x.assume_init() })),
-            &mut state.1,
-        );
-
-        let outgoing = crate::array_utils::collect_iter::<_, N>(
-            par_left_out.iter_cloned().zip(par_right_out.iter_cloned()),
-        );
-        ArrayProvider::new(outgoing)
+    ) -> Self::Output {
+        let (left_input, right_input) = input;
+        let left_output = ParSig1::tick_frame(ctx, left_input, &mut state.0);
+        let right_output = ParSig2::tick_frame(ctx, right_input, &mut state.1);
+        (left_output, right_output)
     }
 }
 

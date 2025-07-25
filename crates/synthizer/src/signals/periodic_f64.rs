@@ -40,20 +40,13 @@ where
         SIncr::on_block_start(ctx, &mut state.freq_state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let par = SIncr::tick::<_, N>(ctx, input, &mut state.freq_state);
-        let increments = crate::array_utils::collect_iter::<_, N>(par.iter_cloned());
-
-        let results = increments.map(|x| inc1(state, x));
-
-        ArrayProvider::<_, N>::new(results)
+    ) -> Self::Output {
+        let increment = SIncr::tick_frame(ctx, input, &mut state.freq_state);
+        inc1(state, increment)
     }
 }
 

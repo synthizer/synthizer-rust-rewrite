@@ -44,23 +44,16 @@ where
         ParSig::on_block_start(ctx, &mut state.par_state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let par_provider = ParSig::tick::<_, N>(ctx, input, &mut state.par_state);
-        let res_iter = par_provider.iter_cloned().map(|mut frame| {
-            for i in 0..frame.channel_count() {
-                frame.set(i, (state.closure)(i, frame.get(i)));
-            }
-            frame
-        });
-
-        ArrayProvider::<_, N>::new(crate::array_utils::collect_iter::<_, N>(res_iter))
+    ) -> Self::Output {
+        let mut frame = ParSig::tick_frame(ctx, input, &mut state.par_state);
+        for i in 0..frame.channel_count() {
+            frame.set(i, (state.closure)(i, frame.get(i)));
+        }
+        frame
     }
 }
 

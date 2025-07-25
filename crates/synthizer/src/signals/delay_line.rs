@@ -77,30 +77,22 @@ where
         S::on_block_start(ctx, &mut state.par_sig_state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let vp = S::tick::<_, N>(ctx, input, &mut state.par_sig_state);
+    ) -> Self::Output {
+        let delay = S::tick_frame(ctx, input, &mut state.par_sig_state);
         let line = state.line.borrow();
         let line = line.borrow();
-        let mut off = state.offset;
-        let vals = crate::array_utils::collect_iter::<_, N>(vp.iter_cloned().map(|x| {
-            let x = x % line.data.len();
-            // `x < len`, so `len - x > 0`.  By adding an extra length we avoid underflow.
-            let index = (line.data.len() + off - x) % line.data.len();
+        let delay_samples = delay % line.data.len();
+        // `delay_samples < len`, so `len - delay_samples > 0`.  By adding an extra length we avoid underflow.
+        let index = (line.data.len() + state.offset - delay_samples) % line.data.len();
 
-            let val = line.data[index].clone();
-            off += 1;
-            val
-        }));
-        state.offset = off % line.data.len();
+        let val = line.data[index].clone();
+        state.offset = (state.offset + 1) % line.data.len();
 
-        ArrayProvider::new(vals)
+        val
     }
 }
 
@@ -129,27 +121,17 @@ where
         S::on_block_start(ctx, &mut state.par_sig_state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let mut vp = S::tick::<_, N>(ctx, input, &mut state.par_sig_state);
+    ) -> Self::Output {
+        let value = S::tick_frame(ctx, input, &mut state.par_sig_state);
         let line = state.line.borrow();
         let mut line = line.borrow_mut();
-        let mut off = state.offset;
-        for i in 0..N {
-            (state.merger)(&mut line.data[off], vp.get(i));
-            off += 1;
-            off %= line.data.len();
-        }
 
-        state.offset = off;
-
-        ArrayProvider::new([(); N])
+        (state.merger)(&mut line.data[state.offset], &value);
+        state.offset = (state.offset + 1) % line.data.len();
     }
 }
 
@@ -179,34 +161,24 @@ where
         S::on_block_start(ctx, &mut state.par_sig_state);
     }
 
-    fn tick<I, const N: usize>(
+    fn tick_frame(
         ctx: &'_ crate::context::SignalExecutionContext<'_, '_>,
-        input: I,
+        input: Self::Input,
         state: &mut Self::State,
-    ) -> impl ValueProvider<Self::Output>
-    where
-        I: ValueProvider<Self::Input> + Sized,
-    {
-        let mut vp = S::tick::<_, N>(ctx, input, &mut state.par_sig_state);
+    ) -> Self::Output {
+        let (delay, value) = S::tick_frame(ctx, input, &mut state.par_sig_state);
         let line = state.line.borrow();
         let mut line = line.borrow_mut();
 
-        let mut off = state.offset;
+        let write_ind = state.offset % line.data.len();
+        let delay_samples = delay % line.data.len();
+        let read_ind = (line.data.len() + state.offset - delay_samples) % line.data.len();
+        let read_val = line.data[read_ind].clone();
 
-        let iter = (0..N).map(|i| {
-            let got = vp.get(i);
-            let write_ind = off % line.data.len();
-            let delay = got.0 % line.data.len();
-            let read_ind = (line.data.len() + off - delay) % line.data.len();
-            let rval = line.data[read_ind].clone();
-            (state.merger)(&mut line.data[write_ind], &got.1);
-            off += 1;
-            rval
-        });
-        let prov = ArrayProvider::new(crate::array_utils::collect_iter::<_, N>(iter));
-        state.offset = off % line.data.len();
+        (state.merger)(&mut line.data[write_ind], &value);
+        state.offset = (state.offset + 1) % line.data.len();
 
-        prov
+        read_val
     }
 }
 
