@@ -61,7 +61,7 @@ where
 
 impl<T, I, O> ErasedIntoSignal<I, O> for Option<T>
 where
-    I: 'static + Copy,
+    I: 'static + Copy + Default,
     O: 'static + Copy + Default,
     T: IntoSignal + Send + Sync + 'static,
     T::Signal: Signal<Input = I, Output = O> + 'static,
@@ -118,7 +118,7 @@ where
 
 unsafe impl<I, O> Signal for BoxedSignal<I, O>
 where
-    I: Copy + Send + Sync + 'static,
+    I: Copy + Send + Sync + Default + 'static,
     O: Copy + Send + Sync + 'static + Default,
 {
     type Input = I;
@@ -127,7 +127,6 @@ where
 
     fn on_block_start(ctx: &SignalExecutionContext<'_, '_>, state: &mut Self::State) {
         state.signal.on_block_start_erased(ctx, &mut *state.state);
-        state.batcher.reset();
     }
 
     fn tick_frame(
@@ -145,7 +144,7 @@ where
 
 impl<I, O> BoxedSignalConfig<I, O>
 where
-    I: Copy + 'static,
+    I: Copy + 'static + Default,
     O: Copy + 'static + Default,
 {
     pub(crate) fn new<S>(underlying: S) -> Self
@@ -161,7 +160,7 @@ where
 
 impl<I, O> IntoSignal for BoxedSignalConfig<I, O>
 where
-    I: Copy + Send + Sync + 'static,
+    I: Copy + Send + Sync + Default + 'static,
     O: Copy + Send + Sync + 'static + Default,
 {
     type Signal = BoxedSignal<I, O>;

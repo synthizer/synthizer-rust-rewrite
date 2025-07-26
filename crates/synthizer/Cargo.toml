@@ -12,6 +12,7 @@ arc-swap.workspace = true
 arrayvec.workspace = true
 atomic_refcell.workspace = true
 audio_synchronization.workspace = true
+cpal.workspace = true
 crossbeam.workspace = true
 derivative.workspace = true
 derive_more.workspace = true
@@ -28,7 +29,6 @@ seq-macro.workspace = true
 smallvec.workspace = true
 spin.workspace = true
 symphonia.workspace = true
-synthizer_miniaudio.workspace = true
 thingbuf.workspace = true
 thiserror.workspace = true
 

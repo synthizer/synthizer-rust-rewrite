@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 
-use synthizer_miniaudio::Error as MiniaudioError;
-
+use crate::cpal_device::AudioDeviceError;
 use crate::loop_spec::LoopSpecError;
 use crate::sample_sources::SampleSourceError;
 
 #[derive(Debug, derive_more::Display, derive_more::IsVariant)]
 enum ErrorPayload {
     #[display(fmt = "Audio backend error: {}", _0)]
-    AudioBackend(MiniaudioError),
+    AudioBackend(AudioDeviceError),
 
     #[display(fmt = "Sample source error: {}", _0)]
     SampleSource(SampleSourceError),
@@ -38,7 +37,7 @@ macro_rules! conv {
     };
 }
 
-conv!(AudioBackend, MiniaudioError);
+conv!(AudioBackend, AudioDeviceError);
 conv!(SampleSource, SampleSourceError);
 conv!(LoopSpec, LoopSpecError);
 

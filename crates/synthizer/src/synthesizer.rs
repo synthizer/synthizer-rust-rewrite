@@ -8,6 +8,7 @@ use rpds::{HashTrieMapSync, VectorSync};
 
 use crate::config;
 use crate::core_traits::*;
+use crate::cpal_device::{AudioDevice, DeviceOptions};
 use crate::error::{Error, Result};
 use crate::mount_point::ErasedMountPoint;
 use crate::sample_sources::{execution::Executor as MediaExecutor, SampleSource};
@@ -23,7 +24,7 @@ type SynthVec<T> = VectorSync<T>;
 pub struct Synthesizer {
     state: Arc<crate::data_structures::deferred_arc_swap::DeferredArcSwap<SynthesizerState>>,
 
-    device: Option<synthizer_miniaudio::DeviceHandle>,
+    device: Option<AudioDevice>,
 
     worker_pool: crate::worker_pool::WorkerPoolHandle,
 }
@@ -70,7 +71,7 @@ impl crate::data_structures::deferred_arc_swap::GetArcStash for SynthesizerState
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
 /// code.
 pub(crate) struct AudioThreadState {
-    /// Intermediate stereo buffer before going to miniaudio.
+    /// Intermediate stereo buffer before going to the audio device.
     ///
     /// This will be more complex a bit later on. At the moment, it's more "get us off the ground" stuff.
     pub(crate) buffer: [[f64; 2]; config::BLOCK_SIZE],
@@ -136,9 +137,9 @@ impl Drop for Batch<'_> {
 
 impl Synthesizer {
     pub fn new_default_output() -> Result<Self> {
-        let opts = synthizer_miniaudio::DeviceOptions {
-            sample_rate: Some(std::num::NonZeroU32::new(config::SR as u32).unwrap()),
-            channel_format: Some(synthizer_miniaudio::DeviceChannelFormat::Stereo),
+        let opts = DeviceOptions {
+            sample_rate: None, // Let the device choose its preferred sample rate
+            channels: Some(2), // Stereo
         };
 
         let state = Arc::new(
@@ -149,14 +150,54 @@ impl Synthesizer {
 
         let worker_pool =
             crate::worker_pool::WorkerPoolHandle::new_threaded(config::WORKER_POOL_THREADS);
-        let mut dev = {
+        let dev = {
             let published_state = state.clone();
             let wp_cloned = worker_pool.clone();
-            synthizer_miniaudio::open_default_output_device(&opts, move |_cfg, dest| {
-                let update = published_state.load_full();
-                at_iter(&update, dest);
-                published_state.defer_reclaim(update);
-                wp_cloned.signal_audio_tick_complete();
+            
+            // Buffer to handle mismatch between cpal's requested frame count and our BLOCK_SIZE
+            let mut remainder_buffer = Vec::with_capacity(config::BLOCK_SIZE * 2);
+            
+            AudioDevice::open_default(opts, move |dest| {
+                let mut dest_offset = 0;
+                
+                // First, drain any remainder from the previous callback
+                let remainder_to_copy = remainder_buffer.len().min(dest.len());
+                if remainder_to_copy > 0 {
+                    dest[..remainder_to_copy].copy_from_slice(&remainder_buffer[..remainder_to_copy]);
+                    remainder_buffer.drain(..remainder_to_copy);
+                    dest_offset = remainder_to_copy;
+                }
+                
+                // Process remaining samples
+                let mut remaining_dest = &mut dest[dest_offset..];
+                while !remaining_dest.is_empty() {
+                    // We need to process in BLOCK_SIZE * 2 chunks (stereo)
+                    let block_size_samples = config::BLOCK_SIZE * 2;
+                    
+                    if remaining_dest.len() >= block_size_samples {
+                        // Process directly into the destination
+                        let update = published_state.load_full();
+                        at_iter(&update, &mut remaining_dest[..block_size_samples]);
+                        published_state.defer_reclaim(update);
+                        wp_cloned.signal_audio_tick_complete();
+                        remaining_dest = &mut remaining_dest[block_size_samples..];
+                    } else {
+                        // Not enough space for a full block, generate into our buffer
+                        let mut temp_buffer = vec![0.0f32; block_size_samples];
+                        let update = published_state.load_full();
+                        at_iter(&update, &mut temp_buffer);
+                        published_state.defer_reclaim(update);
+                        wp_cloned.signal_audio_tick_complete();
+                        
+                        // Copy what we can to the destination
+                        let to_copy = remaining_dest.len();
+                        remaining_dest.copy_from_slice(&temp_buffer[..to_copy]);
+                        
+                        // Save the rest for next callback
+                        remainder_buffer.extend_from_slice(&temp_buffer[to_copy..]);
+                        remaining_dest = &mut [];
+                    }
+                }
             })?
         };
 

@@ -11,6 +11,7 @@ arrayvec = "0.7.2"
 atomic_refcell = "0.1.9"
 bytemuck = "1.14.0"
 cc = "1.0.79"
+cpal = "0.15"
 criterion = "0.4.0"
 crossbeam = "0.8.2"
 derivative = "2.2.0"
@@ -40,7 +41,6 @@ smallvec = { version = "1.10.0", features = ["write"] }
 spin = "0.9.8"
 symphonia = { version = "0.5.3", features = ["all-codecs"] }
 synthizer_macros_internal = { path = "crates/synthizer_macros_internal" }
-synthizer_miniaudio = { path = "./crates/miniaudio" }
 synthizer_protos = { path = "crates/protos" }
 thingbuf = { version = "0.1.4", features = ["static"] }
 thiserror = "2.0.9"

@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 
 use synthizer_miniaudio::*;
 
-const SR: NonZeroU32 = unsafe { NonZeroU32::new_unchecked(44100) };
+const SR: NonZeroU32 = NonZeroU32::new(44100).unwrap();
 const FREQ_L: f64 = 300.0;
 const FREQ_R: f64 = 305.0;
 

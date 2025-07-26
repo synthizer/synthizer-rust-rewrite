@@ -233,7 +233,7 @@ impl<S: IntoSignal> Chain<S> {
     /// performance cost is minimal.
     pub fn boxed<I, O>(self) -> Chain<sigs::BoxedSignalConfig<I, O>>
     where
-        I: Copy + Send + Sync + 'static,
+        I: Copy + Send + Sync + 'static + Default,
         O: Copy + Send + Sync + 'static + Default,
         S: Send + Sync + 'static,
         S::Signal: Signal<Input = I, Output = O>,

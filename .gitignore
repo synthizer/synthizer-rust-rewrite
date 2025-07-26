@@ -8,3 +8,4 @@
 proptest-regressions/
 /corpus
 claude-prompt.md
+cargo-vendor

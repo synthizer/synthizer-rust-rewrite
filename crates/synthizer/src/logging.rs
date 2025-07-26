@@ -92,7 +92,7 @@ impl std::fmt::Write for LogMessageFormatter<'_> {
 
         let remaining = self.log_message.remaining_capacity();
         // Careful: ArrayString capacity is in bytes.
-        if s.as_bytes().len() <= remaining {
+        if s.len() <= remaining {
             self.log_message.push_str(s);
             return Ok(());
         }

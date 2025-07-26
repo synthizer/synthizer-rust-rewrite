@@ -156,9 +156,13 @@ unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
         let frame_off = state.buffer_consumed * chan_count;
 
         // Copy from f32 buffer to f64 frame
-        for c in 0..chan_count.min(MAX_CHANS) {
-            intermediate_frame[c] = state.buffer[frame_off + c] as f64;
-        }
+        intermediate_frame
+            .iter_mut()
+            .take(chan_count)
+            .enumerate()
+            .for_each(|(i, dest)| {
+                *dest = state.buffer[frame_off + i] as f64;
+            });
 
         state.buffer_consumed += 1;
 
