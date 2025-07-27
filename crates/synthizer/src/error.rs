@@ -6,16 +6,16 @@ use crate::sample_sources::SampleSourceError;
 
 #[derive(Debug, derive_more::Display, derive_more::IsVariant)]
 enum ErrorPayload {
-    #[display(fmt = "Audio backend error: {}", _0)]
+    #[display("Audio backend error: {}", _0)]
     AudioBackend(AudioDeviceError),
 
-    #[display(fmt = "Sample source error: {}", _0)]
+    #[display("Sample source error: {}", _0)]
     SampleSource(SampleSourceError),
 
-    #[display(fmt = "Loop specification error: {}", _0)]
+    #[display("Loop specification error: {}", _0)]
     LoopSpec(crate::loop_spec::LoopSpecError),
 
-    #[display(fmt = "Validation error: {}", _0)]
+    #[display("Validation error: {}", _0)]
     Validation(Cow<'static, str>),
 }
 

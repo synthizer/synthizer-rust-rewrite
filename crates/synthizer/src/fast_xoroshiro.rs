@@ -41,8 +41,8 @@ impl<const N: usize> FastXoroshiro128PlusPlus<N> {
         let mut s1: [u64; N] = [0; N];
 
         for i in 0..N {
-            s0[i] = sm64.gen();
-            s1[i] = sm64.gen();
+            s0[i] = sm64.random();
+            s1[i] = sm64.random();
         }
         Self { s0, s1 }
     }

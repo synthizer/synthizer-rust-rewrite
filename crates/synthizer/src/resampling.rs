@@ -88,7 +88,7 @@ impl ConditionalResampler {
             state.process(input, output, self.channels)
         } else {
             // No resampling needed, just copy
-            let samples_to_copy = input.len() * self.channels;
+            let samples_to_copy = input.len();
             let frames_to_copy = samples_to_copy / self.channels;
 
             output[..samples_to_copy].copy_from_slice(&input[..samples_to_copy]);
