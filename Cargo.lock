@@ -1847,19 +1847,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "synthizer_miniaudio"
-version = "0.1.0"
-dependencies = [
- "cc",
- "crossbeam",
- "env_logger",
- "lazy_static",
- "log",
- "paste",
- "thiserror 2.0.12",
-]
-
-[[package]]
 name = "synthizer_protos"
 version = "0.1.0"
 dependencies = [
