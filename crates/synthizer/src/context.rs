@@ -2,7 +2,7 @@ use atomic_refcell::AtomicRefCell;
 
 use crate::channel_format::*;
 use crate::config;
-use crate::signals::{MediaExecutorMap, SlotUpdateContext};
+use crate::signals::SlotUpdateContext;
 
 pub struct SignalExecutionContext<'a, 'shared> {
     pub(crate) fixed: &'a FixedSignalExecutionContext<'shared>,
@@ -14,5 +14,4 @@ pub(crate) struct FixedSignalExecutionContext<'a> {
     pub(crate) audio_destinationh: AtomicRefCell<&'a mut [[f64; 2]; config::BLOCK_SIZE]>,
     pub(crate) audio_destination_format: &'a ChannelFormat,
     pub(crate) slots: &'a SlotUpdateContext<'a>,
-    pub(crate) media: &'a MediaExecutorMap,
 }

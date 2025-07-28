@@ -11,11 +11,9 @@ use crate::core_traits::*;
 use crate::cpal_device::{AudioDevice, DeviceOptions};
 use crate::error::{Error, Result};
 use crate::mount_point::ErasedMountPoint;
-use crate::sample_sources::{execution::Executor as MediaExecutor, SampleSource};
+use crate::sample_sources::UnifiedMediaSource;
 use crate::signals as sigs;
-use crate::signals::{
-    MediaEntry, MediaExecutorMap, Slot, SlotMap, SlotUpdateContext, SlotValueContainer,
-};
+use crate::signals::{Slot, SlotMap, SlotUpdateContext, SlotValueContainer};
 use crate::unique_id::UniqueId;
 
 type SynthMap<K, V> = HashTrieMapSync<K, V>;
@@ -37,7 +35,6 @@ pub(crate) struct MountContainer {
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
 
     pub(crate) slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
-    pub(crate) media: MediaExecutorMap,
 }
 
 /// This is the state published to the audio thread.
@@ -153,27 +150,28 @@ impl Synthesizer {
         let dev = {
             let published_state = state.clone();
             let wp_cloned = worker_pool.clone();
-            
+
             // Buffer to handle mismatch between cpal's requested frame count and our BLOCK_SIZE
             let mut remainder_buffer = Vec::with_capacity(config::BLOCK_SIZE * 2);
-            
+
             AudioDevice::open_default(opts, move |dest| {
                 let mut dest_offset = 0;
-                
+
                 // First, drain any remainder from the previous callback
                 let remainder_to_copy = remainder_buffer.len().min(dest.len());
                 if remainder_to_copy > 0 {
-                    dest[..remainder_to_copy].copy_from_slice(&remainder_buffer[..remainder_to_copy]);
+                    dest[..remainder_to_copy]
+                        .copy_from_slice(&remainder_buffer[..remainder_to_copy]);
                     remainder_buffer.drain(..remainder_to_copy);
                     dest_offset = remainder_to_copy;
                 }
-                
+
                 // Process remaining samples
                 let mut remaining_dest = &mut dest[dest_offset..];
                 while !remaining_dest.is_empty() {
                     // We need to process in BLOCK_SIZE * 2 chunks (stereo)
                     let block_size_samples = config::BLOCK_SIZE * 2;
-                    
+
                     if remaining_dest.len() >= block_size_samples {
                         // Process directly into the destination
                         let update = published_state.load_full();
@@ -188,11 +186,11 @@ impl Synthesizer {
                         at_iter(&update, &mut temp_buffer);
                         published_state.defer_reclaim(update);
                         wp_cloned.signal_audio_tick_complete();
-                        
+
                         // Copy what we can to the destination
                         let to_copy = remaining_dest.len();
                         remaining_dest.copy_from_slice(&temp_buffer[..to_copy]);
-                        
+
                         // Save the rest for next callback
                         remainder_buffer.extend_from_slice(&temp_buffer[to_copy..]);
                         remaining_dest = &mut [];
@@ -265,11 +263,9 @@ impl Batch<'_> {
 
     pub fn mount<M: crate::mount_point::Mountable>(&mut self, mut new_mount: M) -> Result<Handle> {
         let mut slots = SlotMap::new_sync();
-        let mut media = MediaExecutorMap::new_sync();
 
         new_mount.trace(&mut |id, val| match val {
             TracedResource::Slot(s) => slots.insert_mut(id, s),
-            TracedResource::Media(m) => media.insert_mut(id, MediaEntry::new(m)),
         })?;
 
         let object_id = UniqueId::new();
@@ -281,7 +277,6 @@ impl Batch<'_> {
             erased_mount: Arc::new(AtomicRefCell::new(mount)),
             pending_drop: pending_drop.0.clone(),
             slots,
-            media,
         };
         self.new_state.mounts.insert_mut(object_id, inserting);
 
@@ -327,97 +322,29 @@ impl Batch<'_> {
         Ok(())
     }
 
-    /// Convert a [SampleSource] into media in this synthesizer, and return a reference to it.
+    /// Convert a source of samples into media in this synthesizer, and return a reference to it, plus a controller to
+    /// control the media.
     ///
-    /// The reference is not valid for media operations until a signal referencing it is mounted.
-    pub fn make_media<S>(&mut self, source: S) -> Result<sigs::Media>
-    where
-        S: SampleSource,
-    {
-        let executor = MediaExecutor::new(&self.synthesizer.worker_pool, source)?;
-
-        Ok(sigs::Media {
-            media_id: UniqueId::new(),
-            descriptor: executor.descriptor().clone(),
-            executor: Some(Arc::new(executor)),
-        })
-    }
-
-    /// Seek some media on this handle.
+    /// All media operations happen on a  background thread, and do not flow through the normal command mechanisms.
     ///
-    /// In some cases, this happens on an asynchronous background thread.  In all cases, the change will take place
-    /// immediately, not when the batch is dropped.  This is one of the two operations discussed in [Media]'s docs as
-    /// requiring an exception to our rule of applying all at once atomicly at batch drop.    ///
-    /// Seeks past the end are converted to seeks to the end.
+    /// All I/O errors are logged on the background thread. The returned media starts paused.
     ///
-    /// If the underlying media is not seekable or some other I/O error results then an error is logged later from a
-    /// background thread.
-    pub fn media_seek(&mut self, handle: &Handle, media: &sigs::Media, new_pos: u64) -> Result<()> {
-        let mount = self.new_state
-        .mounts.get_mut(&handle.object_id)
-        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
-        let media = mount
-            .media
-            .get(&media.media_id)
-            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
-        media.executor.seek(new_pos);
-        Ok(())
-    }
-
-    /// Configure how this media loops.
-    ///
-    /// In some cases, this happens on an asynchronous background thread.  In all cases, the change will take place
-    /// immediately, not when the batch is dropped.  This is one of the two operations discussed in [sigs::Media]'s docs
-    /// as requiring an exception to our rule of applying all at once atomicly at batch drop.
-    ///
-    /// Disabling looping is done with [crate::LoopSpec::no_looping], not an alternative method on the batch.
-    pub fn media_config_looping(
+    /// This is the streaming path to get audio into the library.
+    pub fn make_media<S>(
         &mut self,
-        handle: &Handle,
-        media: &sigs::Media,
-        spec: crate::LoopSpec,
-    ) -> Result<()> {
-        let mount = self.new_state
-        .mounts.get_mut(&handle.object_id)
-        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
-        let media = mount
-            .media
-            .get(&media.media_id)
-            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
-        media.executor.config_looping(spec);
-        Ok(())
-    }
+        source: S,
+    ) -> Result<(crate::sample_sources::MediaController, sigs::Media)>
+    where
+        S: std::io::Read + std::io::Seek + Send + Sync + 'static,
+    {
+        let unified_source = UnifiedMediaSource::new(source, crate::config::SR as u32)?;
+        let descriptor = unified_source.get_descriptor().clone();
+        let (task, mut h) = unified_source.into_task_and_handle()?;
+        self.synthesizer.worker_pool.register_task(task);
 
-    /// Pause this media.
-    ///
-    /// If you don't have a mechanism for fadeout, this can click.
-    pub fn media_pause(&mut self, handle: &Handle, media: &sigs::Media) -> Result<()> {
-        let mount = self.new_state
-        .mounts.get_mut(&handle.object_id)
-        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
-        let media = mount
-            .media
-            .get_mut(&media.media_id)
-            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
-        media.playing = false;
-        Ok(())
-    }
+        let ring = h.ring.take();
 
-    /// Start this media playing again.
-    ///
-    /// Media starts in the playing state, so this is only needed if pausing it.
-    ///
-    /// If you don't also put a mechanism in place for fade-in, this can click.
-    pub fn media_play(&mut self, handle: &Handle, media: &sigs::Media) -> Result<()> {
-        let mount = self.new_state
-        .mounts.get_mut(&handle.object_id)
-        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist");
-        let media = mount
-            .media
-            .get_mut(&media.media_id)
-            .ok_or_else(|| Error::new_validation_cow("Media does not match this mount"))?;
-        media.playing = true;
-        Ok(())
+        Ok((h, sigs::Media { descriptor, ring }))
     }
 
     pub fn duration_to_samples(&self, dur: Duration) -> usize {
@@ -481,7 +408,6 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
                     slots: &SlotUpdateContext {
                         mount_slots: &m.slots,
                     },
-                    media: &m.media,
                 },
             );
         }

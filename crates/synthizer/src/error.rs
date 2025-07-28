@@ -2,21 +2,26 @@ use std::borrow::Cow;
 
 use crate::cpal_device::AudioDeviceError;
 use crate::loop_spec::LoopSpecError;
-use crate::sample_sources::SampleSourceError;
 
 #[derive(Debug, derive_more::Display, derive_more::IsVariant)]
 enum ErrorPayload {
     #[display("Audio backend error: {}", _0)]
     AudioBackend(AudioDeviceError),
 
-    #[display("Sample source error: {}", _0)]
-    SampleSource(SampleSourceError),
-
     #[display("Loop specification error: {}", _0)]
     LoopSpec(crate::loop_spec::LoopSpecError),
 
     #[display("Validation error: {}", _0)]
     Validation(Cow<'static, str>),
+
+    #[display("Symphonia error: {}", _0)]
+    Symphonia(symphonia::core::errors::Error),
+
+    #[display("Resampler error: {}", _0)]
+    Resampler(crate::resampling::ResamplingError),
+
+    #[display("Channel closed")]
+    ChannelClosed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -38,8 +43,17 @@ macro_rules! conv {
 }
 
 conv!(AudioBackend, AudioDeviceError);
-conv!(SampleSource, SampleSourceError);
 conv!(LoopSpec, LoopSpecError);
+conv!(Symphonia, symphonia::core::errors::Error);
+conv!(Resampler, crate::resampling::ResamplingError);
+
+impl<T> From<crossbeam::channel::SendError<T>> for Error {
+    fn from(_: crossbeam::channel::SendError<T>) -> Error {
+        Error {
+            payload: ErrorPayload::ChannelClosed,
+        }
+    }
+}
 
 impl Error {
     /// Create a validation error guaranteed to be backed by a static string.

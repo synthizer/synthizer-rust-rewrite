@@ -10,25 +10,17 @@ use symphonia::core::{
 };
 
 use crate::config::*;
-use crate::sample_sources::{Descriptor, SampleSource, SampleSourceError};
+use crate::error::Result;
+use crate::sample_sources::Descriptor;
 
-/// Internal wrapper which wraps Symphonia to implement the SampleSource trait.
-pub(super) struct SymphoniaWrapper {
+/// Internal wrapper which wraps Symphonia for media decoding.
+pub(crate) struct SymphoniaWrapper {
     format: Box<dyn FormatReader + 'static>,
     decoder: Box<dyn Decoder>,
 
-    synthizer_channel_format: crate::channel_format::ChannelFormat,
+    descriptor: Descriptor,
 
     track_index: usize,
-
-    /// Sample rate of the first frame of audio.
-    ///
-    /// Computed either from the track's parameters or, failing that, by filling a block of audio early.  If this
-    /// changes, an error results.  That's not supposed to be possible, but Symphonia is exposing all of the
-    /// complexities to us.  We should always get a `ResetRequired` error according to Symphonia examples, but this does
-    ///  not appear to be guaranteed by docs.  Right now we are not interested in supporting variable streams, but we
-    ///  may in future; until that day, validating this shouldn't harm anything.
-    sample_rate: u64,
 
     /// This internal buffer of samples fills up and potentially grows as data is read from Symphonia, which cannot
     /// tell us the size of the next packet because media formats don't know that information.
@@ -82,7 +74,9 @@ fn codec_params_to_channel_format(
     }
 }
 
-pub(super) fn build_symphonia<S: MediaSource + 'static>(source: S) -> SResult<SymphoniaWrapper> {
+pub(crate) fn build_symphonia_maybe_nodur<S: MediaSource + 'static>(
+    source: S,
+) -> SResult<(SymphoniaWrapper, bool)> {
     let probe = symphonia::default::get_probe();
     let source_stream = MediaSourceStream::new(Box::new(source), Default::default());
 
@@ -131,11 +125,18 @@ pub(super) fn build_symphonia<S: MediaSource + 'static>(source: S) -> SResult<Sy
         &Default::default(),
     )?;
 
+    let duration_from_meta = format.tracks()[track_index].codec_params.n_frames;
+
+    let descriptor = Descriptor {
+        duration: duration_from_meta.unwrap_or(0),
+        channel_format: synthizer_channel_format,
+        sample_rate: NonZeroU64::new(sample_rate).unwrap(),
+    };
+
     let mut ret = SymphoniaWrapper {
         decoder,
         format,
-        synthizer_channel_format,
-        sample_rate,
+        descriptor,
         track_index,
         buffer: AudioBuffer::unused(),
         buffer_read_frames: 0,
@@ -157,9 +158,28 @@ pub(super) fn build_symphonia<S: MediaSource + 'static>(source: S) -> SResult<Sy
             return Err(std::io::Error::new(std::io::ErrorKind::Other, "This source's first packet of data has a samplerate of 0, which implies that it is corrupt").into());
         }
 
-        ret.sample_rate = possible_sr;
+        ret.descriptor.sample_rate = NonZeroU64::new(possible_sr).unwrap();
     }
 
+    Ok((ret, duration_from_meta.is_some()))
+}
+
+pub(crate) fn build_symphonia<S: MediaSource + 'static>(source: S) -> Result<SymphoniaWrapper> {
+    let (mut ret, durgood) = build_symphonia_maybe_nodur(source)?;
+
+    if !durgood {
+        let mut frames_so_far = 0u64;
+        loop {
+            frames_so_far += ret.buffer.frames() as u64;
+            ret.buffer.clear();
+            if !ret.refill_buffer()? {
+                break;
+            }
+        }
+
+        ret.descriptor.duration = frames_so_far;
+        ret.seek(0)?;
+    }
     Ok(ret)
 }
 
@@ -220,7 +240,7 @@ impl SymphoniaWrapper {
         // The first step of seeking is to move the format to the course position.  Symphonia doesn't let us seek
         // samples even on formats which are sample-accurate, so we claim imprecise seeking, work out a timestamp, and
         // do our best.
-        let ts_float = sample as f64 / self.sample_rate as f64;
+        let ts_float = sample as f64 / self.descriptor.sample_rate.get() as f64;
         let ts = symphonia::core::units::Time {
             seconds: ts_float as u64,
             frac: ts_float - ts_float.floor(),
@@ -257,7 +277,7 @@ impl SymphoniaWrapper {
             return Ok(());
         }
 
-        let mut samples_needed = (delta * self.sample_rate as f64) as u64;
+        let mut samples_needed = (delta * self.descriptor.sample_rate.get() as f64) as u64;
         while samples_needed > 0 {
             if !self.refill_buffer()? {
                 // EOF is our best.
@@ -272,35 +292,13 @@ impl SymphoniaWrapper {
 
         Ok(())
     }
-}
 
-impl SampleSource for SymphoniaWrapper {
-    fn get_descriptor(&self) -> Descriptor {
-        let duration = self.format.tracks()[self.track_index].codec_params.n_frames;
-
-        Descriptor {
-            channel_format: self.synthizer_channel_format,
-            duration,
-            sample_rate: NonZeroU64::new(self.sample_rate).unwrap(),
-            seek_support: if duration.is_some() {
-                crate::sample_sources::SeekSupport::Imprecise
-            } else {
-                crate::sample_sources::SeekSupport::ToBeginning
-            },
-
-            // The common case is disk. It's kinda technically memory but apparently Symphonia allocates like there's no
-            // tomorrow or something, not sure why.  We could theoretically remember if it's memory but there's no point
-            // if by memory we mean call into the allocator because why not?
-            latency: crate::sample_sources::Latency::Disk,
-        }
+    pub(crate) fn get_descriptor(&self) -> &Descriptor {
+        &self.descriptor
     }
 
-    fn is_permanently_finished(&mut self) -> bool {
-        false
-    }
-
-    fn read_samples(&mut self, destination: &mut [f32]) -> Result<u64, SampleSourceError> {
-        let chan_count = self.synthizer_channel_format.get_channel_count().get();
+    pub(crate) fn read_samples(&mut self, destination: &mut [f32]) -> Result<u64> {
+        let chan_count = self.descriptor.channel_format.get_channel_count().get();
         assert_eq!(destination.len() % chan_count, 0);
         let total_frames = destination.len() / chan_count;
         let mut next_frame = 0;
@@ -325,11 +323,7 @@ impl SampleSource for SymphoniaWrapper {
             self.buffer_read_frames += can_do;
             next_frame += can_do;
 
-            if self.buffer_read_frames == self.buffer.frames()
-                && !self
-                    .refill_buffer()
-                    .map_err(|x| SampleSourceError::new_boxed(Box::new(x)))?
-            {
+            if self.buffer_read_frames == self.buffer.frames() && !self.refill_buffer()? {
                 break;
             }
         }
@@ -337,8 +331,7 @@ impl SampleSource for SymphoniaWrapper {
         Ok(next_frame as u64)
     }
 
-    fn seek(&mut self, position_in_frames: u64) -> Result<(), SampleSourceError> {
-        self.do_seeking(position_in_frames)
-            .map_err(|e| SampleSourceError::new_boxed(Box::new(e)))
+    pub(crate) fn seek(&mut self, position_in_frames: u64) -> Result<()> {
+        Ok(self.do_seeking(position_in_frames)?)
     }
 }

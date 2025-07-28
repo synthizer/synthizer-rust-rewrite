@@ -13,9 +13,8 @@ fn main() -> Result<()> {
         .get(1)
         .expect("Specify a file path as the first argument");
     let file = std::fs::File::open(file_path).unwrap();
-    let source = sample_sources::create_encoded_source(file)?;
 
-    let mut media;
+    let (mut controller, media);
 
     let delay_line = DelayLineHandle::<[f64; 2]>::new_defaulting(
         std::num::NonZeroUsize::new(synth.duration_to_samples(Duration::from_secs(5))).unwrap(),
@@ -37,7 +36,7 @@ fn main() -> Result<()> {
     let _handle = {
         let mut batch = synth.batch();
 
-        media = batch.make_media(source)?;
+        (controller, media) = batch.make_media(file)?;
 
         let full = media
             .start_chain::<2>(ChannelFormat::Stereo)
@@ -49,6 +48,8 @@ fn main() -> Result<()> {
 
         batch.mount(full)?
     };
+
+    controller.play()?;
 
     std::thread::sleep(Duration::from_secs(30));
     Ok(())

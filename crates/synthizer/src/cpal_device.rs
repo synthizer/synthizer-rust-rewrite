@@ -3,7 +3,7 @@
 //! This replaces the miniaudio dependency with pure Rust audio I/O.
 
 use crate::data_structures::RefillableWrapper;
-use crate::resampling::ConditionalResampler;
+use crate::resampling::{ConditionalResampler, ResamplerMode};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleRate, Stream, StreamConfig};
 use std::sync::Arc;
@@ -145,15 +145,21 @@ impl AudioDevice {
 
         // Set up resampling - ConditionalResampler handles the no-resampling case internally
         let synthizer_rate = crate::config::SR as u32;
-        let mut resampler =
-            ConditionalResampler::new(synthizer_rate, sample_rate, 2, crate::config::BLOCK_SIZE)
-                .map_err(|e| {
-                    AudioDeviceError::BuildStreamFailed(cpal::BuildStreamError::BackendSpecific {
-                        err: cpal::BackendSpecificError {
-                            description: e.to_string(),
-                        },
-                    })
-                })?;
+        let mut resampler = ConditionalResampler::new(
+            synthizer_rate,
+            sample_rate,
+            2,
+            ResamplerMode::FixedInput {
+                input_frames: crate::config::BLOCK_SIZE,
+            },
+        )
+        .map_err(|e| {
+            AudioDeviceError::BuildStreamFailed(cpal::BuildStreamError::BackendSpecific {
+                err: cpal::BackendSpecificError {
+                    description: e.to_string(),
+                },
+            })
+        })?;
 
         // Buffer for Synthizer's fixed-size output blocks
         let mut synthizer_buffer = vec![0.0f32; crate::config::BLOCK_SIZE * 2];
@@ -186,7 +192,7 @@ impl AudioDevice {
                         callback(&mut synthizer_buffer);
 
                         // Resample from Synthizer's rate to device rate (both stereo)
-                        let frames_written = resampler
+                        let (_, frames_written) = resampler
                             .process(&synthizer_buffer, dest)
                             .expect("Resampling failed");
 

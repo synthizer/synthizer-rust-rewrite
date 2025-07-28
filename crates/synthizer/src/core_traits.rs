@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use crate::context::*;
 use crate::error::Result;
-use crate::sample_sources::execution::Executor as MediaExecutor;
 use crate::unique_id::UniqueId;
 
 // These are "core" but it's a lot of code so we pull it out.
@@ -16,7 +15,6 @@ pub(crate) mod sealed {
     /// Traced resources.
     pub enum TracedResource {
         Slot(Arc<dyn Any + Send + Sync + 'static>),
-        Media(Arc<MediaExecutor>),
     }
 
     /// This internal trait is the actual magic.
@@ -33,11 +31,11 @@ pub(crate) mod sealed {
 
         /// Process a single frame of audio.
         ///
-        /// This will be called exactly `BLOCK_SIZE` times between calls to `on_block_start`.
-        /// The implementation should be as efficient as possible since this is the hot path.
+        /// This will be called exactly `BLOCK_SIZE` times between calls to `on_block_start`. The implementation should
+        /// be as efficient as possible since this is the hot path.
         ///
-        /// For signals that need to process multiple frames at once (e.g., convolution),
-        /// they should buffer internally in their state.
+        /// For signals that need to process multiple frames at once (e.g., convolution), they should buffer internally
+        /// in their state.
         fn tick_frame(
             ctx: &'_ SignalExecutionContext<'_, '_>,
             input: Self::Input,
@@ -104,8 +102,7 @@ pub(crate) mod sealed {
         /// Trace a signal's resource usage, and allocate objects.
         ///
         /// The synthesizer must use erased `Any` to store objects in the maps.  That means that it is necessary to let
-        /// signals allocate such objects, then hand them off.  It's also required that we trace signals to figure out
-        /// other things, for example which things might be used before others.
+        /// signals allocate such objects, then hand them off.
         ///
         /// Implementations should:
         ///
@@ -113,9 +110,6 @@ pub(crate) mod sealed {
         ///   would call `tick` on those parents.
         /// - If a "leaf" which uses resources (e.g. slots) call the callback.
         /// - If a "leaf" which doesn't need resources, add an empty impl.
-        /// - If a combinator which uses resources, call the tracer either before calling the parents (if the resource
-        ///   is used before ticking them) or after (if the resource is used after).  Using resources "in the middle"
-        ///   should be avoided.
         fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> Result<()>;
     }
 

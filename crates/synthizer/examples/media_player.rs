@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use synthizer::sample_sources;
 use synthizer::*;
 
 fn main() -> Result<()> {
@@ -13,14 +12,13 @@ fn main() -> Result<()> {
         .get(1)
         .expect("Specify a file path as the first argument");
     let file = std::fs::File::open(file_path).unwrap();
-    let source = sample_sources::create_encoded_source(file)?;
 
-    let mut media;
+    let (controller, mut media);
 
     let handle = {
         let mut batch = synth.batch();
 
-        media = batch.make_media(source)?;
+        (controller, media) = batch.make_media(file)?;
 
         batch.mount(
             media
@@ -40,6 +38,8 @@ seek <secs>: seek to a position in the file.
 loop (off | full | range) [<start> <end>]: configure looping.
 "
     );
+
+    controller.play()?;
 
     loop {
         use std::io::Write;
@@ -69,16 +69,14 @@ loop (off | full | range) [<start> <end>]: configure looping.
                     continue;
                 };
 
-                let mut batch = synth.batch();
-                batch.media_seek(&handle, &media, (pos * SR as f64) as u64)?;
+                let batch = synth.batch();
+                controller.seek((pos * controller.get_sr() as f64) as u64)?;
             }
             "pause" => {
-                let mut batch = synth.batch();
-                batch.media_pause(&handle, &media)?;
+                controller.pause()?;
             }
             "play" => {
-                let mut batch = synth.batch();
-                batch.media_play(&handle, &media)?;
+                controller.play()?;
             }
             "loop" => {
                 let Some(ltype) = line.next() else {
@@ -121,8 +119,7 @@ loop (off | full | range) [<start> <end>]: configure looping.
                     }
                 };
 
-                let mut batch = synth.batch();
-                batch.media_config_looping(&handle, &media, spec)?;
+                controller.set_looping(spec)?;
             }
             _ => {
                 println!("Unrecognized command {cmd}");

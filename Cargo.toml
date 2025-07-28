@@ -40,6 +40,7 @@ seq-macro = "0.3.6"
 smallvec = { version = "1.15.1", features = ["write"] }
 spin = "0.10"
 symphonia = { version = "0.5.4", features = ["all-codecs"] }
+sync_wrapper = "1.0"
 synthizer_macros_internal = { path = "crates/synthizer_macros_internal" }
 synthizer_protos = { path = "crates/protos" }
 thingbuf = { version = "0.1.6", features = ["static"] }

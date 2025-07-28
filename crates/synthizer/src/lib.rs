@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 
 #[macro_use]
-mod builder_helpers;
-#[macro_use]
 mod variant;
 #[macro_use]
 mod logging;

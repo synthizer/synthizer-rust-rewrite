@@ -6,7 +6,10 @@
       "Bash(cargo build:*)",
       "Bash(cargo fix:*)",
       "Bash(cargo fmt:*)",
-      "Bash(cargo upgrade:*)"
+      "Bash(cargo upgrade:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

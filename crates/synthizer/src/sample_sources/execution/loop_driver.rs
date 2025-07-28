@@ -158,6 +158,10 @@ impl LoopDriver {
     pub(crate) fn observe_read(&mut self, amount: u64) {
         self.predicted_position += amount;
     }
+
+    pub(crate) fn is_finished(&self) -> bool {
+        self.eof && !self.looping
+    }
 }
 
 #[cfg(test)]

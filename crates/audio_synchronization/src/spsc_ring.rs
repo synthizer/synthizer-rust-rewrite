@@ -284,14 +284,14 @@ pub struct RingWriter<T: AnyBitPattern + Copy + Send + 'static> {
 /// Panics if `capacity == 0`.
 pub fn create_ring<T: AnyBitPattern + Copy + Send + 'static>(
     capacity: usize,
-) -> (RingReader<T>, RingWriter<T>) {
+) -> (RingWriter<T>, RingReader<T>) {
     let ring_ptr = Ring::new(capacity);
     unsafe {
         (
-            RingReader {
+            RingWriter {
                 ring: NonNull::new_unchecked(ring_ptr),
             },
-            RingWriter {
+            RingReader {
                 ring: NonNull::new_unchecked(ring_ptr),
             },
         )
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_write_read_simple() {
-        let (mut reader, mut writer) = create_ring(5);
+        let (mut writer, mut reader) = create_ring(5);
 
         for i in 0..10u64 {
             writer.write_one(i);
@@ -536,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_write_read_simple_multithreaded() {
-        let (mut reader, mut writer) = create_ring(5);
+        let (mut writer, mut reader) = create_ring(5);
 
         let bg_thread = spawn(move || {
             for i in 0..100000u64 {
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn test_slices_are_always_blocks_simple() {
         let ints = (0..10).collect::<Vec<u64>>();
-        let (mut reader, mut writer) = create_ring::<u64>(20);
+        let (mut writer, mut reader) = create_ring::<u64>(20);
 
         for _ in 0..5 {
             writer.write_slices(|slices| {
@@ -604,7 +604,7 @@ mod tests {
             }: Opts,
         ) {
             const TOTAL: u64 = 100000;
-            let (mut reader, mut writer) = create_ring::<u64>(capacity);
+            let (mut writer, mut reader) = create_ring::<u64>(capacity);
 
             let bg_thread = spawn(move || {
                 let mut iterator = 0..TOTAL;

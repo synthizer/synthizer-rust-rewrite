@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 use std::num::{NonZeroU64, NonZeroUsize};
-
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
-use atomic_refcell::AtomicRefCell;
 
 use audio_synchronization::mpsc_counter::MpscCounter;
 use crossbeam::channel as chan;
@@ -19,8 +16,8 @@ const SHUTDOWN_CHECK_INTERVAL: Duration = Duration::from_millis(200);
 pub(super) struct ThreadedPoolImpl {
     /// Only touched from the worker thread(s).
     ///
-    /// By design, tasks are not tuched from other threads.
-    tasks: Mutex<HashMap<UniqueId, Weak<dyn TaskImmutable>>>,
+    /// By design, tasks are not touched from other threads.
+    tasks: Mutex<HashMap<UniqueId, Box<dyn Task>>>,
 
     command_sender: chan::Sender<Command>,
     command_receiver: chan::Receiver<Command>,
@@ -79,16 +76,13 @@ impl ThreadedPoolImpl {
                 }
             }
 
-            // Turn the hashmap into a vec of work items for sorting.
+            // Turn the hashmap into a vec of work items.
             //
             // We can optimize this later to not re-allocate all the time, but in the grand scheme of things this is nothing
             // compared to file I/O.
-            let mut work: Vec<(UniqueId, Arc<dyn TaskImmutable>)> =
-                Vec::with_capacity(work_map.len());
-            work.extend(work_map.drain().filter_map(|x| Some((x.0, x.1.upgrade()?))));
+            let mut work: Vec<(UniqueId, Box<dyn Task>)> = Vec::with_capacity(work_map.len());
+            work.extend(work_map.drain());
 
-            // Sort our work by priority.
-            work.sort_unstable_by_key(|w| w.1.priority());
             work
         };
 
@@ -96,7 +90,7 @@ impl ThreadedPoolImpl {
         // missed. We will be smarter about this in the future if that is required.
         self.thread_pool.install(move || {
             work.into_par_iter()
-                .filter_map(|(id, task)| {
+                .filter_map(|(id, mut task)| {
                     if task.execute() {
                         Some((id, task))
                     } else {
@@ -104,40 +98,37 @@ impl ThreadedPoolImpl {
                     }
                 })
                 .for_each(|(id, work)| {
-                    self.tasks.lock().unwrap().insert(id, Arc::downgrade(&work));
+                    self.tasks.lock().unwrap().insert(id, work);
                 });
         });
     }
 
-    pub(crate) fn register_task<T: Task>(&self, task: T) -> TaskHandle {
-        let task_strong: Arc<dyn TaskImmutable> = Arc::new(AtomicRefCell::new(task));
-
+    pub(crate) fn register_task<T: Task>(&self, task: T) {
         self.command_sender
             .send(Command::NewWork {
                 id: UniqueId::new(),
-                work: Arc::downgrade(&task_strong),
+                work: Box::new(task),
             })
             .expect("This channel is neither bounded nor closed");
-
-        TaskHandle { task_strong }
     }
 }
 
 enum Command {
-    NewWork {
-        id: UniqueId,
-        work: Weak<dyn TaskImmutable>,
-    },
+    NewWork { id: UniqueId, work: Box<dyn Task> },
 }
 
 /// Scheduling thread for the worker pool.
-fn scheduling_thread(pool: Weak<ThreadedPoolImpl>) {
+fn scheduling_thread(pool: std::sync::Weak<ThreadedPoolImpl>) {
     let mut audio_tick_prev = 0;
     let mut audio_tick_new = 0;
     let mut first = true;
 
     log::info!("Started background scheduling thread");
     while let Some(pool) = pool.upgrade() {
+        // Initialize audio_tick_new on first iteration
+        if first {
+            audio_tick_new = pool.audio_tick_counter.get();
+        }
         let deadline = Instant::now() + SHUTDOWN_CHECK_INTERVAL;
 
         // Only do something if the audio tick advanced. Also, be careful that we do work for the first tick.
@@ -152,22 +143,21 @@ fn scheduling_thread(pool: Weak<ThreadedPoolImpl>) {
             first = false;
         }
 
+        // Otherwise, the audio tick has not advanced. Wait.
         audio_tick_new = pool
             .audio_tick_counter
-            .wait_deadline(audio_tick_prev, deadline)
-            .unwrap_or(audio_tick_prev);
+            .wait_deadline(audio_tick_new, deadline)
+            .unwrap_or(audio_tick_new);
     }
 
-    log::info!("Exiting scheduling thread because the worker pool is shutting down");
+    log::info!("Background scheduling thread is shutting down");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use std::sync::atomic::Ordering;
-    use std::sync::atomic::{AtomicBool, AtomicU64};
-    use std::thread::sleep;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     /// A task which works by incrementing a counter every time it runs.
     struct CounterTask {
@@ -175,26 +165,12 @@ mod tests {
 
         /// This is what is returned from execute; used in the tests to make sure tasks will stop.
         execute_ret: Arc<AtomicBool>,
-
-        /// This is set when the task drops, so that we can test dropping as opposed to just not executing.
-        is_alive: Arc<AtomicBool>,
     }
 
     impl Task for CounterTask {
         fn execute(&mut self) -> bool {
             self.counter.fetch_add(1, Ordering::Relaxed);
             self.execute_ret.load(Ordering::Relaxed)
-        }
-
-        fn priority(&self) -> TaskPriority {
-            // For now, we don't do anything with priority.  When we do, we will make these tests more advanced.
-            TaskPriority::Decoding(0)
-        }
-    }
-
-    impl std::ops::Drop for CounterTask {
-        fn drop(&mut self) {
-            self.is_alive.store(false, Ordering::Relaxed);
         }
     }
 
@@ -203,46 +179,37 @@ mod tests {
         counters: Vec<Arc<AtomicU64>>,
 
         /// The tasks, not yet registered.
-        ///
-        /// It is important that the test control registration since, for the test which tests the "real" pool, it's critical that the test control when they get registered.
         tasks: Vec<CounterTask>,
 
         /// The return values for the tasks.
         execute_rets: Vec<Arc<AtomicBool>>,
 
-        alive_flags: Vec<Arc<AtomicBool>>,
-
         pool: Arc<ThreadedPoolImpl>,
     }
 
     impl TestContext {
-        fn new(num_tasks: usize, num_threads: NonZeroUsize) -> TestContext {
+        fn new(num_tasks: usize) -> TestContext {
             let mut tasks = vec![];
             let mut counters = vec![];
             let mut execute_rets = vec![];
-            let mut alive_flags = vec![];
 
             for _ in 0..num_tasks {
                 let counter = Arc::new(AtomicU64::new(0));
                 let execute_ret = Arc::new(AtomicBool::new(true));
-                let is_alive = Arc::new(AtomicBool::new(true));
                 let task = CounterTask {
                     counter: counter.clone(),
                     execute_ret: execute_ret.clone(),
-                    is_alive: is_alive.clone(),
                 };
                 tasks.push(task);
                 counters.push(counter);
                 execute_rets.push(execute_ret);
-                alive_flags.push(is_alive);
             }
 
-            let pool = ThreadedPoolImpl::new(num_threads);
+            let pool = ThreadedPoolImpl::new(NonZeroUsize::new(4).unwrap());
             TestContext {
                 counters,
                 tasks,
                 execute_rets,
-                alive_flags,
                 pool,
             }
         }
@@ -255,46 +222,34 @@ mod tests {
                 .collect()
         }
 
-        fn alive_flags_vec(&self) -> Vec<bool> {
-            self.alive_flags
-                .iter()
-                .map(|x| x.load(Ordering::Relaxed))
-                .collect()
-        }
-
         fn stop_task(&self, task_index: usize) {
             self.execute_rets[task_index].store(false, Ordering::Relaxed);
         }
     }
 
-    /// Test the pool using the scheduling thread.
-    ///
-    /// This test is less advanced than the inline test; it mostly serves to prove that the
-    /// scheduling thread advances.
     #[test]
     fn test_pool_threaded() {
-        // This pool runs the scheduling thread.
-        let mut context = TestContext::new(3, NonZeroUsize::new(2).unwrap());
+        let mut context = TestContext::new(3);
 
-        // Each time through the following loop, we will register one additional task. This has the effect of making it
-        // such that the counters are like [3,2,1] at the end.  We can just check it there rather than at every
-        // iteration.
-        //
-        // The first registered task--if it registers fast enough--may run twice because the pool is careful to run for
-        // the zeroth tick, so we have to unfortunately check that too.
-        let mut handles = vec![];
-        for t in std::mem::take(&mut context.tasks) {
-            handles.push(context.pool.register_task(t));
-            context.pool.signal_audio_tick_complete();
-            // Now we must sleep a little bit so that the pool has a chance to pick it up and run it.
-            sleep(Duration::from_millis(100));
+        for i in std::mem::take(&mut context.tasks) {
+            context.pool.register_task(i);
         }
-        let cvec = context.counter_vec();
-        if cvec[0] == 4 {
-            // The first task ran twice.
-            assert_eq!(cvec, vec![4, 2, 1]);
-        } else {
-            assert_eq!(cvec, vec![3, 2, 1]);
-        }
+
+        // Ticking once should eventually run all tasks once.
+        context.pool.signal_audio_tick_complete();
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(context.counter_vec(), vec![1, 1, 1]);
+
+        // tell one of the tasks to stop.
+        context.stop_task(1);
+        context.pool.signal_audio_tick_complete();
+
+        // It runs for one more tick.
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(context.counter_vec(), vec![2, 2, 2]);
+
+        context.pool.signal_audio_tick_complete();
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(context.counter_vec(), vec![3, 2, 3]);
     }
 }

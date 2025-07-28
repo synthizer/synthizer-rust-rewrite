@@ -29,6 +29,7 @@ seq-macro.workspace = true
 smallvec.workspace = true
 spin.workspace = true
 symphonia.workspace = true
+sync_wrapper.workspace = true
 thingbuf.workspace = true
 thiserror.workspace = true
 

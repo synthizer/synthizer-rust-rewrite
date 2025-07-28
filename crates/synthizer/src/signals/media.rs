@@ -1,11 +1,7 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use rpds::HashTrieMapSync as Map;
-
-use crate::config;
+use crate::config::{BLOCK_SIZE, MAX_CHANNELS};
 use crate::core_traits::*;
-use crate::sample_sources::execution::Executor;
 use crate::sample_sources::Descriptor;
 use crate::unique_id::UniqueId;
 use crate::Chain;
@@ -34,9 +30,9 @@ use crate::ChannelFormat;
 /// wavetable.  For the sake of fade-in and fade-out you can use a slot: the changes to the slot will apply with the
 /// play/pause properly.
 pub struct Media {
-    pub(crate) media_id: UniqueId,
     pub(crate) descriptor: Descriptor,
-    pub(crate) executor: Option<Arc<Executor>>,
+
+    pub(crate) ring: Option<audio_synchronization::spsc_ring::RingReader<f32>>,
 }
 
 impl Media {
@@ -44,64 +40,37 @@ impl Media {
         self.descriptor.channel_format
     }
 
-    /// Get the duration, if known.
-    ///
-    /// Not all media sources know their duration. For example, streaming sources don't, nor do many formats which don't
-    /// have a header.  This value is also not guaranteed to be precisely accurate, as lossy formats in particular don't
-    /// necessarily report it accurately themselves.
-    pub fn get_duration(&self) -> Option<Duration> {
-        Some(Duration::from_secs_f64(
-            self.descriptor.duration? as f64 / config::SR as f64,
-        ))
+    /// Get the duration.
+    pub fn get_duration(&self) -> Duration {
+        Duration::from_secs_f64(self.descriptor.duration as f64 / crate::config::SR as f64)
     }
 
     /// Convert this media to a signal.
     ///
     /// This infallible method may only be called once. Duplicate calls panic.
     ///
-    /// You must pick the output format e.g. stereo, mono, etc. The media will be converted beforehand.  You must also
-    /// pick the maximum number of channels, which tunes the size of the frames on the stack.  The resulting signal
-    /// outputs an array `[f64; MAX_CHANS]`, where any extra channels are zeroed, and missing channels discarded
+    /// You must pick the output format e.g. stereo, mono, etc. You must also pick the maximum number of channels, which
+    /// tunes the size of the frames on the stack.  The resulting signal outputs an array `[f64; MAX_CHANS]`, where any
+    /// extra channels are zeroed, and missing channels discarded
     pub fn start_chain<const MAX_CHANS: usize>(
         &mut self,
         wanted_format: ChannelFormat,
     ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = [f64; MAX_CHANS]>>> {
         Chain {
             inner: MediaSignalConfig::<MAX_CHANS> {
+                descriptor: self.descriptor.clone(),
                 wanted_format,
-                executor: self.executor.take().expect("This can only be called once"),
-                media_id: self.media_id,
+                ring: self.ring.take().expect("Can only call once"),
             },
         }
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct MediaEntry {
-    pub(crate) executor: Arc<Executor>,
-
-    /// pausing isn't in the executor. It's in whether or not the signal decides to drain data.
-    pub(crate) playing: bool,
-}
-
-impl MediaEntry {
-    pub(crate) fn new(executor: Arc<Executor>) -> Self {
-        Self {
-            executor,
-            playing: true,
-        }
-    }
-}
-
-/// A map of media sources, stored in a mount and received through the context.
-pub(crate) type MediaExecutorMap = Map<UniqueId, MediaEntry>;
-
 struct MediaSignalState {
-    media_id: UniqueId,
+    ring: audio_synchronization::spsc_ring::RingReader<f32>,
 
-    /// Filled at the beginning of each block. Then drained out on ticks.  `actual_chans * BLOCK_SIZE` in size.  Used to
-    /// convert from f32 to f64.
-    buffer: Vec<f32>,
+    /// Filled at the beginning of each block. Then drained out on ticks.  `actual_chans * BLOCK_SIZE` in size.
+    buffer: Vec<f64>,
 
     /// Advanced over the block, then reset.
     buffer_consumed: usize,
@@ -112,9 +81,9 @@ struct MediaSignalState {
 }
 
 struct MediaSignalConfig<const MAX_CHANS: usize> {
+    descriptor: Descriptor,
     wanted_format: ChannelFormat,
-    executor: Arc<Executor>,
-    media_id: UniqueId,
+    ring: audio_synchronization::spsc_ring::RingReader<f32>,
 }
 
 struct MediaSignal<const CHANS: usize>(());
@@ -125,23 +94,36 @@ unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
     type State = MediaSignalState;
 
     fn on_block_start(
-        ctx: &crate::context::SignalExecutionContext<'_, '_>,
+        _ctx: &crate::context::SignalExecutionContext<'_, '_>,
         state: &mut Self::State,
     ) {
-        let media = ctx
-            .fixed
-            .media
-            .get(&state.media_id)
-            .expect("This should have been traced");
+        let mut rbuf = [0.0f32; MAX_CHANNELS * BLOCK_SIZE];
 
-        state.buffer.fill(0.0f32);
+        state.buffer.fill(0.0f64);
         state.buffer_consumed = 0;
 
-        if media.playing {
-            if let Err(e) = media.executor.read_block(&mut state.buffer) {
-                rt_error!("Media source stopped forever! {e}");
-            }
-        }
+        state
+            .ring
+            .read_to_slice(&mut rbuf[..BLOCK_SIZE * state.descriptor.get_channel_count()]);
+
+        let rbuf_f64: [[f64; MAX_CHANS]; BLOCK_SIZE] = std::array::from_fn(|i| {
+            let frame = i * state.descriptor.get_channel_count();
+            std::array::from_fn(|ch| rbuf[frame + ch] as f64)
+        });
+        let mut rbuf_converted: [[f64; MAX_CHANS]; BLOCK_SIZE] = [[0.0; MAX_CHANS]; BLOCK_SIZE];
+
+        crate::channel_conversion::convert_channels(
+            &rbuf_f64,
+            state.descriptor.channel_format,
+            &mut rbuf_converted,
+            state.wanted_format,
+        );
+
+        rbuf_converted.iter().enumerate().for_each(|(frame, val)| {
+            let chs = state.wanted_format.get_channel_count().get();
+            let off = frame * state.wanted_format.get_channel_count().get();
+            state.buffer[off..(off + chs)].copy_from_slice(val);
+        });
     }
 
     fn tick_frame(
@@ -149,33 +131,22 @@ unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
         _input: Self::Input,
         state: &mut Self::State,
     ) -> Self::Output {
-        let mut intermediate_frame = [0.0f64; MAX_CHANS];
-        let output_frame = [0.0f64; MAX_CHANS];
+        let mut output_frame = [0.0f64; MAX_CHANS];
 
-        let chan_count = state.descriptor.channel_format.get_channel_count().get();
+        let chan_count = state.wanted_format.get_channel_count().get();
         let frame_off = state.buffer_consumed * chan_count;
 
-        // Copy from f32 buffer to f64 frame
-        intermediate_frame
+        output_frame
             .iter_mut()
             .take(chan_count)
             .enumerate()
             .for_each(|(i, dest)| {
-                *dest = state.buffer[frame_off + i] as f64;
+                *dest = state.buffer[frame_off + i];
             });
 
         state.buffer_consumed += 1;
 
-        // Convert channels for single frame
-        let mut output_array = [output_frame];
-        crate::channel_conversion::convert_channels(
-            &[intermediate_frame],
-            state.descriptor.channel_format,
-            &mut output_array,
-            state.wanted_format,
-        );
-
-        output_array[0]
+        output_frame
     }
 }
 
@@ -183,26 +154,24 @@ impl<const MAX_CHANS: usize> IntoSignal for MediaSignalConfig<MAX_CHANS> {
     type Signal = MediaSignal<MAX_CHANS>;
 
     fn into_signal(self) -> IntoSignalResult<Self> {
-        let media_chans = self
-            .executor
-            .descriptor()
-            .channel_format
-            .get_channel_count()
-            .get();
+        let descriptor = self.descriptor;
+        let media_chans = descriptor.channel_format.get_channel_count().get();
         Ok(ReadySignal {
             signal: MediaSignal::<MAX_CHANS>(()),
             state: MediaSignalState {
-                buffer: vec![0.0f32; media_chans * config::BLOCK_SIZE],
+                buffer: vec![0.0f64; media_chans * BLOCK_SIZE],
                 buffer_consumed: 0,
-                media_id: self.media_id,
-                descriptor: self.executor.descriptor().clone(),
+                descriptor,
                 wanted_format: self.wanted_format,
+                ring: self.ring,
             },
         })
     }
 
-    fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> crate::Result<()> {
-        inserter(self.media_id, TracedResource::Media(self.executor.clone()));
+    fn trace<F: FnMut(UniqueId, TracedResource)>(
+        &mut self,
+        _inserter: &mut F,
+    ) -> crate::Result<()> {
         Ok(())
     }
 }

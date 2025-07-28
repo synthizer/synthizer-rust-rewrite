@@ -4,29 +4,22 @@
 //! uses mutexes and is not realtime-safe because it is intended for the use case of users which are trying to use
 //! Synthizer as a synthesizer that just gives out samples.
 use std::collections::HashMap;
-
-use std::sync::{Arc, Mutex, Weak};
-
-use atomic_refcell::AtomicRefCell;
+use std::sync::{Arc, Mutex};
 
 use crate::unique_id::UniqueId;
 
 use super::*;
 
-struct SortedTaskEntry {
-    task: Arc<dyn TaskImmutable>,
-    priority: TaskPriority,
+struct TaskEntry {
+    task: Box<dyn Task>,
     id: UniqueId,
-
-    /// Shuffles tasks of the same priority by breaking ties in the sort.
-    random_seed: u8,
 }
 
 struct InlinePoolState {
-    tasks: HashMap<UniqueId, Weak<dyn TaskImmutable>>,
+    tasks: HashMap<UniqueId, Box<dyn Task>>,
 
-    /// Temporary vec we sort to to prevent spamming the allocator.
-    sorted_task_vec: Vec<SortedTaskEntry>,
+    /// Temporary vec to prevent spamming the allocator.
+    task_vec: Vec<TaskEntry>,
 }
 
 pub(super) struct InlinePoolImpl {
@@ -37,7 +30,7 @@ impl InlinePoolImpl {
     pub(super) fn new() -> Arc<Self> {
         let state = InlinePoolState {
             tasks: HashMap::with_capacity(32),
-            sorted_task_vec: Vec::with_capacity(32),
+            task_vec: Vec::with_capacity(32),
         };
 
         Arc::new(InlinePoolImpl {
@@ -45,17 +38,11 @@ impl InlinePoolImpl {
         })
     }
 
-    pub(super) fn register_task_impl<T: Task>(&self, task: T) -> TaskHandle {
+    pub(super) fn register_task_impl<T: Task>(&self, task: T) {
         let id = UniqueId::new();
 
         let mut state = self.state.lock().unwrap();
-
-        let immutable: Arc<dyn TaskImmutable> = Arc::new(AtomicRefCell::new(task));
-        state.tasks.insert(id, Arc::downgrade(&immutable));
-
-        TaskHandle {
-            task_strong: immutable,
-        }
+        state.tasks.insert(id, Box::new(task));
     }
 
     pub(super) fn run_tasks(&self) {
@@ -63,36 +50,17 @@ impl InlinePoolImpl {
         // For split borrows.
         let state: &mut InlinePoolState = &mut state;
 
-        // We respect priority even though every tick always runs all tasks.  This at least approximates the determinism
-        // which we receive from the multithreaded pool.  TO get something more resembling threads we shuffle based off
-        // random integers.
-
+        // Collect all active tasks.
         state
-            .sorted_task_vec
-            .extend(state.tasks.iter().filter_map(|(id, task_weak)| {
-                let upgraded = task_weak.upgrade()?;
-                let priority = upgraded.priority();
-                Some(SortedTaskEntry {
-                    id: *id,
-                    task: upgraded,
-                    priority,
-                    random_seed: rand::random(),
-                })
-            }));
-
-        state
-            .sorted_task_vec
-            .sort_by_key(|t| (t.priority, t.random_seed));
+            .task_vec
+            .extend(state.tasks.drain().map(|(id, task)| TaskEntry { id, task }));
 
         // We want to remove from the hashmap when tasks say they're done.  We also want to clear the vector. Ergo drain, and a manual remove.
-        for task in state.sorted_task_vec.drain(..) {
-            if !task.task.execute() {
-                state.tasks.remove(&task.id);
+        for mut task in state.task_vec.drain(..) {
+            if task.task.execute() {
+                state.tasks.insert(task.id, task.task);
             }
         }
-
-        // Now get rid of any tasks which aren't around anymore.
-        state.tasks.retain(|_, task| task.strong_count() != 0);
     }
 }
 
@@ -117,11 +85,6 @@ mod tests {
         fn execute(&mut self) -> bool {
             self.counter.fetch_add(1, Ordering::Relaxed);
             self.execute_ret.load(Ordering::Relaxed)
-        }
-
-        fn priority(&self) -> TaskPriority {
-            // For now, we don't do anything with priority.  When we do, we will make these tests more advanced.
-            TaskPriority::Decoding(0)
         }
     }
 
@@ -205,9 +168,8 @@ mod tests {
         // before doing anything, try running the pool with no tasks. This could in theory detect a crash as the imoplementation becomes more advanced.
         context.pool.run_tasks();
 
-        let mut handles = vec![];
         for i in std::mem::take(&mut context.tasks) {
-            handles.push(context.pool.register_task_impl(i));
+            context.pool.register_task_impl(i);
         }
 
         // Ticking once should always increment an inline pool's tasks once.
@@ -225,9 +187,7 @@ mod tests {
 
         assert_eq!(context.counter_vec(), vec![3, 2, 3]);
 
-        // Dropping all task handles should immediately drop tasks.
-        std::mem::drop(handles);
-        context.pool.run_tasks();
-        assert_eq!(context.alive_flags_vec(), vec![false, false, false]);
+        // The task that stopped should have been dropped
+        assert_eq!(context.alive_flags_vec(), vec![true, false, true]);
     }
 }

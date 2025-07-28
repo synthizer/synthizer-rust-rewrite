@@ -6,55 +6,19 @@ use std::num::NonZeroUsize;
 
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
-
 use threaded::*;
 
-/// Priorities of a task. Lower is higher priority.
-#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd, Debug, Hash)]
-pub(crate) enum TaskPriority {
-    /// This task is decoding a source.  The priority of that decoding is the u64 value, where 0 is highest priority.
-    Decoding(u64),
-}
-
 /// trait representing tasks which may be scheduled to a pool.
-pub(crate) trait Task: Send + Sync + 'static {
-    /// What is the priority of this task?
-    ///
-    /// Tasks with lower priorities are ticked less often.
-    ///
-    /// This is permitted to change between runs.
-    fn priority(&self) -> TaskPriority;
-
+pub(crate) trait Task: Send + 'static {
     /// Execute this task.
     ///
     /// If this function returns true, the task is given a chance to run again approximately at the next audio tick.
     /// Otherwise, it is assumed to be a one-off task and will be dropped from further processing.
     ///
-    /// Tasks are not guaranteed to be ticked every audio update.  In particular, low priority tasks are ticked less
-    /// often if work is running behind. Consequently, this should do as much work as it can, not just enough work for
-    /// one audio tick.  That said, this scheduler is somewhat aware of the requirements, e.g. that if we tick a
-    /// streaming source lesss than every 50 ms glitching happens.
+    /// Tasks are not guaranteed to be ticked every audio update. Consequently, this should do as much work as it can,
+    /// not just enough work for one audio tick. That said, this scheduler is somewhat aware of the requirements,
+    /// e.g. that if we tick a streaming source less than every 50 ms glitching happens.
     fn execute(&mut self) -> bool;
-}
-
-/// This is a module-internal trait which is implemented for `AtomicRefCell` to let tasks be mutable, while exposing immutable
-/// interfaces for `Arc`.
-///
-/// It works by "unwrapping" and then calling into the inner trait, and lets us avoid having to double-box.
-trait TaskImmutable: Send + Sync + 'static {
-    fn priority(&self) -> TaskPriority;
-    fn execute(&self) -> bool;
-}
-
-impl<T: Task> TaskImmutable for AtomicRefCell<T> {
-    fn priority(&self) -> TaskPriority {
-        self.borrow().priority()
-    }
-
-    fn execute(&self) -> bool {
-        self.borrow_mut().execute()
-    }
 }
 
 #[derive(Clone)]
@@ -92,18 +56,6 @@ pub(crate) struct WorkerPoolHandle {
     kind: WorkerPoolKind,
 }
 
-/// A task is alive as long as the handle to it is.
-///
-/// When this handle is dropped, the task on the pool is likewise cancelled.  That is:
-///
-/// - If the task ever returns false in [Task::execute] it will not be re-scheduled but the object is kept alive.
-/// - If this handle is dropped, the task will be cancelled and the underlying object will likewise go away.
-///
-/// because [Task::execute] allows mutable self access, tasks should work out their own methods of communication.
-pub(crate) struct TaskHandle {
-    task_strong: Arc<dyn TaskImmutable>,
-}
-
 impl WorkerPoolHandle {
     /// Spawn a worker pool with the given number of background threads.
     pub(crate) fn new_threaded(threads: NonZeroUsize) -> Self {
@@ -139,9 +91,8 @@ impl WorkerPoolHandle {
     ///
     /// This function will allocate.
     ///
-    /// The returned handle must not be dropped for as long as the task should be running.
-    #[must_use = "Dropping task handles immediately cancels tasks, so they will likely never run unless the first run is fast enough to race this drop"]
-    pub(crate) fn register_task<T: Task>(&self, task: T) -> TaskHandle {
+    /// The task will run until it returns false from execute().
+    pub(crate) fn register_task<T: Task>(&self, task: T) {
         match &self.kind {
             WorkerPoolKind::Inline(p) => p.register_task_impl(task),
             WorkerPoolKind::Threaded(p) => p.register_task(task),
