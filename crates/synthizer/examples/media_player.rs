@@ -15,7 +15,7 @@ fn main() -> Result<()> {
 
     let (controller, mut media);
 
-    let handle = {
+    let _handle = {
         let mut batch = synth.batch();
 
         (controller, media) = batch.make_media(file)?;
@@ -69,7 +69,6 @@ loop (off | full | range) [<start> <end>]: configure looping.
                     continue;
                 };
 
-                let batch = synth.batch();
                 controller.seek((pos * controller.get_sr() as f64) as u64)?;
             }
             "pause" => {

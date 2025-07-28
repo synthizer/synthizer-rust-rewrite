@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use synthizer::sample_sources;
 use synthizer::*;
 
 fn main() -> Result<()> {
@@ -14,7 +13,7 @@ fn main() -> Result<()> {
         .expect("Specify a file path as the first argument");
     let file = std::fs::File::open(file_path).unwrap();
 
-    let (mut controller, media);
+    let (controller, mut media);
 
     let delay_line = DelayLineHandle::<[f64; 2]>::new_defaulting(
         std::num::NonZeroUsize::new(synth.duration_to_samples(Duration::from_secs(5))).unwrap(),

@@ -1,6 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::prelude::*;
 use rand_xoshiro::Xoroshiro128PlusPlus;
+use std::hint::black_box;
 
 use synthizer::fast_xoroshiro::*;
 
