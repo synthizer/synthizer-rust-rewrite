@@ -9,7 +9,8 @@
       "Bash(cargo upgrade:*)",
       "Bash(cargo clippy:*)",
       "Bash(rm:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "WebFetch(domain:docs.rs)"
     ],
     "deny": []
   }

@@ -77,6 +77,9 @@ pub(crate) struct AudioThreadState {
 
     /// time in blocks since this state was created.
     pub(crate) time_in_blocks: u64,
+
+    /// Standard library version of mounts for audio thread processing
+    pub(crate) mounts: std::collections::HashMap<UniqueId, MountContainer>,
 }
 
 /// Internal helper type: flips a boolean to true when dropped.
@@ -237,6 +240,7 @@ impl SynthesizerState {
                 buf_remaining: 0,
                 buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
                 time_in_blocks: 0,
+                mounts: std::collections::HashMap::new(),
             })),
             mounts: SynthMap::new_sync(),
         }
@@ -353,26 +357,47 @@ impl Batch<'_> {
 }
 
 /// Run one iteration of the audio thread.
-fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
+fn at_iter(state: &Arc<SynthesizerState>, dest: &mut [f32]) {
+    // Copy state from synthesizer to audio thread state
+    {
+        let mut audio_state = state.audio_thred_state.borrow_mut();
+
+        // Copy all mounts from persistent state to audio thread state
+        for (id, mount) in state.mounts.iter() {
+            audio_state.mounts.insert(*id, mount.clone());
+        }
+
+        // Remove any mounts that are marked for drop
+        audio_state
+            .mounts
+            .retain(|_, m| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    // Call the inner function
+    at_iter_inner(state, dest);
+}
+
+/// Inner implementation of audio thread iteration
+fn at_iter_inner(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
     while !dest.is_empty() {
         // Grab the audio thread state and copy out whatever data we can.
         {
-            let mut state = state.audio_thred_state.borrow_mut();
-            if state.buf_remaining > 0 {
+            let mut audio_state = state.audio_thred_state.borrow_mut();
+            if audio_state.buf_remaining > 0 {
                 // Hardcoded stereo, at the moment.
                 let remaining = dest.len() / 2;
-                let will_do = state.buf_remaining.min(remaining);
+                let will_do = audio_state.buf_remaining.min(remaining);
                 assert!(will_do > 0);
 
-                let start_ind = state.buffer.len() - state.buf_remaining;
-                let grabbing = &mut state.buffer[start_ind..(start_ind + will_do)];
+                let start_ind = audio_state.buffer.len() - audio_state.buf_remaining;
+                let grabbing = &mut audio_state.buffer[start_ind..(start_ind + will_do)];
                 grabbing.iter().enumerate().for_each(|(i, x)| {
                     dest[i * 2] = x[0] as f32;
                     dest[i * 2 + 1] = x[1] as f32;
                 });
                 // Careful: advance by stereo, not mono.
                 dest = &mut dest[will_do * 2..];
-                state.buf_remaining -= will_do;
+                audio_state.buf_remaining -= will_do;
 
                 if dest.is_empty() {
                     // This was enough, and we do not need to refill the buffer.
@@ -390,17 +415,24 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
             at_state.buffer.fill([0.0f64; 2]);
         }
 
-        let mut as_mut = state.audio_thred_state.borrow_mut();
+        // Collect mounts that need to run
+        let mounts_to_run: Vec<(UniqueId, MountContainer)> = {
+            let as_ref = state.audio_thred_state.borrow();
+            as_ref
+                .mounts
+                .iter()
+                .filter(|(_, m)| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                .map(|(id, m)| (*id, m.clone()))
+                .collect()
+        };
 
-        // Mounts may fill the audio buffer.
-        for (id, m) in state.mounts.iter() {
-            if m.pending_drop.load(std::sync::atomic::Ordering::Relaxed) {
-                continue;
-            }
+        // Process each mount
+        for (id, m) in mounts_to_run {
+            let mut as_mut = state.audio_thred_state.borrow_mut();
 
             m.erased_mount.borrow_mut().run(
                 state,
-                id,
+                &id,
                 &crate::context::FixedSignalExecutionContext {
                     time_in_blocks: as_mut.time_in_blocks,
                     audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut as_mut.buffer),
@@ -412,6 +444,6 @@ fn at_iter(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
             );
         }
 
-        as_mut.time_in_blocks += 1;
+        state.audio_thred_state.borrow_mut().time_in_blocks += 1;
     }
 }
