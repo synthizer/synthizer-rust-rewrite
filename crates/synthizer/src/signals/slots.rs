@@ -74,15 +74,15 @@ pub struct SlotAudioThreadState<T> {
 
 /// Subset of the synthesizer's state needed to resolve a slot.
 pub(crate) struct SlotUpdateContext<'a> {
-    /// Slots on this mount.
+    /// Global slots map.
     ///
     /// The value is `SlotValueContainer<T>`.
-    pub(crate) mount_slots: &'a SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
+    pub(crate) global_slots: &'a std::collections::HashMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
 }
 
 impl SlotUpdateContext<'_> {
     fn resolve<T: Any>(&'_ self, id: &'_ UniqueId) -> Option<&'_ SlotValueContainer<T>> {
-        self.mount_slots
+        self.global_slots
             .get(id)?
             .downcast_ref::<SlotValueContainer<T>>()
     }

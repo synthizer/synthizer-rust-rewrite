@@ -13,7 +13,7 @@ use crate::error::{Error, Result};
 use crate::mount_point::ErasedMountPoint;
 use crate::sample_sources::UnifiedMediaSource;
 use crate::signals as sigs;
-use crate::signals::{Slot, SlotMap, SlotUpdateContext, SlotValueContainer};
+use crate::signals::{Slot, SlotUpdateContext, SlotValueContainer};
 use crate::unique_id::UniqueId;
 
 type SynthMap<K, V> = HashTrieMapSync<K, V>;
@@ -33,8 +33,6 @@ pub(crate) struct MountContainer {
 
     /// Should only be accessed from the audio thread.  Cloning is fine.
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
-
-    pub(crate) slots: SlotMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
 }
 
 /// This is the state published to the audio thread.
@@ -55,6 +53,8 @@ pub(crate) struct SynthesizerState {
     arc_freelist: crate::data_structures::deferred_arc_swap::ArcStash<Self>,
 
     pub(crate) mounts: SynthMap<UniqueId, MountContainer>,
+
+    pub(crate) slots: SynthMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
 
     pub(crate) audio_thred_state: Arc<AtomicRefCell<AudioThreadState>>,
 }
@@ -80,6 +80,9 @@ pub(crate) struct AudioThreadState {
 
     /// Standard library version of mounts for audio thread processing
     pub(crate) mounts: std::collections::HashMap<UniqueId, MountContainer>,
+
+    /// Global slots map for audio thread processing
+    pub(crate) slots: std::collections::HashMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
 }
 
 /// Internal helper type: flips a boolean to true when dropped.
@@ -241,8 +244,10 @@ impl SynthesizerState {
                 buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
                 time_in_blocks: 0,
                 mounts: std::collections::HashMap::new(),
+                slots: std::collections::HashMap::new(),
             })),
             mounts: SynthMap::new_sync(),
+            slots: SynthMap::new_sync(),
         }
     }
 }
@@ -266,10 +271,8 @@ impl Batch<'_> {
     }
 
     pub fn mount<M: crate::mount_point::Mountable>(&mut self, mut new_mount: M) -> Result<Handle> {
-        let mut slots = SlotMap::new_sync();
-
         new_mount.trace(&mut |id, val| match val {
-            TracedResource::Slot(s) => slots.insert_mut(id, s),
+            TracedResource::Slot(s) => self.new_state.slots.insert_mut(id, s),
         })?;
 
         let object_id = UniqueId::new();
@@ -280,7 +283,6 @@ impl Batch<'_> {
         let inserting = MountContainer {
             erased_mount: Arc::new(AtomicRefCell::new(mount)),
             pending_drop: pending_drop.0.clone(),
-            slots,
         };
         self.new_state.mounts.insert_mut(object_id, inserting);
 
@@ -311,17 +313,20 @@ impl Batch<'_> {
     where
         T: Send + Sync + Clone + 'static,
     {
-        let slot  = self.new_state
-        .mounts.get_mut(&handle.object_id)
-        .expect("We give out handles, so the user shouldn't be able to get one to objects that don't exist")
-        .slots
-        .get_mut(&slot.slot_id)
-        .ok_or_else(||Error::new_validation_cow("Slot does not match this mount"))?;
-        let newslot = slot
+        // Verify the handle exists
+        if !self.new_state.mounts.contains_key(&handle.object_id) {
+            return Err(Error::new_validation_cow("Handle does not exist"));
+        }
+        
+        let slot_ref = self.new_state
+            .slots
+            .get_mut(&slot.slot_id)
+            .ok_or_else(||Error::new_validation_cow("Slot does not exist"))?;
+        let newslot = slot_ref
             .downcast_ref::<SlotValueContainer<T>>()
-            .unwrap()
+            .ok_or_else(||Error::new_validation_cow("Slot type mismatch"))?
             .replace(new_val);
-        *slot = Arc::new(newslot);
+        *slot_ref = Arc::new(newslot);
 
         Ok(())
     }
@@ -365,6 +370,11 @@ fn at_iter(state: &Arc<SynthesizerState>, dest: &mut [f32]) {
         // Copy all mounts from persistent state to audio thread state
         for (id, mount) in state.mounts.iter() {
             audio_state.mounts.insert(*id, mount.clone());
+        }
+
+        // Copy all slots from persistent state to audio thread state
+        for (id, slot) in state.slots.iter() {
+            audio_state.slots.insert(*id, slot.clone());
         }
 
         // Remove any mounts that are marked for drop
@@ -429,7 +439,13 @@ fn at_iter_inner(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
         // Process each mount
         for (id, m) in mounts_to_run {
             let mut as_mut = state.audio_thred_state.borrow_mut();
-
+            // Pre-deref to allow split borrows
+            let as_mut: &mut AudioThreadState = &mut *as_mut;
+            
+            let slot_ctx = SlotUpdateContext {
+                global_slots: &as_mut.slots,
+            };
+            
             m.erased_mount.borrow_mut().run(
                 state,
                 &id,
@@ -437,9 +453,7 @@ fn at_iter_inner(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
                     time_in_blocks: as_mut.time_in_blocks,
                     audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut as_mut.buffer),
                     audio_destination_format: &crate::channel_format::ChannelFormat::Stereo,
-                    slots: &SlotUpdateContext {
-                        mount_slots: &m.slots,
-                    },
+                    slots: &slot_ctx,
                 },
             );
         }
