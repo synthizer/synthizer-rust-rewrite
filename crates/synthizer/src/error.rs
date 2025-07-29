@@ -22,6 +22,9 @@ enum ErrorPayload {
 
     #[display("Channel closed")]
     ChannelClosed,
+
+    #[display("Io: {}", _0)]
+    Io(std::io::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +49,7 @@ conv!(AudioBackend, AudioDeviceError);
 conv!(LoopSpec, LoopSpecError);
 conv!(Symphonia, symphonia::core::errors::Error);
 conv!(Resampler, crate::resampling::ResamplingError);
+conv!(Io, std::io::Error);
 
 impl<T> From<crossbeam::channel::SendError<T>> for Error {
     fn from(_: crossbeam::channel::SendError<T>) -> Error {

@@ -165,6 +165,8 @@ pub(crate) fn build_symphonia_maybe_nodur<S: MediaSource + 'static>(
 }
 
 pub(crate) fn build_symphonia<S: MediaSource + 'static>(source: S) -> Result<SymphoniaWrapper> {
+    use std::io::Seek;
+
     let (mut ret, durgood) = build_symphonia_maybe_nodur(source)?;
 
     if !durgood {
@@ -177,8 +179,11 @@ pub(crate) fn build_symphonia<S: MediaSource + 'static>(source: S) -> Result<Sym
             }
         }
 
-        ret.descriptor.duration = frames_so_far;
-        ret.seek(0)?;
+        let mut inner = ret.format.into_inner();
+        inner.rewind()?;
+        let mut good = build_symphonia_maybe_nodur(inner)?.0;
+        good.descriptor.duration = frames_so_far;
+        return Ok(good);
     }
     Ok(ret)
 }
