@@ -3,6 +3,7 @@ use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
 use crate::core_traits::*;
+use crate::mark_dropped::MarkDropped;
 use crate::unique_id::UniqueId;
 
 /// Reference to a "knob" on your algorithm.
@@ -33,6 +34,7 @@ use crate::unique_id::UniqueId;
 /// if you create only one slot at a time.
 pub struct Slot<T> {
     pub(crate) slot_id: UniqueId,
+    pub(crate) mark_drop: Arc<MarkDropped>,
     pub(crate) _phantom: PD<T>,
 }
 
@@ -71,15 +73,16 @@ pub struct SlotAudioThreadState<T> {
 pub(crate) struct SlotUpdateContext<'a> {
     /// Global slots map.
     ///
-    /// The value is `SlotValueContainer<T>`.
+    /// The value is `SlotContainer` which contains `SlotValueContainer<T>`.
     pub(crate) global_slots:
-        &'a std::collections::HashMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
+        &'a std::collections::HashMap<UniqueId, crate::synthesizer::SlotContainer>,
 }
 
 impl SlotUpdateContext<'_> {
     fn resolve<T: Any>(&'_ self, id: &'_ UniqueId) -> Option<&'_ SlotValueContainer<T>> {
         self.global_slots
             .get(id)?
+            .value
             .downcast_ref::<SlotValueContainer<T>>()
     }
 }

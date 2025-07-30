@@ -3,12 +3,15 @@ use std::marker::PhantomData as PD;
 use std::sync::Arc;
 use std::time::Duration;
 
+use arrayvec::ArrayVec;
 use atomic_refcell::AtomicRefCell;
 
 use crate::config;
 use crate::core_traits::*;
 use crate::cpal_device::{AudioDevice, DeviceOptions};
 use crate::error::Result;
+use crate::handle::{Handle, HandleState};
+use crate::mark_dropped::MarkDropped;
 use crate::mount_point::ErasedMountPoint;
 use crate::sample_sources::UnifiedMediaSource;
 use crate::signals as sigs;
@@ -50,6 +53,12 @@ pub(crate) struct MountContainer {
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
 }
 
+/// Container for slot value and its drop marker
+pub(crate) struct SlotContainer {
+    pub(crate) value: Arc<dyn Any + Send + Sync + 'static>,
+    pub(crate) pending_drop: Arc<std::sync::atomic::AtomicBool>,
+}
+
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
 /// code.
 pub(crate) struct AudioThreadState {
@@ -67,43 +76,9 @@ pub(crate) struct AudioThreadState {
     pub(crate) mounts: std::collections::HashMap<UniqueId, MountContainer>,
 
     /// Global slots map for audio thread processing
-    pub(crate) slots: std::collections::HashMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
+    pub(crate) slots: std::collections::HashMap<UniqueId, SlotContainer>,
 }
 
-/// Internal helper type: flips a boolean to true when dropped.
-///
-/// This allows dropping outside the batch context. The object(s) are marked dropped and then, on the next batch, they
-/// are actually removed.  Eventually they drop for real, as states rotate out of the audio thread.
-struct MarkDropped(Arc<std::sync::atomic::AtomicBool>);
-
-impl MarkDropped {
-    pub(crate) fn new() -> Self {
-        MarkDropped(Arc::new(std::sync::atomic::AtomicBool::new(false)))
-    }
-}
-
-impl Drop for MarkDropped {
-    fn drop(&mut self) {
-        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-/// A handle which may be used to manipulate some object.
-///
-/// Handles keep objects alive.  When the last handle drops, the object does as well.
-pub struct Handle {
-    object_id: UniqueId,
-    mark_drop: Arc<MarkDropped>,
-}
-
-impl Clone for Handle {
-    fn clone(&self) -> Self {
-        Self {
-            object_id: self.object_id,
-            mark_drop: self.mark_drop.clone(),
-        }
-    }
-}
 
 /// A batch of changes for the audio thread.
 ///
@@ -119,10 +94,55 @@ impl Drop for Batch<'_> {
         // Push all commands to the ring buffer, but wrapped under one command so they all apply in the same audio tick.
         // Spin if the buffer is full - audio thread will eventually consume
         let mut outgoing_commands = std::mem::take(&mut self.commands);
+        
+        // Create ArrayVecs outside the closure to ensure drops happen off audio thread
+        let mut mount_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
+        let mut slot_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
+        let mut removed_mounts: ArrayVec<MountContainer, 16> = ArrayVec::new();
+        let mut removed_slots: ArrayVec<SlotContainer, 16> = ArrayVec::new();
+        
         let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
+            // First execute all user commands
             outgoing_commands
                 .iter_mut()
-                .for_each(move |x| x.execute(state));
+                .for_each(|x| x.execute(state));
+            
+            // Then perform cleanup
+            // Collect IDs of mounts to remove
+            mount_ids_to_remove.clear();
+            mount_ids_to_remove.extend(
+                state.mounts
+                    .iter()
+                    .filter(|(_, m)| m.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                    .map(|(id, _)| *id)
+                    .take(16)
+            );
+            
+            // Collect IDs of slots to remove
+            slot_ids_to_remove.clear();
+            slot_ids_to_remove.extend(
+                state.slots
+                    .iter()
+                    .filter(|(_, s)| s.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                    .map(|(id, _)| *id)
+                    .take(16)
+            );
+            
+            // Remove mounts and store them temporarily
+            removed_mounts.clear();
+            for id in &mount_ids_to_remove {
+                let mount = state.mounts.remove(id)
+                    .expect("Mount marked for removal not found in mounts map");
+                removed_mounts.push(mount);
+            }
+            
+            // Remove slots and store them temporarily
+            removed_slots.clear();
+            for id in &slot_ids_to_remove {
+                let slot = state.slots.remove(id)
+                    .expect("Slot marked for removal not found in slots map");
+                removed_slots.push(slot);
+            }
         });
 
         loop {
@@ -148,7 +168,7 @@ impl Synthesizer {
 
         // Create a thingbuf ring buffer with reasonable capacity
         // This capacity should be tuned based on expected command rate
-        const COMMAND_QUEUE_SIZE: usize = 1024;
+        const COMMAND_QUEUE_SIZE: usize = 64;
         let command_ring = Arc::new(thingbuf::ThingBuf::with_recycle(
             COMMAND_QUEUE_SIZE,
             CommandRecycler,
@@ -253,15 +273,6 @@ impl Batch<'_> {
         self.commands.push(Box::new(f));
     }
 
-    /// Called on batch creation to catch pending drops from last time, then again on batch publish to catch pending
-    /// drops the user might have made during the batch.
-    fn handle_pending_drops(&mut self) {
-        self.push_command(|state: &mut AudioThreadState| {
-            state
-                .mounts
-                .retain(|_, m| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed));
-        });
-    }
 
     pub fn mount<M: crate::mount_point::Mountable>(&mut self, new_mount: M) -> Result<Handle> {
         let object_id = UniqueId::new();
@@ -285,6 +296,7 @@ impl Batch<'_> {
         Ok(Handle {
             object_id,
             mark_drop: Arc::new(pending_drop),
+            state: Arc::new(std::sync::Mutex::new(HandleState::new())),
         })
     }
 
@@ -296,11 +308,16 @@ impl Batch<'_> {
         T: Send + Sync + Clone + 'static,
     {
         let slot_id = UniqueId::new();
+        let mark_drop = MarkDropped::new();
 
         let container = SlotValueContainer::new(initial_value);
 
         let slot_arc: Arc<dyn Any + Send + Sync + 'static> = Arc::new(container);
-        let mut slot_opt = Some(slot_arc);
+        let slot_container = SlotContainer {
+            value: slot_arc,
+            pending_drop: mark_drop.0.clone(),
+        };
+        let mut slot_opt = Some(slot_container);
 
         self.push_command(move |state: &mut AudioThreadState| {
             if let Some(slot) = slot_opt.take() {
@@ -310,6 +327,7 @@ impl Batch<'_> {
 
         Slot {
             slot_id,
+            mark_drop: Arc::new(mark_drop),
             _phantom: PD,
         }
     }
@@ -323,6 +341,10 @@ impl Batch<'_> {
     where
         T: Send + Sync + Clone + 'static,
     {
+        // Register the slot with the handle
+        let mut state = handle.state.lock().expect("Handle mutex poisoned");
+        state.slots.insert(slot.slot_id, slot.mark_drop.clone());
+
         let slot_id = slot.slot_id;
         let object_id = handle.object_id;
 
@@ -333,11 +355,11 @@ impl Batch<'_> {
                 return; // Silent failure for now
             }
 
-            if let Some(slot_ref) = state.slots.get_mut(&slot_id) {
-                if let Some(container) = slot_ref.downcast_ref::<SlotValueContainer<T>>() {
+            if let Some(slot_container) = state.slots.get_mut(&slot_id) {
+                if let Some(container) = slot_container.value.downcast_ref::<SlotValueContainer<T>>() {
                     if let Some(new_val) = new_val_opt.take() {
                         let newslot = container.replace(new_val);
-                        *slot_ref = Arc::new(newslot);
+                        slot_container.value = Arc::new(newslot);
                     }
                 }
             }
