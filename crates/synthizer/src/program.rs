@@ -5,6 +5,7 @@ use crate::core_traits::{IntoSignal, Signal, SignalState};
 use crate::error::Result;
 use crate::unique_id::UniqueId;
 use crate::Chain;
+use crate::bus::{Bus, BusLink, BusLinkType};
 
 /// A program is a collection of signal fragments that execute together as a unit.
 ///
@@ -14,6 +15,11 @@ use crate::Chain;
 #[derive(Default)]
 pub struct Program {
     fragments: Vec<Box<dyn ProgramFragment>>,
+    
+    /// Bus connections for this program
+    pub(crate) input_buses: Vec<(UniqueId, Vec<UniqueId>)>,  // (bus_id, programs that write to it)
+    pub(crate) output_buses: Vec<(UniqueId, Vec<UniqueId>)>, // (bus_id, programs that read from it)
+    pub(crate) internal_buses: Vec<UniqueId>,
 }
 
 impl Program {
@@ -51,6 +57,39 @@ impl Program {
     ) {
         for fragment in &mut self.fragments {
             fragment.execute_block(program_id, shared_ctx);
+        }
+    }
+    
+    /// Link an input bus to this program
+    pub fn link_input_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
+        self.input_buses.push((bus.id(), Vec::new()));
+        BusLink {
+            program: self,
+            bus_id: bus.id(),
+            link_type: BusLinkType::Input,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+    
+    /// Link an output bus to this program
+    pub fn link_output_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
+        self.output_buses.push((bus.id(), Vec::new()));
+        BusLink {
+            program: self,
+            bus_id: bus.id(),
+            link_type: BusLinkType::Output,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+    
+    /// Link an internal bus to this program
+    pub fn link_internal_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
+        self.internal_buses.push(bus.id());
+        BusLink {
+            program: self,
+            bus_id: bus.id(),
+            link_type: BusLinkType::Internal,
+            _phantom: std::marker::PhantomData,
         }
     }
 }

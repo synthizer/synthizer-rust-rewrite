@@ -9,6 +9,7 @@ mod array_utils;
 mod audio_frames;
 mod background_drop;
 pub mod biquad;
+mod bus;
 pub mod chain;
 pub mod chain_mathops;
 mod channel_conversion;

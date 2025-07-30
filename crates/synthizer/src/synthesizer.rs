@@ -11,6 +11,7 @@ use crate::core_traits::*;
 use crate::cpal_device::{AudioDevice, DeviceOptions};
 use crate::error::Result;
 use crate::handle::{Handle, HandleState};
+use crate::bus::Bus;
 use crate::mark_dropped::MarkDropped;
 use crate::program::Program;
 use crate::sample_sources::UnifiedMediaSource;
@@ -56,6 +57,12 @@ pub(crate) struct SlotContainer {
     pub(crate) pending_drop: Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// Container for a bus on the audio thread
+pub(crate) struct BusContainer<T> {
+    pub(crate) bus: Box<crate::bus::Bus<T>>,
+    pub(crate) pending_drop: Arc<std::sync::atomic::AtomicBool>,
+}
+
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
 /// code.
 pub(crate) struct AudioThreadState {
@@ -75,8 +82,22 @@ pub(crate) struct AudioThreadState {
     /// Global slots map for audio thread processing
     pub(crate) slots: std::collections::HashMap<UniqueId, SlotContainer>,
     
+    /// Global buses map for audio thread processing
+    /// We use Any to allow different bus types (f64, [f64; 2], etc.)
+    pub(crate) buses: std::collections::HashMap<UniqueId, Arc<dyn std::any::Any + Send + Sync>>,
+    
     /// Reusable vector for collecting programs to run each audio tick
     pub(crate) programs_to_run: Vec<(UniqueId, ProgramContainer)>,
+    
+    /// Topological sort data - pre-allocated for efficiency
+    pub(crate) topology_generation: u64,
+    pub(crate) last_computed_generation: u64,
+    pub(crate) program_execution_order: Vec<UniqueId>,
+    pub(crate) in_degrees: Vec<(UniqueId, usize)>,
+    pub(crate) sort_queue: Vec<UniqueId>,
+    
+    /// Program dependency graph (program -> programs it outputs to)
+    pub(crate) program_dependencies: std::collections::HashMap<UniqueId, Vec<UniqueId>>,
 }
 
 
@@ -102,6 +123,8 @@ impl Drop for Batch<'_> {
         let mut removed_slots: ArrayVec<SlotContainer, 16> = ArrayVec::new();
         
         let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
+            // Increment topology generation to trigger recompute
+            state.topology_generation += 1;
             // First execute all user commands
             outgoing_commands
                 .iter_mut()
@@ -187,9 +210,16 @@ impl Synthesizer {
                 buf_remaining: 0,
                 buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
                 time_in_blocks: 0,
-                programs: std::collections::HashMap::with_capacity(128),
+                programs: std::collections::HashMap::with_capacity(256),
                 slots: std::collections::HashMap::with_capacity(1024),
-                programs_to_run: Vec::with_capacity(128),
+                buses: std::collections::HashMap::with_capacity(256),
+                programs_to_run: Vec::with_capacity(256),
+                topology_generation: 0,
+                last_computed_generation: 0,
+                program_execution_order: Vec::with_capacity(256),
+                in_degrees: Vec::with_capacity(256),
+                sort_queue: Vec::with_capacity(256),
+                program_dependencies: std::collections::HashMap::with_capacity(256),
             };
 
             // Buffer to handle mismatch between cpal's requested frame count and our BLOCK_SIZE
@@ -398,6 +428,24 @@ impl Batch<'_> {
         Ok((h, sigs::Media { descriptor, ring }))
     }
 
+    /// Create a new bus of the given type
+    pub fn create_bus<T: Default + Copy + Send + Sync + 'static>(&mut self) -> Arc<Bus<T>> {
+        let bus = Arc::new(Bus::new());
+        let bus_id = bus.id();
+        
+        // Store the bus in our batch-local storage
+        let bus_container: Arc<dyn Any + Send + Sync> = bus.clone();
+        let mut bus_opt = Some(bus_container);
+        
+        self.push_command(move |state: &mut AudioThreadState| {
+            if let Some(bus) = bus_opt.take() {
+                state.buses.insert(bus_id, bus);
+            }
+        });
+        
+        bus
+    }
+    
     pub fn duration_to_samples(&self, dur: Duration) -> usize {
         self.synthesizer.duration_to_samples(dur)
     }
@@ -419,6 +467,65 @@ fn at_iter(
 
     // Then process audio
     at_iter_inner(state, dest);
+}
+
+/// Compute topological sort of programs based on bus dependencies
+/// Uses Kahn's algorithm with pre-allocated buffers
+fn compute_program_topology(state: &mut AudioThreadState) {
+    if state.last_computed_generation == state.topology_generation {
+        return; // Already up to date
+    }
+    
+    // Clear reusable buffers
+    state.program_execution_order.clear();
+    state.in_degrees.clear();
+    state.sort_queue.clear();
+    
+    // Initialize in-degrees for all programs
+    for &program_id in state.programs.keys() {
+        state.in_degrees.push((program_id, 0));
+    }
+    
+    // Count in-degrees based on dependencies
+    for (&_program_id, deps) in &state.program_dependencies {
+        for &dependent_id in deps {
+            // Find and increment in-degree
+            if let Some(entry) = state.in_degrees.iter_mut().find(|(id, _)| *id == dependent_id) {
+                entry.1 += 1;
+            }
+        }
+    }
+    
+    // Find all programs with in-degree 0
+    for &(id, degree) in &state.in_degrees {
+        if degree == 0 {
+            state.sort_queue.push(id);
+        }
+    }
+    
+    // Process queue
+    while let Some(current_id) = state.sort_queue.pop() {
+        state.program_execution_order.push(current_id);
+        
+        // Decrement in-degrees of dependent programs
+        if let Some(deps) = state.program_dependencies.get(&current_id) {
+            for &dep_id in deps {
+                if let Some(entry) = state.in_degrees.iter_mut().find(|(id, _)| *id == dep_id) {
+                    entry.1 -= 1;
+                    if entry.1 == 0 {
+                        state.sort_queue.push(dep_id);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Check for cycles
+    if state.program_execution_order.len() != state.programs.len() {
+        panic!("Cycle detected in program dependencies!");
+    }
+    
+    state.last_computed_generation = state.topology_generation;
 }
 
 /// Inner implementation of audio thread iteration
@@ -452,31 +559,31 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
         // Zero it out for this iteration.
         state.buffer.fill([0.0f64; 2]);
 
-        // Collect programs that need to run (reuse existing Vec)
-        state.programs_to_run.clear();
-        state.programs_to_run.extend(
-            state
-                .programs
-                .iter()
-                .filter(|(_, p)| !p.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
-                .map(|(id, p)| (*id, p.clone()))
-        );
+        // Compute topological sort if needed
+        compute_program_topology(state);
 
-        // Process each program
-        for (id, p) in &state.programs_to_run {
+        // Process programs in topologically sorted order
+        for &program_id in &state.program_execution_order.clone() {
+            if let Some(p) = state.programs.get(&program_id) {
+                if p.pending_drop.load(std::sync::atomic::Ordering::Relaxed) {
+                    continue;
+                }
+                
+                let p = p.clone(); // Clone the container to avoid borrow issues
             let slot_ctx = SlotUpdateContext {
                 global_slots: &state.slots,
             };
 
-            p.program.borrow_mut().execute_block(
-                id,
-                &crate::context::FixedSignalExecutionContext {
-                    time_in_blocks: state.time_in_blocks,
-                    audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut state.buffer),
-                    audio_destination_format: &crate::channel_format::ChannelFormat::Stereo,
-                    slots: &slot_ctx,
-                },
-            );
+                p.program.borrow_mut().execute_block(
+                    &program_id,
+                    &crate::context::FixedSignalExecutionContext {
+                        time_in_blocks: state.time_in_blocks,
+                        audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut state.buffer),
+                        audio_destination_format: &crate::channel_format::ChannelFormat::Stereo,
+                        slots: &slot_ctx,
+                    },
+                );
+            }
         }
 
         state.time_in_blocks += 1;
