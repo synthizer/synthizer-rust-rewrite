@@ -32,17 +32,17 @@ fn main() -> Result<()> {
     // Mount the programs
     let _writer_handle = batch.mount(writer_program)?;
     let _reader_handle = batch.mount(reader_program)?;
-    
+
     println!("\nPrograms mounted. The dependency system will ensure:");
     println!("- Writer program executes before reader program");
     println!("- Bus acts as the communication channel between them");
-    
+
     // Drop the batch to send all commands
     drop(batch);
-    
+
     println!("\nRunning for 2 seconds to demonstrate the system is active...");
     std::thread::sleep(Duration::from_secs(2));
-    
+
     println!("Done!");
     Ok(())
 }

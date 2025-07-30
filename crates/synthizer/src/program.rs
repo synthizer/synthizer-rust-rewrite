@@ -1,11 +1,10 @@
-
+use crate::bus::{Bus, BusLink, BusLinkType};
 use crate::config;
 use crate::context::{FixedSignalExecutionContext, SignalExecutionContext};
 use crate::core_traits::{IntoSignal, Signal, SignalState};
 use crate::error::Result;
 use crate::unique_id::UniqueId;
 use crate::Chain;
-use crate::bus::{Bus, BusLink, BusLinkType};
 
 /// A program is a collection of signal fragments that execute together as a unit.
 ///
@@ -15,9 +14,9 @@ use crate::bus::{Bus, BusLink, BusLinkType};
 #[derive(Default)]
 pub struct Program {
     fragments: Vec<Box<dyn ProgramFragment>>,
-    
+
     /// Bus connections for this program
-    pub(crate) input_buses: Vec<(UniqueId, Vec<UniqueId>)>,  // (bus_id, programs that write to it)
+    pub(crate) input_buses: Vec<(UniqueId, Vec<UniqueId>)>, // (bus_id, programs that write to it)
     pub(crate) output_buses: Vec<(UniqueId, Vec<UniqueId>)>, // (bus_id, programs that read from it)
     pub(crate) internal_buses: Vec<UniqueId>,
 }
@@ -59,7 +58,7 @@ impl Program {
             fragment.execute_block(program_id, shared_ctx);
         }
     }
-    
+
     /// Link an input bus to this program
     pub fn link_input_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
         self.input_buses.push((bus.id(), Vec::new()));
@@ -70,7 +69,7 @@ impl Program {
             _phantom: std::marker::PhantomData,
         }
     }
-    
+
     /// Link an output bus to this program
     pub fn link_output_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
         self.output_buses.push((bus.id(), Vec::new()));
@@ -81,7 +80,7 @@ impl Program {
             _phantom: std::marker::PhantomData,
         }
     }
-    
+
     /// Link an internal bus to this program
     pub fn link_internal_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
         self.internal_buses.push(bus.id());
@@ -92,7 +91,7 @@ impl Program {
             _phantom: std::marker::PhantomData,
         }
     }
-    
+
     /// Track that this program uses a slot
     pub fn uses_slot<T>(&mut self, _slot: &crate::signals::Slot<T>) {
         // This is for tracking purposes - the actual slot tracking happens
@@ -106,11 +105,7 @@ impl Program {
 /// This is the type-erased interface that allows different types of fragments to be stored and executed together.
 pub(crate) trait ProgramFragment: Send + Sync + 'static {
     /// Execute one block of audio processing for this fragment.
-    fn execute_block(
-        &mut self,
-        program_id: &UniqueId,
-        shared_ctx: &FixedSignalExecutionContext,
-    );
+    fn execute_block(&mut self, program_id: &UniqueId, shared_ctx: &FixedSignalExecutionContext);
 }
 
 /// A program fragment that wraps a signal and its state.
@@ -128,11 +123,7 @@ impl<S> ProgramFragment for SignalFragment<S>
 where
     S: Signal<Input = ()>,
 {
-    fn execute_block(
-        &mut self,
-        _program_id: &UniqueId,
-        shared_ctx: &FixedSignalExecutionContext,
-    ) {
+    fn execute_block(&mut self, _program_id: &UniqueId, shared_ctx: &FixedSignalExecutionContext) {
         let ctx = SignalExecutionContext { fixed: shared_ctx };
 
         // Call on_block_start once per block
@@ -153,7 +144,7 @@ where
     S::Signal: Signal<Input = (), Output = ()> + 'static,
 {
     type Error = crate::error::Error;
-    
+
     fn try_from(chain: Chain<S>) -> Result<Self> {
         let mut program = Program::new();
         program.add_fragment(chain)?;

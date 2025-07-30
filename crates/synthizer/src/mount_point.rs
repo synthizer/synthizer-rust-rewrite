@@ -17,11 +17,7 @@ where
 
 pub(crate) trait ErasedMountPoint: Send + Sync + 'static {
     /// The id here lets the mount look up other things outside the mount.
-    fn run(
-        &mut self,
-        mount_id: &UniqueId,
-        shared_ctx: &FixedSignalExecutionContext,
-    );
+    fn run(&mut self, mount_id: &UniqueId, shared_ctx: &FixedSignalExecutionContext);
 }
 
 pub mod sealed {
@@ -72,11 +68,7 @@ where
 }
 
 impl<S: ExecutableMount> ErasedMountPoint for MountPoint<S> {
-    fn run(
-        &mut self,
-        mount_id: &UniqueId,
-        shared_ctx: &FixedSignalExecutionContext,
-    ) {
+    fn run(&mut self, mount_id: &UniqueId, shared_ctx: &FixedSignalExecutionContext) {
         S::run(self, mount_id, shared_ctx);
     }
 }

@@ -6,12 +6,12 @@ use std::time::Duration;
 use arrayvec::ArrayVec;
 use atomic_refcell::AtomicRefCell;
 
+use crate::bus::Bus;
 use crate::config;
 use crate::core_traits::*;
 use crate::cpal_device::{AudioDevice, DeviceOptions};
 use crate::error::Result;
 use crate::handle::{Handle, HandleState};
-use crate::bus::Bus;
 use crate::mark_dropped::MarkDropped;
 use crate::program::Program;
 use crate::sample_sources::UnifiedMediaSource;
@@ -33,7 +33,6 @@ impl thingbuf::recycling::Recycle<Box<dyn Command>> for CommandRecycler {
         // Leave it alone. When something is next enqueued here, it will drop the old data on a non-audio thread.
     }
 }
-
 
 pub struct Synthesizer {
     command_ring: Arc<thingbuf::ThingBuf<Box<dyn Command>, CommandRecycler>>,
@@ -81,25 +80,24 @@ pub(crate) struct AudioThreadState {
 
     /// Global slots map for audio thread processing
     pub(crate) slots: std::collections::HashMap<UniqueId, SlotContainer>,
-    
+
     /// Global buses map for audio thread processing
     /// We use Any to allow different bus types (f64, [f64; 2], etc.)
     pub(crate) buses: std::collections::HashMap<UniqueId, Arc<dyn std::any::Any + Send + Sync>>,
-    
+
     /// Reusable vector for collecting programs to run each audio tick
     pub(crate) programs_to_run: Vec<(UniqueId, ProgramContainer)>,
-    
+
     /// Topological sort data - pre-allocated for efficiency
     pub(crate) topology_generation: u64,
     pub(crate) last_computed_generation: u64,
     pub(crate) program_execution_order: Vec<UniqueId>,
     pub(crate) in_degrees: Vec<(UniqueId, usize)>,
     pub(crate) sort_queue: Vec<UniqueId>,
-    
+
     /// Program dependency graph (program -> programs it outputs to)
     pub(crate) program_dependencies: std::collections::HashMap<UniqueId, Vec<UniqueId>>,
 }
-
 
 /// A batch of changes for the audio thread.
 ///
@@ -115,54 +113,58 @@ impl Drop for Batch<'_> {
         // Push all commands to the ring buffer, but wrapped under one command so they all apply in the same audio tick.
         // Spin if the buffer is full - audio thread will eventually consume
         let mut outgoing_commands = std::mem::take(&mut self.commands);
-        
+
         // Create ArrayVecs outside the closure to ensure drops happen off audio thread
         let mut program_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut slot_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut removed_programs: ArrayVec<ProgramContainer, 16> = ArrayVec::new();
         let mut removed_slots: ArrayVec<SlotContainer, 16> = ArrayVec::new();
-        
+
         let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
             // Increment topology generation to trigger recompute
             state.topology_generation += 1;
             // First execute all user commands
-            outgoing_commands
-                .iter_mut()
-                .for_each(|x| x.execute(state));
-            
+            outgoing_commands.iter_mut().for_each(|x| x.execute(state));
+
             // Then perform cleanup
             // Collect IDs of programs to remove
             program_ids_to_remove.clear();
             program_ids_to_remove.extend(
-                state.programs
+                state
+                    .programs
                     .iter()
                     .filter(|(_, p)| p.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
                     .map(|(id, _)| *id)
-                    .take(16)
+                    .take(16),
             );
-            
+
             // Collect IDs of slots to remove
             slot_ids_to_remove.clear();
             slot_ids_to_remove.extend(
-                state.slots
+                state
+                    .slots
                     .iter()
                     .filter(|(_, s)| s.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
                     .map(|(id, _)| *id)
-                    .take(16)
+                    .take(16),
             );
-            
+
             // Remove programs and store them temporarily
             removed_programs.clear();
             for id in &program_ids_to_remove {
-                let program = state.programs.remove(id)
+                let program = state
+                    .programs
+                    .remove(id)
                     .expect("Program marked for removal not found in programs map");
                 removed_programs.push(program);
             }
-            
+
             // Remove slots and store them temporarily
             removed_slots.clear();
             for id in &slot_ids_to_remove {
-                let slot = state.slots.remove(id)
+                let slot = state
+                    .slots
+                    .remove(id)
                     .expect("Slot marked for removal not found in slots map");
                 removed_slots.push(slot);
             }
@@ -304,8 +306,7 @@ impl Batch<'_> {
         self.commands.push(Box::new(f));
     }
 
-
-    pub fn mount<P>(&mut self, programmable: P) -> Result<Handle> 
+    pub fn mount<P>(&mut self, programmable: P) -> Result<Handle>
     where
         P: TryInto<Program>,
         P::Error: Into<crate::error::Error>,
@@ -329,14 +330,16 @@ impl Batch<'_> {
         self.push_command(move |state: &mut AudioThreadState| {
             if let Some(inserting) = inserting_opt.take() {
                 state.programs.insert(object_id, inserting);
-                
+
                 // Update program dependencies based on bus linkages
                 let mut deps = Vec::new();
-                
+
                 // For each output bus, find programs that read from it
                 for (bus_id, _) in &output_buses {
                     for (&other_id, other_container) in &state.programs {
-                        if other_id == object_id { continue; }
+                        if other_id == object_id {
+                            continue;
+                        }
                         let other_program = other_container.program.borrow();
                         // Check if other program has this bus as input
                         if other_program.input_buses.iter().any(|(id, _)| id == bus_id) {
@@ -344,19 +347,27 @@ impl Batch<'_> {
                         }
                     }
                 }
-                
+
                 if !deps.is_empty() {
                     state.program_dependencies.insert(object_id, deps);
                 }
-                
+
                 // For each input bus, find programs that write to it and add ourselves as their dependency
                 for (bus_id, _) in &input_buses {
                     for (&other_id, other_container) in &state.programs {
-                        if other_id == object_id { continue; }
+                        if other_id == object_id {
+                            continue;
+                        }
                         let other_program = other_container.program.borrow();
                         // Check if other program has this bus as output
-                        if other_program.output_buses.iter().any(|(id, _)| id == bus_id) {
-                            state.program_dependencies.entry(other_id)
+                        if other_program
+                            .output_buses
+                            .iter()
+                            .any(|(id, _)| id == bus_id)
+                        {
+                            state
+                                .program_dependencies
+                                .entry(other_id)
                                 .or_insert_with(Vec::new)
                                 .push(object_id);
                         }
@@ -428,7 +439,9 @@ impl Batch<'_> {
             }
 
             if let Some(slot_container) = state.slots.get_mut(&slot_id) {
-                if let Some(container) = slot_container.value.downcast_ref::<SlotValueContainer<T>>() {
+                if let Some(container) =
+                    slot_container.value.downcast_ref::<SlotValueContainer<T>>()
+                {
                     if let Some(new_val) = new_val_opt.take() {
                         let newslot = container.replace(new_val);
                         slot_container.value = Arc::new(newslot);
@@ -469,20 +482,20 @@ impl Batch<'_> {
     pub fn create_bus<T: Default + Copy + Send + Sync + 'static>(&mut self) -> Arc<Bus<T>> {
         let bus = Arc::new(Bus::new());
         let bus_id = bus.id();
-        
+
         // Store the bus in our batch-local storage
         let bus_container: Arc<dyn Any + Send + Sync> = bus.clone();
         let mut bus_opt = Some(bus_container);
-        
+
         self.push_command(move |state: &mut AudioThreadState| {
             if let Some(bus) = bus_opt.take() {
                 state.buses.insert(bus_id, bus);
             }
         });
-        
+
         bus
     }
-    
+
     pub fn duration_to_samples(&self, dur: Duration) -> usize {
         self.synthesizer.duration_to_samples(dur)
     }
@@ -512,38 +525,42 @@ fn compute_program_topology(state: &mut AudioThreadState) {
     if state.last_computed_generation == state.topology_generation {
         return; // Already up to date
     }
-    
+
     // Clear reusable buffers
     state.program_execution_order.clear();
     state.in_degrees.clear();
     state.sort_queue.clear();
-    
+
     // Initialize in-degrees for all programs
     for &program_id in state.programs.keys() {
         state.in_degrees.push((program_id, 0));
     }
-    
+
     // Count in-degrees based on dependencies
     for (&_program_id, deps) in &state.program_dependencies {
         for &dependent_id in deps {
             // Find and increment in-degree
-            if let Some(entry) = state.in_degrees.iter_mut().find(|(id, _)| *id == dependent_id) {
+            if let Some(entry) = state
+                .in_degrees
+                .iter_mut()
+                .find(|(id, _)| *id == dependent_id)
+            {
                 entry.1 += 1;
             }
         }
     }
-    
+
     // Find all programs with in-degree 0
     for &(id, degree) in &state.in_degrees {
         if degree == 0 {
             state.sort_queue.push(id);
         }
     }
-    
+
     // Process queue
     while let Some(current_id) = state.sort_queue.pop() {
         state.program_execution_order.push(current_id);
-        
+
         // Decrement in-degrees of dependent programs
         if let Some(deps) = state.program_dependencies.get(&current_id) {
             for &dep_id in deps {
@@ -556,12 +573,12 @@ fn compute_program_topology(state: &mut AudioThreadState) {
             }
         }
     }
-    
+
     // Check for cycles
     if state.program_execution_order.len() != state.programs.len() {
         panic!("Cycle detected in program dependencies!");
     }
-    
+
     state.last_computed_generation = state.topology_generation;
 }
 
@@ -605,11 +622,11 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
                 if p.pending_drop.load(std::sync::atomic::Ordering::Relaxed) {
                     continue;
                 }
-                
+
                 let p = p.clone(); // Clone the container to avoid borrow issues
-            let slot_ctx = SlotUpdateContext {
-                global_slots: &state.slots,
-            };
+                let slot_ctx = SlotUpdateContext {
+                    global_slots: &state.slots,
+                };
 
                 p.program.borrow_mut().execute_block(
                     &program_id,

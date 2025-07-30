@@ -6,14 +6,14 @@ use crate::core_traits::{AudioFrame, Signal};
 use crate::unique_id::UniqueId;
 
 /// A bus is a block-sized buffer for inter-program audio communication.
-/// 
+///
 /// Buses are global resources that allow programs to share audio data.
 /// They support reading, writing, and binary operations.
 pub struct Bus<T> {
     /// The actual buffer. We use UnsafeCell because we need to hand out
     /// raw pointers during on_block_start for performance.
     buffer: UnsafeCell<Box<[T; config::BLOCK_SIZE]>>,
-    
+
     /// Unique identifier for this bus
     id: UniqueId,
 }
@@ -28,9 +28,9 @@ impl<T> Bus<T> {
     pub fn id(&self) -> UniqueId {
         self.id
     }
-    
+
     /// Get a raw pointer to the buffer.
-    /// 
+    ///
     /// # Safety
     /// This is only safe to call from the audio thread during on_block_start.
     /// The pointer is valid for the duration of the current block only.
@@ -61,7 +61,7 @@ pub enum BusLinkType {
 }
 
 /// A link between a bus and a program.
-/// 
+///
 /// This type is used during program construction to establish bus connections.
 pub struct BusLink<'a, T> {
     pub(crate) program: &'a mut crate::program::Program,
@@ -72,7 +72,7 @@ pub struct BusLink<'a, T> {
 
 impl<'a, T> BusLink<'a, T> {
     /// Create a chain that reads from this bus
-    pub fn read(self) -> crate::Chain<ReadBusSignalConfig<T>> 
+    pub fn read(self) -> crate::Chain<ReadBusSignalConfig<T>>
     where
         T: Send + Sync + Copy + Default + 'static,
     {
@@ -81,9 +81,12 @@ impl<'a, T> BusLink<'a, T> {
             _phantom: PhantomData,
         })
     }
-    
+
     /// Write a signal chain to this bus
-    pub fn write<S>(self, chain: crate::Chain<S>) -> crate::Chain<crate::signals::AndThenConfig<S, WriteBusSignalConfig<T>>>
+    pub fn write<S>(
+        self,
+        chain: crate::Chain<S>,
+    ) -> crate::Chain<crate::signals::AndThenConfig<S, WriteBusSignalConfig<T>>>
     where
         S: crate::core_traits::IntoSignal,
         S::Signal: crate::core_traits::Signal<Output = T>,
@@ -96,12 +99,17 @@ impl<'a, T> BusLink<'a, T> {
                     bus_id: self.bus_id,
                     _phantom: PhantomData,
                 },
-            }
+            },
         }
     }
-    
+
     /// Add a signal chain's output to this bus element-wise for AudioFrame types
-    pub fn frame_add<S>(self, chain: crate::Chain<S>) -> crate::Chain<crate::signals::AndThenConfig<S, BinOpBusSignalConfig<T, impl FnMut(&mut T, T)>>>
+    pub fn frame_add<S>(
+        self,
+        chain: crate::Chain<S>,
+    ) -> crate::Chain<
+        crate::signals::AndThenConfig<S, BinOpBusSignalConfig<T, impl FnMut(&mut T, T)>>,
+    >
     where
         S: crate::core_traits::IntoSignal,
         S::Signal: crate::core_traits::Signal<Output = T>,
@@ -120,7 +128,7 @@ impl<'a, T> BusLink<'a, T> {
                     },
                     _phantom: PhantomData,
                 },
-            }
+            },
         }
     }
 }
@@ -133,8 +141,11 @@ pub struct WriteBusSignalConfig<T> {
 
 impl<T: Send + Sync + Copy + 'static> crate::core_traits::IntoSignal for WriteBusSignalConfig<T> {
     type Signal = WriteBusSignal<T>;
-    
-    fn into_signal(self) -> crate::error::Result<crate::core_traits::ReadySignal<Self::Signal, WriteBusSignalState<T>>> {
+
+    fn into_signal(
+        self,
+    ) -> crate::error::Result<crate::core_traits::ReadySignal<Self::Signal, WriteBusSignalState<T>>>
+    {
         Ok(crate::core_traits::ReadySignal {
             signal: WriteBusSignal {
                 _phantom: PhantomData,
@@ -168,14 +179,14 @@ unsafe impl<T: Send + Sync + Copy + 'static> Signal for WriteBusSignal<T> {
     type Input = T;
     type Output = ();
     type State = WriteBusSignalState<T>;
-    
+
     fn on_block_start(
         ctx: &crate::context::SignalExecutionContext<'_, '_>,
         state: &mut Self::State,
     ) {
         // Reset position for new block
         state.position = 0;
-        
+
         // Look up the bus and cache its pointer
         if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
             if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
@@ -183,7 +194,7 @@ unsafe impl<T: Send + Sync + Copy + 'static> Signal for WriteBusSignal<T> {
             }
         }
     }
-    
+
     fn tick_frame(
         _ctx: &crate::context::SignalExecutionContext<'_, '_>,
         input: Self::Input,
@@ -204,10 +215,15 @@ pub struct ReadBusSignalConfig<T> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Send + Sync + Copy + Default + 'static> crate::core_traits::IntoSignal for ReadBusSignalConfig<T> {
+impl<T: Send + Sync + Copy + Default + 'static> crate::core_traits::IntoSignal
+    for ReadBusSignalConfig<T>
+{
     type Signal = ReadBusSignal<T>;
-    
-    fn into_signal(self) -> crate::error::Result<crate::core_traits::ReadySignal<Self::Signal, ReadBusSignalState<T>>> {
+
+    fn into_signal(
+        self,
+    ) -> crate::error::Result<crate::core_traits::ReadySignal<Self::Signal, ReadBusSignalState<T>>>
+    {
         Ok(crate::core_traits::ReadySignal {
             signal: ReadBusSignal {
                 _phantom: PhantomData,
@@ -241,14 +257,14 @@ unsafe impl<T: Send + Sync + Copy + Default + 'static> Signal for ReadBusSignal<
     type Input = ();
     type Output = T;
     type State = ReadBusSignalState<T>;
-    
+
     fn on_block_start(
         ctx: &crate::context::SignalExecutionContext<'_, '_>,
         state: &mut Self::State,
     ) {
         // Reset position for new block
         state.position = 0;
-        
+
         // Look up the bus and cache its pointer
         if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
             if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
@@ -256,7 +272,7 @@ unsafe impl<T: Send + Sync + Copy + Default + 'static> Signal for ReadBusSignal<
             }
         }
     }
-    
+
     fn tick_frame(
         _ctx: &crate::context::SignalExecutionContext<'_, '_>,
         _input: Self::Input,
@@ -285,8 +301,12 @@ where
     F: FnMut(&mut T, T) + Send + Sync + 'static,
 {
     type Signal = BinOpBusSignal<T, F>;
-    
-    fn into_signal(self) -> crate::error::Result<crate::core_traits::ReadySignal<Self::Signal, BinOpBusSignalState<T, F>>> {
+
+    fn into_signal(
+        self,
+    ) -> crate::error::Result<
+        crate::core_traits::ReadySignal<Self::Signal, BinOpBusSignalState<T, F>>,
+    > {
         Ok(crate::core_traits::ReadySignal {
             signal: BinOpBusSignal {
                 _phantom: PhantomData,
@@ -326,14 +346,14 @@ where
     type Input = T;
     type Output = ();
     type State = BinOpBusSignalState<T, F>;
-    
+
     fn on_block_start(
         ctx: &crate::context::SignalExecutionContext<'_, '_>,
         state: &mut Self::State,
     ) {
         // Reset position for new block
         state.position = 0;
-        
+
         // Look up the bus and cache its pointer
         if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
             if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
@@ -341,7 +361,7 @@ where
             }
         }
     }
-    
+
     fn tick_frame(
         _ctx: &crate::context::SignalExecutionContext<'_, '_>,
         input: Self::Input,

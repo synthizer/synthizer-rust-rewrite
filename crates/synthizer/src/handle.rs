@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use crate::mark_dropped::MarkDropped;
 use crate::unique_id::UniqueId;
@@ -44,7 +44,7 @@ impl Drop for Handle {
         let _state = self.state.lock().expect("Handle mutex poisoned");
         // The slots will be marked for deletion when their MarkDropped instances drop
         // This happens automatically when the HashMap is cleared
-        
+
         // The handle's own mark_drop will be triggered when the Arc drops
     }
 }
