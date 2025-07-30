@@ -1,4 +1,4 @@
-use crate::bus::{Bus, BusLink, BusLinkType};
+use crate::bus::{BusHandle, BusLink, BusLinkType};
 use crate::config;
 use crate::context::{FixedSignalExecutionContext, SignalExecutionContext};
 use crate::core_traits::{IntoSignal, Signal, SignalState};
@@ -60,7 +60,7 @@ impl Program {
     }
 
     /// Link an input bus to this program
-    pub fn link_input_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
+    pub fn link_input_bus<'a, T>(&'a mut self, bus: &BusHandle<T>) -> BusLink<'a, T> {
         self.input_buses.push((bus.id(), Vec::new()));
         BusLink {
             program: self,
@@ -71,7 +71,7 @@ impl Program {
     }
 
     /// Link an output bus to this program
-    pub fn link_output_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
+    pub fn link_output_bus<'a, T>(&'a mut self, bus: &BusHandle<T>) -> BusLink<'a, T> {
         self.output_buses.push((bus.id(), Vec::new()));
         BusLink {
             program: self,
@@ -82,7 +82,7 @@ impl Program {
     }
 
     /// Link an internal bus to this program
-    pub fn link_internal_bus<'a, T>(&'a mut self, bus: &Bus<T>) -> BusLink<'a, T> {
+    pub fn link_internal_bus<'a, T>(&'a mut self, bus: &BusHandle<T>) -> BusLink<'a, T> {
         self.internal_buses.push(bus.id());
         BusLink {
             program: self,

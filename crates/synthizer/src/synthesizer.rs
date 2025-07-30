@@ -6,7 +6,6 @@ use std::time::Duration;
 use arrayvec::ArrayVec;
 use atomic_refcell::AtomicRefCell;
 
-use crate::bus::Bus;
 use crate::config;
 use crate::core_traits::*;
 use crate::cpal_device::{AudioDevice, DeviceOptions};
@@ -57,8 +56,8 @@ pub(crate) struct SlotContainer {
 }
 
 /// Container for a bus on the audio thread
-pub(crate) struct BusContainer<T> {
-    pub(crate) bus: Box<crate::bus::Bus<T>>,
+pub(crate) struct BusContainer {
+    pub(crate) bus: Box<dyn crate::bus::GenericBus>,
     pub(crate) pending_drop: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -82,8 +81,7 @@ pub(crate) struct AudioThreadState {
     pub(crate) slots: std::collections::HashMap<UniqueId, SlotContainer>,
 
     /// Global buses map for audio thread processing
-    /// We use Any to allow different bus types (f64, [f64; 2], etc.)
-    pub(crate) buses: std::collections::HashMap<UniqueId, Arc<dyn std::any::Any + Send + Sync>>,
+    pub(crate) buses: std::collections::HashMap<UniqueId, BusContainer>,
 
     /// Reusable vector for collecting programs to run each audio tick
     pub(crate) programs_to_run: Vec<(UniqueId, ProgramContainer)>,
@@ -117,8 +115,10 @@ impl Drop for Batch<'_> {
         // Create ArrayVecs outside the closure to ensure drops happen off audio thread
         let mut program_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut slot_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
+        let mut bus_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut removed_programs: ArrayVec<ProgramContainer, 16> = ArrayVec::new();
         let mut removed_slots: ArrayVec<SlotContainer, 16> = ArrayVec::new();
+        let mut removed_buses: ArrayVec<BusContainer, 16> = ArrayVec::new();
 
         let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
             // Increment topology generation to trigger recompute
@@ -167,6 +167,27 @@ impl Drop for Batch<'_> {
                     .remove(id)
                     .expect("Slot marked for removal not found in slots map");
                 removed_slots.push(slot);
+            }
+
+            // Collect IDs of buses to remove
+            bus_ids_to_remove.clear();
+            bus_ids_to_remove.extend(
+                state
+                    .buses
+                    .iter()
+                    .filter(|(_, b)| b.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                    .map(|(id, _)| *id)
+                    .take(16),
+            );
+
+            // Remove buses and store them temporarily
+            removed_buses.clear();
+            for id in &bus_ids_to_remove {
+                let bus = state
+                    .buses
+                    .remove(id)
+                    .expect("Bus marked for removal not found in buses map");
+                removed_buses.push(bus);
             }
         });
 
@@ -314,6 +335,8 @@ impl Batch<'_> {
         let object_id = UniqueId::new();
         let program = programmable.try_into().map_err(Into::into)?;
 
+        let mut bus_deps = Vec::with_capacity(1024);
+
         let pending_drop = MarkDropped::new();
 
         // Extract bus linkage information before moving the program
@@ -328,49 +351,49 @@ impl Batch<'_> {
         // Create command to insert program and update dependencies
         let mut inserting_opt = Some(inserting);
         self.push_command(move |state: &mut AudioThreadState| {
-            if let Some(inserting) = inserting_opt.take() {
-                state.programs.insert(object_id, inserting);
+            let inserting = inserting_opt.take().unwrap();
+            state.programs.insert(object_id, inserting);
 
-                // Update program dependencies based on bus linkages
-                let mut deps = Vec::new();
+            // Update program dependencies based on bus linkages
 
-                // For each output bus, find programs that read from it
-                for (bus_id, _) in &output_buses {
-                    for (&other_id, other_container) in &state.programs {
-                        if other_id == object_id {
-                            continue;
-                        }
-                        let other_program = other_container.program.borrow();
-                        // Check if other program has this bus as input
-                        if other_program.input_buses.iter().any(|(id, _)| id == bus_id) {
-                            deps.push(other_id);
-                        }
+            // For each output bus, find programs that read from it
+            for (bus_id, _) in &output_buses {
+                for (&other_id, other_container) in &state.programs {
+                    if other_id == object_id {
+                        continue;
+                    }
+                    let other_program = other_container.program.borrow();
+                    // Check if other program has this bus as input
+                    if other_program.input_buses.iter().any(|(id, _)| id == bus_id) {
+                        bus_deps.push(other_id);
                     }
                 }
+            }
 
-                if !deps.is_empty() {
-                    state.program_dependencies.insert(object_id, deps);
-                }
+            if !bus_deps.is_empty() {
+                state
+                    .program_dependencies
+                    .insert(object_id, std::mem::take(&mut bus_deps));
+            }
 
-                // For each input bus, find programs that write to it and add ourselves as their dependency
-                for (bus_id, _) in &input_buses {
-                    for (&other_id, other_container) in &state.programs {
-                        if other_id == object_id {
-                            continue;
-                        }
-                        let other_program = other_container.program.borrow();
-                        // Check if other program has this bus as output
-                        if other_program
-                            .output_buses
-                            .iter()
-                            .any(|(id, _)| id == bus_id)
-                        {
-                            state
-                                .program_dependencies
-                                .entry(other_id)
-                                .or_insert_with(Vec::new)
-                                .push(object_id);
-                        }
+            // For each input bus, find programs that write to it and add ourselves as their dependency
+            for (bus_id, _) in &input_buses {
+                for (&other_id, other_container) in &state.programs {
+                    if other_id == object_id {
+                        continue;
+                    }
+                    let other_program = other_container.program.borrow();
+                    // Check if other program has this bus as output
+                    if other_program
+                        .output_buses
+                        .iter()
+                        .any(|(id, _)| id == bus_id)
+                    {
+                        state
+                            .program_dependencies
+                            .entry(other_id)
+                            .or_default()
+                            .push(object_id);
                     }
                 }
             }
@@ -479,21 +502,30 @@ impl Batch<'_> {
     }
 
     /// Create a new bus of the given type
-    pub fn create_bus<T: Default + Copy + Send + Sync + 'static>(&mut self) -> Arc<Bus<T>> {
-        let bus = Arc::new(Bus::new());
-        let bus_id = bus.id();
+    pub fn create_bus<T: Default + Copy + Send + Sync + 'static>(
+        &mut self,
+    ) -> crate::bus::BusHandle<T> {
+        let bus_id = UniqueId::new();
+        let mark_drop = MarkDropped::new();
 
-        // Store the bus in our batch-local storage
-        let bus_container: Arc<dyn Any + Send + Sync> = bus.clone();
-        let mut bus_opt = Some(bus_container);
+        let container = BusContainer {
+            bus: Box::new(crate::bus::Bus::<T>::new_with_id(bus_id))
+                as Box<dyn crate::bus::GenericBus>,
+            pending_drop: mark_drop.0.clone(),
+        };
+        let mut container_opt = Some(container);
 
         self.push_command(move |state: &mut AudioThreadState| {
-            if let Some(bus) = bus_opt.take() {
-                state.buses.insert(bus_id, bus);
+            if let Some(container) = container_opt.take() {
+                state.buses.insert(bus_id, container);
             }
         });
 
-        bus
+        crate::bus::BusHandle {
+            bus_id,
+            mark_drop: Arc::new(mark_drop),
+            _phantom: PD,
+        }
     }
 
     pub fn duration_to_samples(&self, dur: Duration) -> usize {
@@ -613,6 +645,11 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
         // Zero it out for this iteration.
         state.buffer.fill([0.0f64; 2]);
 
+        // Reset all buses to their default values
+        for bus_container in state.buses.values() {
+            bus_container.bus.reset();
+        }
+
         // Compute topological sort if needed
         compute_program_topology(state);
 
@@ -635,7 +672,7 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
                         audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut state.buffer),
                         audio_destination_format: &crate::channel_format::ChannelFormat::Stereo,
                         slots: &slot_ctx,
-                        buses: &state.buses,
+                        buses: &mut state.buses,
                     },
                 );
             }

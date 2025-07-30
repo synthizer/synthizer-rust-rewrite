@@ -6,8 +6,6 @@
 //! and another program that reads from the bus and outputs to the audio device.
 
 use std::env;
-use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 
 use synthizer::*;
@@ -22,14 +20,6 @@ fn main() -> Result<()> {
 
     let paths: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
 
-    // Verify all files exist
-    for path in &paths {
-        if !Path::new(path).exists() {
-            eprintln!("File not found: {}", path);
-            std::process::exit(1);
-        }
-    }
-
     println!("Creating synthesizer...");
     let mut synth = Synthesizer::new_default_output()?;
 
@@ -37,7 +27,7 @@ fn main() -> Result<()> {
     let mut batch = synth.batch();
 
     // Create a stereo bus for mixing all audio streams
-    let mix_bus: Arc<Bus<[f64; 2]>> = batch.create_bus();
+    let mix_bus = batch.create_bus::<[f64; 2]>();
     println!("Created mix bus");
 
     // Create programs for each audio file

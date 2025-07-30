@@ -1,15 +1,32 @@
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use crate::config;
-use crate::core_traits::{AudioFrame, Signal};
+use crate::core_traits::{AudioFrame, IntoSignal, IntoSignalInput, Signal};
+use crate::mark_dropped::MarkDropped;
 use crate::unique_id::UniqueId;
+
+/// Type-erased trait for buses
+pub(crate) trait GenericBus: Send + Sync {
+    /// Reset the bus to its default value
+    fn reset(&self);
+
+    /// Get the unique ID of this bus
+    fn id(&self) -> UniqueId;
+
+    /// Get a reference to self as Any for downcasting
+    fn as_any(&self) -> &dyn std::any::Any;
+}
 
 /// A bus is a block-sized buffer for inter-program audio communication.
 ///
-/// Buses are global resources that allow programs to share audio data.
-/// They support reading, writing, and binary operations.
-pub struct Bus<T> {
+/// Buses are global resources that allow programs to share audio data. They support reading, writing, and binary
+/// operations.
+///
+/// IMPORTANT: Buses are block-wise.  That is, if you recurse into the bus in the same program you'll get data in an
+/// undefined but unsafe manner because the signals advance and each contain their own counter.
+pub(crate) struct Bus<T> {
     /// The actual buffer. We use UnsafeCell because we need to hand out
     /// raw pointers during on_block_start for performance.
     buffer: UnsafeCell<Box<[T; config::BLOCK_SIZE]>>,
@@ -23,12 +40,24 @@ pub struct Bus<T> {
 unsafe impl<T: Send + Sync> Send for Bus<T> {}
 unsafe impl<T: Send + Sync> Sync for Bus<T> {}
 
-impl<T> Bus<T> {
-    /// Get the unique ID of this bus
-    pub fn id(&self) -> UniqueId {
+impl<T: Default + Copy + Send + Sync + 'static> GenericBus for Bus<T> {
+    fn reset(&self) {
+        unsafe {
+            let buffer = &mut **self.buffer.get();
+            buffer.fill(T::default());
+        }
+    }
+
+    fn id(&self) -> UniqueId {
         self.id
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl<T> Bus<T> {
     /// Get a raw pointer to the buffer.
     ///
     /// # Safety
@@ -40,12 +69,26 @@ impl<T> Bus<T> {
 }
 
 impl<T: Default + Copy> Bus<T> {
-    /// Create a new bus with default values
-    pub fn new() -> Self {
+    /// Create a new bus with a specific ID
+    pub(crate) fn new_with_id(id: UniqueId) -> Self {
         Self {
             buffer: UnsafeCell::new(Box::new([T::default(); config::BLOCK_SIZE])),
-            id: UniqueId::new(),
+            id,
         }
+    }
+}
+
+/// A handle to a bus that can be used to link it to programs
+pub struct BusHandle<T> {
+    pub(crate) bus_id: UniqueId,
+    pub(crate) mark_drop: Arc<MarkDropped>,
+    pub(crate) _phantom: PhantomData<T>,
+}
+
+impl<T> BusHandle<T> {
+    /// Get the ID of this bus
+    pub(crate) fn id(&self) -> UniqueId {
+        self.bus_id
     }
 }
 
@@ -62,7 +105,7 @@ pub enum BusLinkType {
 
 /// A link between a bus and a program.
 ///
-/// This type is used during program construction to establish bus connections.
+/// This type is used during program construction to establish bus connections with a fluent API.
 pub struct BusLink<'a, T> {
     pub(crate) program: &'a mut crate::program::Program,
     pub(crate) bus_id: UniqueId,
@@ -70,15 +113,15 @@ pub struct BusLink<'a, T> {
     pub(crate) _phantom: PhantomData<T>,
 }
 
-impl<'a, T> BusLink<'a, T> {
+impl<T> BusLink<'_, T> {
     /// Create a chain that reads from this bus
-    pub fn read(self) -> crate::Chain<ReadBusSignalConfig<T>>
+    pub fn read(self) -> crate::Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
     where
         T: Send + Sync + Copy + Default + 'static,
     {
         crate::Chain::new(ReadBusSignalConfig {
             bus_id: self.bus_id,
-            _phantom: PhantomData,
+            _phantom: PhantomData::<T>,
         })
     }
 
@@ -86,10 +129,10 @@ impl<'a, T> BusLink<'a, T> {
     pub fn write<S>(
         self,
         chain: crate::Chain<S>,
-    ) -> crate::Chain<crate::signals::AndThenConfig<S, WriteBusSignalConfig<T>>>
+    ) -> crate::Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = ()>>>
     where
-        S: crate::core_traits::IntoSignal,
-        S::Signal: crate::core_traits::Signal<Output = T>,
+        S: IntoSignal + 'static,
+        S::Signal: Signal<Input = (), Output = T>,
         T: Send + Sync + Copy + 'static,
     {
         crate::Chain {
@@ -107,13 +150,11 @@ impl<'a, T> BusLink<'a, T> {
     pub fn frame_add<S>(
         self,
         chain: crate::Chain<S>,
-    ) -> crate::Chain<
-        crate::signals::AndThenConfig<S, BinOpBusSignalConfig<T, impl FnMut(&mut T, T)>>,
-    >
+    ) -> crate::Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
     where
-        S: crate::core_traits::IntoSignal,
-        S::Signal: crate::core_traits::Signal<Output = T>,
-        T: crate::core_traits::AudioFrame<f64> + Copy + Send + Sync + 'static,
+        S: IntoSignal + 'static,
+        S::Signal: Signal<Output = T>,
+        T: AudioFrame<f64> + Copy + Send + Sync + 'static,
     {
         crate::Chain {
             inner: crate::signals::AndThenConfig {
@@ -139,7 +180,7 @@ pub struct WriteBusSignalConfig<T> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Send + Sync + Copy + 'static> crate::core_traits::IntoSignal for WriteBusSignalConfig<T> {
+impl<T: Send + Sync + Copy + 'static> IntoSignal for WriteBusSignalConfig<T> {
     type Signal = WriteBusSignal<T>;
 
     fn into_signal(
@@ -188,8 +229,8 @@ unsafe impl<T: Send + Sync + Copy + 'static> Signal for WriteBusSignal<T> {
         state.position = 0;
 
         // Look up the bus and cache its pointer
-        if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
-            if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
+        if let Some(bus_container) = ctx.fixed.buses.get(&state.bus_id) {
+            if let Some(bus) = bus_container.bus.as_any().downcast_ref::<Bus<T>>() {
                 state.bus_ptr = unsafe { bus.as_mut_ptr() };
             }
         }
@@ -215,9 +256,7 @@ pub struct ReadBusSignalConfig<T> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Send + Sync + Copy + Default + 'static> crate::core_traits::IntoSignal
-    for ReadBusSignalConfig<T>
-{
+impl<T: Send + Sync + Copy + Default + 'static> IntoSignal for ReadBusSignalConfig<T> {
     type Signal = ReadBusSignal<T>;
 
     fn into_signal(
@@ -266,8 +305,8 @@ unsafe impl<T: Send + Sync + Copy + Default + 'static> Signal for ReadBusSignal<
         state.position = 0;
 
         // Look up the bus and cache its pointer
-        if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
-            if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
+        if let Some(bus_container) = ctx.fixed.buses.get(&state.bus_id) {
+            if let Some(bus) = bus_container.bus.as_any().downcast_ref::<Bus<T>>() {
                 state.bus_ptr = unsafe { bus.as_mut_ptr() };
             }
         }
@@ -295,7 +334,7 @@ pub struct BinOpBusSignalConfig<T, F> {
     _phantom: PhantomData<T>,
 }
 
-impl<T, F> crate::core_traits::IntoSignal for BinOpBusSignalConfig<T, F>
+impl<T, F> IntoSignal for BinOpBusSignalConfig<T, F>
 where
     T: Send + Sync + Copy + 'static,
     F: FnMut(&mut T, T) + Send + Sync + 'static,
@@ -355,8 +394,8 @@ where
         state.position = 0;
 
         // Look up the bus and cache its pointer
-        if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
-            if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
+        if let Some(bus_container) = ctx.fixed.buses.get(&state.bus_id) {
+            if let Some(bus) = bus_container.bus.as_any().downcast_ref::<Bus<T>>() {
                 state.bus_ptr = unsafe { bus.as_mut_ptr() };
             }
         }
@@ -373,17 +412,6 @@ where
                 (state.op)(dst, input);
             }
             state.position += 1;
-        }
-    }
-}
-
-/// Extension trait for AudioFrame to support truncated addition
-pub trait AudioFrameExt: AudioFrame<f64> {
-    /// Add only the first N channels
-    fn add_truncate<const CHANS: usize>(&mut self, other: &Self) {
-        for i in 0..CHANS.min(self.channel_count()) {
-            let sum = self.get(i) + other.get(i);
-            self.set(i, sum);
         }
     }
 }

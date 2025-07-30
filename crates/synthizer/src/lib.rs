@@ -40,7 +40,7 @@ mod unsafe_utils;
 mod value_provider;
 mod worker_pool;
 
-pub use bus::Bus;
+pub use bus::BusHandle;
 pub use chain::*;
 pub use channel_format::*;
 pub use config::SR;
