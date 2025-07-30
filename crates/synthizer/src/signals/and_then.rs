@@ -36,8 +36,8 @@ where
 }
 
 pub struct AndThenConfig<S1, S2> {
-    left: S1,
-    right: S2,
+    pub(crate) left: S1,
+    pub(crate) right: S2,
 }
 
 impl<S1, S2> IntoSignal for AndThenConfig<S1, S2>

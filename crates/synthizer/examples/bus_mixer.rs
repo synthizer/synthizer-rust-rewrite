@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use synthizer::*;
-use synthizer::core_traits::AudioFrame;
 
 fn main() -> Result<()> {
     // Get command line arguments
@@ -49,25 +48,14 @@ fn main() -> Result<()> {
         
         // Open the file and create media
         let file = std::fs::File::open(path)?;
-        let (controller, media) = batch.make_media(file)?;
+        let (controller, mut media) = batch.make_media(file)?;
         
         // Create a program that plays this media and writes to the bus
         let mut program = Program::new();
         
-        // Link the bus as output for this program
-        let bus_link = program.link_output_bus(&mix_bus);
-        
-        // Create the signal chain: media -> write to bus
-        let chain = Chain::new(media)
-            .map(move |frame| {
-                // Convert mono to stereo if needed
-                match frame.channel_count() {
-                    1 => [frame.get(0), frame.get(0)],
-                    2 => [frame.get(0), frame.get(1)],
-                    _ => [frame.get(0), frame.get(1)], // Just take first 2 channels
-                }
-            })
-            .and_then(bus_link.write_bus());
+        // Create the signal chain: media -> add to bus
+        let chain = media.start_chain::<2>(ChannelFormat::Stereo);
+        let chain = program.link_output_bus(&mix_bus).frame_add(chain);
         
         program.add_fragment(chain)?;
         
@@ -81,15 +69,10 @@ fn main() -> Result<()> {
     // Create the output program that reads from the bus and outputs to speakers
     let mut output_program = Program::new();
     
-    // Link the bus as input for this program
-    let bus_link = output_program.link_input_bus(&mix_bus);
-    
     // Create signal chain: read from bus -> output to speakers
-    let output_chain = Chain::new(bus_link.read_bus())
-        .map(|stereo_frame| {
-            // The bus contains [f64; 2] which we need to convert to AudioFrame
-            synthizer::audio_frames::AudioFrame2::new(stereo_frame[0], stereo_frame[1])
-        });
+    let output_chain = output_program.link_input_bus(&mix_bus)
+        .read()
+        .to_audio_device(ChannelFormat::Stereo);
     
     output_program.add_fragment(output_chain)?;
     

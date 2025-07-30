@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
-use std::ops::Add;
 
 use crate::config;
 use crate::core_traits::{AudioFrame, Signal};
@@ -72,40 +71,57 @@ pub struct BusLink<'a, T> {
 }
 
 impl<'a, T> BusLink<'a, T> {
-    /// Create a signal that writes to this bus
-    pub fn write_bus(&self) -> WriteBusSignalConfig<T> {
-        WriteBusSignalConfig {
-            bus_id: self.bus_id,
-            _phantom: PhantomData,
-        }
-    }
-    
-    /// Create a signal that reads from this bus
-    pub fn read_bus(&self) -> ReadBusSignalConfig<T> {
-        ReadBusSignalConfig {
-            bus_id: self.bus_id,
-            _phantom: PhantomData,
-        }
-    }
-    
-    /// Create a signal that applies a binary operation to the bus
-    pub fn binop<F>(&self, op: F) -> BinOpBusSignalConfig<T, F>
+    /// Create a chain that reads from this bus
+    pub fn read(self) -> crate::Chain<ReadBusSignalConfig<T>> 
     where
-        F: FnMut(&mut T, T) + Send + Sync + 'static,
+        T: Send + Sync + Copy + Default + 'static,
     {
-        BinOpBusSignalConfig {
+        crate::Chain::new(ReadBusSignalConfig {
             bus_id: self.bus_id,
-            op,
             _phantom: PhantomData,
+        })
+    }
+    
+    /// Write a signal chain to this bus
+    pub fn write<S>(self, chain: crate::Chain<S>) -> crate::Chain<crate::signals::AndThenConfig<S, WriteBusSignalConfig<T>>>
+    where
+        S: crate::core_traits::IntoSignal,
+        S::Signal: crate::core_traits::Signal<Output = T>,
+        T: Send + Sync + Copy + 'static,
+    {
+        crate::Chain {
+            inner: crate::signals::AndThenConfig {
+                left: chain.inner,
+                right: WriteBusSignalConfig {
+                    bus_id: self.bus_id,
+                    _phantom: PhantomData,
+                },
+            }
         }
     }
     
-    /// Create a signal that adds to the bus (for T: Add)
-    pub fn add(&self) -> BinOpBusSignalConfig<T, impl FnMut(&mut T, T)>
+    /// Add a signal chain's output to this bus element-wise for AudioFrame types
+    pub fn frame_add<S>(self, chain: crate::Chain<S>) -> crate::Chain<crate::signals::AndThenConfig<S, BinOpBusSignalConfig<T, impl FnMut(&mut T, T)>>>
     where
-        T: Add<Output = T> + Copy,
+        S: crate::core_traits::IntoSignal,
+        S::Signal: crate::core_traits::Signal<Output = T>,
+        T: crate::core_traits::AudioFrame<f64> + Copy + Send + Sync + 'static,
     {
-        self.binop(|dst, src| *dst = *dst + src)
+        crate::Chain {
+            inner: crate::signals::AndThenConfig {
+                left: chain.inner,
+                right: BinOpBusSignalConfig {
+                    bus_id: self.bus_id,
+                    op: |dst: &mut T, src: T| {
+                        let channels = dst.channel_count().min(src.channel_count());
+                        for i in 0..channels {
+                            dst.set(i, dst.get(i) + src.get(i));
+                        }
+                    },
+                    _phantom: PhantomData,
+                },
+            }
+        }
     }
 }
 
