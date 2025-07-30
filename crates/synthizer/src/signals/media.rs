@@ -3,7 +3,6 @@ use std::time::Duration;
 use crate::config::{BLOCK_SIZE, MAX_CHANNELS};
 use crate::core_traits::*;
 use crate::sample_sources::Descriptor;
-use crate::unique_id::UniqueId;
 use crate::Chain;
 use crate::ChannelFormat;
 
@@ -166,12 +165,5 @@ impl<const MAX_CHANS: usize> IntoSignal for MediaSignalConfig<MAX_CHANS> {
                 ring: self.ring,
             },
         })
-    }
-
-    fn trace<F: FnMut(UniqueId, TracedResource)>(
-        &mut self,
-        _inserter: &mut F,
-    ) -> crate::Result<()> {
-        Ok(())
     }
 }

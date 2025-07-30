@@ -16,9 +16,9 @@ fn main() -> Result<()> {
 
     {
         let mut b = synth.batch();
-        freq1 = b.allocate_slot::<f64>();
-        freq2 = b.allocate_slot::<f64>();
-        freq3 = b.allocate_slot::<f64>();
+        freq1 = b.allocate_slot::<f64>(C_FREQ);
+        freq2 = b.allocate_slot::<f64>(E_FREQ);
+        freq3 = b.allocate_slot::<f64>(G_FREQ);
     }
 
     let note1 = Chain::read_slot(&freq1, C_FREQ)

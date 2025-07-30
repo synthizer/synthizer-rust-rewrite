@@ -1,5 +1,4 @@
 use crate::core_traits::*;
-use crate::error::Result;
 
 pub struct JoinSignalConfig<ParSigCfg1, ParSigCfg2>(ParSigCfg1, ParSigCfg2);
 pub struct JoinSignal<ParSig1, ParSig2>(ParSig1, ParSig2);
@@ -51,15 +50,6 @@ where
             signal: JoinSignal(par_l.signal, par_r.signal),
             state: JoinSignalState(par_l.state, par_r.state),
         })
-    }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> Result<()> {
-        self.0.trace(inserter)?;
-        self.1.trace(inserter)?;
-        Ok(())
     }
 }
 

@@ -210,14 +210,6 @@ where
             },
         })
     }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> crate::Result<()> {
-        self.parent.trace(inserter)?;
-        Ok(())
-    }
 }
 
 struct DelayLineWriteSignalConfig<T, S, M> {
@@ -249,14 +241,6 @@ where
             },
         })
     }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> crate::Result<()> {
-        self.parent.trace(inserter)?;
-        Ok(())
-    }
 }
 
 struct DelayLineRwSignalConfig<T, S, M> {
@@ -287,14 +271,6 @@ where
                 _phantom: PD,
             },
         })
-    }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> crate::Result<()> {
-        self.parent.trace(inserter)?;
-        Ok(())
     }
 }
 

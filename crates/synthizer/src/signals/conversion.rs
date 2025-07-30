@@ -5,7 +5,6 @@ use std::marker::PhantomData as PD;
 
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
 
 /// Converts the output of the upstream signal into the input of the downstream signal, if `O::Output: Into<DType>`.
 pub struct ConvertOutput<OSig, DType>(OSig, PD<DType>);
@@ -66,13 +65,5 @@ where
             signal: ConvertOutput::new(inner.signal),
             state: inner.state,
         })
-    }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> Result<()> {
-        self.0.trace(inserter)?;
-        Ok(())
     }
 }

@@ -48,14 +48,6 @@ where
             state: (),
         })
     }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        _inserter: &mut F,
-    ) -> crate::Result<()> {
-        // Nothing.
-        Ok(())
-    }
 }
 
 impl<T> StartFromInputSignalConfig<T> {

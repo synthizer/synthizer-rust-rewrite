@@ -1,7 +1,5 @@
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
-use crate::unique_id::UniqueId;
 
 macro_rules! impl_scalar {
     ($t: ty) => {
@@ -29,13 +27,6 @@ macro_rules! impl_scalar {
                     signal: self,
                     state: self,
                 })
-            }
-
-            fn trace<F: FnMut(UniqueId, TracedResource)>(
-                &mut self,
-                _inserter: &mut F,
-            ) -> Result<()> {
-                Ok(())
             }
         }
     };

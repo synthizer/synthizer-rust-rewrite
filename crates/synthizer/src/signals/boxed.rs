@@ -5,7 +5,6 @@ use crate::context::*;
 use crate::core_traits::*;
 use crate::error::Result;
 use crate::signals::FrameBatcher;
-use crate::unique_id::UniqueId;
 
 /// A signal behind a box, whose input is `I` and output is `O`.
 ///
@@ -55,8 +54,6 @@ where
 {
     #[allow(clippy::type_complexity)]
     fn erased_into(&mut self) -> Result<ReadySignal<BoxedSignal<I, O>, BoxedSignalState<I, O>>>;
-
-    fn trace_erased(&mut self, tracer: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()>;
 }
 
 impl<T, I, O> ErasedIntoSignal<I, O> for Option<T>
@@ -79,13 +76,6 @@ where
                 batcher: FrameBatcher::new(),
             },
         })
-    }
-
-    fn trace_erased(&mut self, mut tracer: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()> {
-        self.as_mut()
-            .expect("Should not trace after conversion into a signal")
-            .trace(&mut tracer)?;
-        Ok(())
     }
 }
 
@@ -167,10 +157,5 @@ where
 
     fn into_signal(mut self) -> IntoSignalResult<Self> {
         self.signal.erased_into()
-    }
-
-    fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> Result<()> {
-        self.signal.trace_erased(inserter)?;
-        Ok(())
     }
 }

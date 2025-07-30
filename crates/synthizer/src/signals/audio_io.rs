@@ -1,7 +1,6 @@
 use crate::channel_format::ChannelFormat;
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
 
 pub struct AudioOutputSignal<S>(S);
 pub struct AudioOutputSignalConfig<S> {
@@ -71,14 +70,6 @@ where
                 format: self.format,
             },
         })
-    }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> Result<()> {
-        self.parent_cfg.trace(inserter)?;
-        Ok(())
     }
 }
 

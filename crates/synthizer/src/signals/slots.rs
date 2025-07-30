@@ -3,7 +3,6 @@ use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
 use crate::core_traits::*;
-use crate::error::Result;
 use crate::unique_id::UniqueId;
 
 /// Reference to a "knob" on your algorithm.
@@ -73,7 +72,8 @@ pub(crate) struct SlotUpdateContext<'a> {
     /// Global slots map.
     ///
     /// The value is `SlotValueContainer<T>`.
-    pub(crate) global_slots: &'a std::collections::HashMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
+    pub(crate) global_slots:
+        &'a std::collections::HashMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
 }
 
 impl SlotUpdateContext<'_> {
@@ -176,16 +176,6 @@ where
             },
         })
     }
-
-    fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> Result<()> {
-        let ns = SlotValueContainer {
-            update_id: UniqueId::new(),
-            value: Arc::new(self.initial_value.clone()),
-        };
-
-        inserter(self.slot_id, TracedResource::Slot(Arc::new(ns)));
-        Ok(())
-    }
 }
 
 impl<T> Slot<T>
@@ -222,6 +212,13 @@ where
 }
 
 impl<T> SlotValueContainer<T> {
+    pub(crate) fn new(value: T) -> Self {
+        Self {
+            value: Arc::new(value),
+            update_id: UniqueId::new(),
+        }
+    }
+
     #[must_use = "This is an immutable type in a persistent data structure"]
     pub(crate) fn replace(&self, newval: T) -> Self {
         Self {

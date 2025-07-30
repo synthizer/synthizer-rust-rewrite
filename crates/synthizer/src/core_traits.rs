@@ -1,22 +1,14 @@
 #![allow(private_interfaces)]
-use std::any::Any;
-use std::sync::Arc;
 
 use crate::context::*;
 use crate::error::Result;
 use crate::synthesizer::AudioThreadState;
-use crate::unique_id::UniqueId;
 
 // These are "core" but it's a lot of code so we pull it out.
 // Value providers are still used internally but not in the Signal trait anymore
 
 pub(crate) mod sealed {
     use super::*;
-
-    /// Traced resources.
-    pub enum TracedResource {
-        Slot(Arc<dyn Any + Send + Sync + 'static>),
-    }
 
     /// This internal trait is the actual magic.
     ///
@@ -99,19 +91,6 @@ pub(crate) mod sealed {
         type Signal: Signal;
 
         fn into_signal(self) -> Result<ReadySignal<Self::Signal, IntoSignalState<Self>>>;
-
-        /// Trace a signal's resource usage, and allocate objects.
-        ///
-        /// The synthesizer must use erased `Any` to store objects in the maps.  That means that it is necessary to let
-        /// signals allocate such objects, then hand them off.
-        ///
-        /// Implementations should:
-        ///
-        /// - If a combinator or other signal with "parents": call this on the parents, in the order that the signal
-        ///   would call `tick` on those parents.
-        /// - If a "leaf" which uses resources (e.g. slots) call the callback.
-        /// - If a "leaf" which doesn't need resources, add an empty impl.
-        fn trace<F: FnMut(UniqueId, TracedResource)>(&mut self, inserter: &mut F) -> Result<()>;
     }
 
     pub(crate) type IntoSignalResult<S> =
@@ -130,14 +109,14 @@ pub(crate) type SignalOutput<T> = <T as Signal>::Output;
 pub(crate) type SignalState<S> = <S as Signal>::State;
 
 /// Trait for commands that can be executed on the audio thread.
-pub trait Command: Send + 'static {
+pub trait Command: Send + Sync + 'static {
     fn execute(&mut self, state: &mut AudioThreadState);
 }
 
 /// Blanket implementation for FnMut closures
 impl<F> Command for F
 where
-    F: FnMut(&mut AudioThreadState) + Send + 'static,
+    F: FnMut(&mut AudioThreadState) + Send + Sync + 'static,
 {
     fn execute(&mut self, state: &mut AudioThreadState) {
         self(state)

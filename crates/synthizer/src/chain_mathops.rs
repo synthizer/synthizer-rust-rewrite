@@ -4,8 +4,6 @@ use std::ops::*;
 use crate::chain::Chain;
 use crate::context::SignalExecutionContext;
 use crate::core_traits::*;
-use crate::error::Result;
-use crate::unique_id::UniqueId;
 
 macro_rules! impl_mathop {
     ($trait: ident, $signal_name: ident, $signal_config:ident, $method: ident) => {
@@ -75,15 +73,6 @@ macro_rules! impl_mathop {
                     signal: $signal_name(l.signal, r.signal),
                     state: (l.state, r.state),
                 })
-            }
-
-            fn trace<F: FnMut(UniqueId, TracedResource)>(
-                &mut self,
-                inserter: &mut F,
-            ) -> Result<()> {
-                self.0.trace(inserter)?;
-                self.1.trace(inserter)?;
-                Ok(())
             }
         }
     };

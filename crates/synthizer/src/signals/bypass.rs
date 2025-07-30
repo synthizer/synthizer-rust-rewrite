@@ -73,15 +73,6 @@ where
             },
         })
     }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> crate::Result<()> {
-        self.parent_cfg.trace(inserter)?;
-        self.bypass_cfg.trace(inserter)?;
-        Ok(())
-    }
 }
 
 impl<ParSigCfg, BypassSigCfg> BypassSignalConfig<ParSigCfg, BypassSigCfg> {

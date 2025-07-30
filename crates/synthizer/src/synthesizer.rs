@@ -1,7 +1,6 @@
 use std::any::Any;
-use std::collections::VecDeque;
 use std::marker::PhantomData as PD;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use atomic_refcell::AtomicRefCell;
@@ -16,12 +15,27 @@ use crate::signals as sigs;
 use crate::signals::{Slot, SlotUpdateContext, SlotValueContainer};
 use crate::unique_id::UniqueId;
 
+/// Custom recycling strategy for Box<dyn Command>
+/// Replaces used commands with no-op closures to maintain allocation
+struct CommandRecycler;
+
+impl thingbuf::recycling::Recycle<Box<dyn Command>> for CommandRecycler {
+    fn new_element(&self) -> Box<dyn Command> {
+        // Create a no-op command
+        Box::new(|_: &mut AudioThreadState| {})
+    }
+
+    fn recycle(&self, _element: &mut Box<dyn Command>) {
+        // Leave it alone. When something is next enqueued here, it will drop the old data on a non-audio thread.
+    }
+}
+
 // Temporary type for compatibility with mount system
 // Will be removed when mounts are updated to work with commands
 pub(crate) struct SynthesizerState;
 
 pub struct Synthesizer {
-    command_queue: Arc<Mutex<VecDeque<Box<dyn crate::core_traits::Command>>>>,
+    command_ring: Arc<thingbuf::ThingBuf<Box<dyn Command>, CommandRecycler>>,
 
     device: Option<AudioDevice>,
 
@@ -35,7 +49,6 @@ pub(crate) struct MountContainer {
     /// Should only be accessed from the audio thread.  Cloning is fine.
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
 }
-
 
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
 /// code.
@@ -98,14 +111,31 @@ impl Clone for Handle {
 /// and are stored with the batch.  Then, when the batch drops, they are sent to the audio thread
 pub struct Batch<'a> {
     synthesizer: &'a mut Synthesizer,
-    commands: Vec<Box<dyn crate::core_traits::Command>>,
+    commands: Vec<Box<dyn Command>>,
 }
 
 impl Drop for Batch<'_> {
     fn drop(&mut self) {
-        // Move all commands to the queue
-        let mut queue = self.synthesizer.command_queue.lock().unwrap();
-        queue.extend(self.commands.drain(..));
+        // Push all commands to the ring buffer, but wrapped under one command so they all apply in the same audio tick.
+        // Spin if the buffer is full - audio thread will eventually consume
+        let mut outgoing_commands = std::mem::take(&mut self.commands);
+        let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
+            outgoing_commands
+                .iter_mut()
+                .for_each(move |x| x.execute(state));
+        });
+
+        loop {
+            match self.synthesizer.command_ring.push(cmd) {
+                Ok(()) => break,
+                Err(full) => {
+                    // Buffer is full, spin and retry
+                    // This is safe because audio thread will consume commands
+                    std::hint::spin_loop();
+                    cmd = full.into_inner();
+                }
+            }
+        }
     }
 }
 
@@ -116,21 +146,29 @@ impl Synthesizer {
             channels: Some(2), // Stereo
         };
 
-        let command_queue = Arc::new(Mutex::new(VecDeque::new()));
+        // Create a thingbuf ring buffer with reasonable capacity
+        // This capacity should be tuned based on expected command rate
+        const COMMAND_QUEUE_SIZE: usize = 1024;
+        let command_ring = Arc::new(thingbuf::ThingBuf::with_recycle(
+            COMMAND_QUEUE_SIZE,
+            CommandRecycler,
+        ));
+
         let worker_pool =
             crate::worker_pool::WorkerPoolHandle::new_threaded(config::WORKER_POOL_THREADS);
-        
+
         let dev = {
-            let queue_clone = command_queue.clone();
+            let ring_clone = command_ring.clone();
             let wp_cloned = worker_pool.clone();
 
             // Create persistent audio thread state
+            // Pre-allocate reasonable capacity to avoid allocations during audio processing
             let mut audio_state = AudioThreadState {
                 buf_remaining: 0,
                 buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
                 time_in_blocks: 0,
-                mounts: std::collections::HashMap::new(),
-                slots: std::collections::HashMap::new(),
+                mounts: std::collections::HashMap::with_capacity(128),
+                slots: std::collections::HashMap::with_capacity(1024),
             };
 
             // Buffer to handle mismatch between cpal's requested frame count and our BLOCK_SIZE
@@ -156,13 +194,17 @@ impl Synthesizer {
 
                     if remaining_dest.len() >= block_size_samples {
                         // Process directly into the destination
-                        at_iter(&queue_clone, &mut audio_state, &mut remaining_dest[..block_size_samples]);
+                        at_iter(
+                            &ring_clone,
+                            &mut audio_state,
+                            &mut remaining_dest[..block_size_samples],
+                        );
                         wp_cloned.signal_audio_tick_complete();
                         remaining_dest = &mut remaining_dest[block_size_samples..];
                     } else {
                         // Not enough space for a full block, generate into our buffer
                         let mut temp_buffer = vec![0.0f32; block_size_samples];
-                        at_iter(&queue_clone, &mut audio_state, &mut temp_buffer);
+                        at_iter(&ring_clone, &mut audio_state, &mut temp_buffer);
                         wp_cloned.signal_audio_tick_complete();
 
                         // Copy what we can to the destination
@@ -180,7 +222,7 @@ impl Synthesizer {
         dev.start()?;
 
         Ok(Self {
-            command_queue,
+            command_ring,
             device: Some(dev),
             worker_pool,
         })
@@ -202,25 +244,26 @@ impl Synthesizer {
     }
 }
 
-
 impl Batch<'_> {
+    /// Helper to push a command to the batch
+    fn push_command<F>(&mut self, f: F)
+    where
+        F: FnMut(&mut AudioThreadState) + Send + Sync + 'static,
+    {
+        self.commands.push(Box::new(f));
+    }
+
     /// Called on batch creation to catch pending drops from last time, then again on batch publish to catch pending
     /// drops the user might have made during the batch.
     fn handle_pending_drops(&mut self) {
-        self.commands.push(Box::new(|state: &mut AudioThreadState| {
-            state.mounts.retain(|_, m| {
-                !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed)
-            });
-        }));
+        self.push_command(|state: &mut AudioThreadState| {
+            state
+                .mounts
+                .retain(|_, m| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed));
+        });
     }
 
-    pub fn mount<M: crate::mount_point::Mountable>(&mut self, mut new_mount: M) -> Result<Handle> {
-        let mut slots_to_insert = Vec::new();
-        
-        new_mount.trace(&mut |id, val| match val {
-            TracedResource::Slot(s) => slots_to_insert.push((id, s)),
-        })?;
-
+    pub fn mount<M: crate::mount_point::Mountable>(&mut self, new_mount: M) -> Result<Handle> {
         let object_id = UniqueId::new();
         let mount = new_mount.into_mount(self)?;
 
@@ -230,20 +273,14 @@ impl Batch<'_> {
             erased_mount: Arc::new(AtomicRefCell::new(mount)),
             pending_drop: pending_drop.0.clone(),
         };
-        
-        // Create command to insert mount and slots
+
+        // Create command to insert mount
         let mut inserting_opt = Some(inserting);
-        let mut slots_opt = Some(slots_to_insert);
-        self.commands.push(Box::new(move |state: &mut AudioThreadState| {
+        self.push_command(move |state: &mut AudioThreadState| {
             if let Some(inserting) = inserting_opt.take() {
                 state.mounts.insert(object_id, inserting);
             }
-            if let Some(slots) = slots_opt.take() {
-                for (id, slot) in slots {
-                    state.slots.insert(id, slot);
-                }
-            }
-        }));
+        });
 
         Ok(Handle {
             object_id,
@@ -251,14 +288,28 @@ impl Batch<'_> {
         })
     }
 
-    /// Allocate a slot.
+    /// Allocate a slot with an initial value.
     ///
-    /// This slot cannot be used until a chain which uses it is mounted.  To use a slot, call [Slot::signal()] or
-    /// variations, specifying an initial value.  Mounting activates the slot by allocating the necessary internal data
-    /// structures.
-    pub fn allocate_slot<T>(&mut self) -> Slot<T> {
+    /// The slot is immediately registered in the audio thread's global slots map.
+    pub fn allocate_slot<T>(&mut self, initial_value: T) -> Slot<T>
+    where
+        T: Send + Sync + Clone + 'static,
+    {
+        let slot_id = UniqueId::new();
+
+        let container = SlotValueContainer::new(initial_value);
+
+        let slot_arc: Arc<dyn Any + Send + Sync + 'static> = Arc::new(container);
+        let mut slot_opt = Some(slot_arc);
+
+        self.push_command(move |state: &mut AudioThreadState| {
+            if let Some(slot) = slot_opt.take() {
+                state.slots.insert(slot_id, slot);
+            }
+        });
+
         Slot {
-            slot_id: UniqueId::new(),
+            slot_id,
             _phantom: PD,
         }
     }
@@ -274,14 +325,14 @@ impl Batch<'_> {
     {
         let slot_id = slot.slot_id;
         let object_id = handle.object_id;
-        
+
         let mut new_val_opt = Some(new_val);
-        self.commands.push(Box::new(move |state: &mut AudioThreadState| {
+        self.push_command(move |state: &mut AudioThreadState| {
             // Verify the handle exists on the audio thread
             if !state.mounts.contains_key(&object_id) {
                 return; // Silent failure for now
             }
-            
+
             if let Some(slot_ref) = state.slots.get_mut(&slot_id) {
                 if let Some(container) = slot_ref.downcast_ref::<SlotValueContainer<T>>() {
                     if let Some(new_val) = new_val_opt.take() {
@@ -290,7 +341,7 @@ impl Batch<'_> {
                     }
                 }
             }
-        }));
+        });
 
         Ok(())
     }
@@ -327,16 +378,16 @@ impl Batch<'_> {
 
 /// Run one iteration of the audio thread.
 fn at_iter(
-    command_queue: &Arc<Mutex<VecDeque<Box<dyn crate::core_traits::Command>>>>,
+    command_ring: &Arc<thingbuf::ThingBuf<Box<dyn Command>, CommandRecycler>>,
     state: &mut AudioThreadState,
     dest: &mut [f32],
 ) {
     // First, execute any pending commands
-    {
-        let mut queue = command_queue.lock().unwrap();
-        while let Some(mut cmd) = queue.pop_front() {
-            cmd.execute(state);
-        }
+    // pop_ref is lock-free and will not block the audio thread
+    while let Some(mut cmd_ref) = command_ring.pop_ref() {
+        cmd_ref.execute(state);
+        // When cmd_ref is dropped, the recycler will replace it with a no-op
+        // This happens in the ring buffer slot, so deallocation is deferred
     }
 
     // Then process audio
@@ -387,11 +438,11 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
             let slot_ctx = SlotUpdateContext {
                 global_slots: &state.slots,
             };
-            
+
             // Create a temporary wrapper for compatibility
             // This will be removed when mounts are updated to work directly with AudioThreadState
             let fake_state = Arc::new(SynthesizerState);
-            
+
             m.erased_mount.borrow_mut().run(
                 &fake_state,
                 &id,

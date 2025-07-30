@@ -77,14 +77,6 @@ where
         };
         Ok(ReadySignal { signal, state })
     }
-
-    fn trace<F2: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F2,
-    ) -> crate::Result<()> {
-        self.parent_config.trace(inserter)?;
-        Ok(())
-    }
 }
 
 impl<T, F, ParSigCfg> MapFrameSignalConfig<T, F, ParSigCfg> {

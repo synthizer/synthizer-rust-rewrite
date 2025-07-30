@@ -1,6 +1,5 @@
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
 
 pub struct SinSignalConfig<S: IntoSignal> {
     pub(crate) wrapped: S,
@@ -43,13 +42,5 @@ where
             signal: SinSignal(wrapped.signal),
             state: wrapped.state,
         })
-    }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> Result<()> {
-        self.wrapped.trace(inserter)?;
-        Ok(())
     }
 }

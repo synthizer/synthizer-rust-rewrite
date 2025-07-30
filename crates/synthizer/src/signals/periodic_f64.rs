@@ -1,6 +1,5 @@
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
 
 /// A signal which produces an f64 value in the range (0..period) by summing the value of an input signal. e.g.
 /// modulation is allowed.  The period must be fixed.
@@ -67,13 +66,5 @@ where
                 period: self.period,
             },
         })
-    }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> Result<()> {
-        self.frequency.trace(inserter)?;
-        Ok(())
     }
 }

@@ -1,6 +1,5 @@
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
 
 /// Takes the signal on the left, and feeds its output to the signal on the right.  The signal on the left will be
 /// evaluated first.
@@ -58,15 +57,6 @@ where
             signal: AndThen::new(s1.signal, s2.signal),
             state: (s1.state, s2.state),
         })
-    }
-
-    fn trace<F: FnMut(crate::unique_id::UniqueId, TracedResource)>(
-        &mut self,
-        inserter: &mut F,
-    ) -> Result<()> {
-        self.left.trace(inserter)?;
-        self.right.trace(inserter)?;
-        Ok(())
     }
 }
 

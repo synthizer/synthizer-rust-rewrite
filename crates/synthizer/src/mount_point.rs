@@ -46,8 +46,6 @@ pub mod sealed {
             self,
             batch: &mut crate::synthesizer::Batch,
         ) -> Result<Box<dyn ErasedMountPoint>>;
-
-        fn trace(&mut self, inserter: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()>;
     }
 }
 
@@ -105,10 +103,5 @@ where
         };
 
         Ok(Box::new(mp))
-    }
-
-    fn trace(&mut self, mut inserter: &mut dyn FnMut(UniqueId, TracedResource)) -> Result<()> {
-        self.inner.trace(&mut inserter)?;
-        Ok(())
     }
 }
