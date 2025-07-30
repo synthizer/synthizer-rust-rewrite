@@ -618,6 +618,7 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
                         audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut state.buffer),
                         audio_destination_format: &crate::channel_format::ChannelFormat::Stereo,
                         slots: &slot_ctx,
+                        buses: &state.buses,
                     },
                 );
             }

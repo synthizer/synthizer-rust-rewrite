@@ -140,7 +140,8 @@ impl<T: Send + Sync + Copy + 'static> crate::core_traits::IntoSignal for WriteBu
                 _phantom: PhantomData,
             },
             state: WriteBusSignalState {
-                bus_ptr: std::ptr::null_mut(), // Will be set by the audio thread
+                bus_id: self.bus_id,
+                bus_ptr: std::ptr::null_mut(), // Will be set in on_block_start
                 position: 0,
             },
         })
@@ -154,6 +155,7 @@ pub struct WriteBusSignal<T> {
 
 /// State for WriteBusSignal
 pub struct WriteBusSignalState<T> {
+    bus_id: UniqueId,
     bus_ptr: *mut [T; config::BLOCK_SIZE],
     position: usize,
 }
@@ -168,12 +170,18 @@ unsafe impl<T: Send + Sync + Copy + 'static> Signal for WriteBusSignal<T> {
     type State = WriteBusSignalState<T>;
     
     fn on_block_start(
-        _ctx: &crate::context::SignalExecutionContext<'_, '_>,
+        ctx: &crate::context::SignalExecutionContext<'_, '_>,
         state: &mut Self::State,
     ) {
         // Reset position for new block
         state.position = 0;
-        // Note: bus_ptr is set during signal initialization from the bus registry
+        
+        // Look up the bus and cache its pointer
+        if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
+            if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
+                state.bus_ptr = unsafe { bus.as_mut_ptr() };
+            }
+        }
     }
     
     fn tick_frame(
@@ -205,7 +213,8 @@ impl<T: Send + Sync + Copy + Default + 'static> crate::core_traits::IntoSignal f
                 _phantom: PhantomData,
             },
             state: ReadBusSignalState {
-                bus_ptr: std::ptr::null_mut(), // Will be set by the audio thread
+                bus_id: self.bus_id,
+                bus_ptr: std::ptr::null_mut(), // Will be set in on_block_start
                 position: 0,
             },
         })
@@ -219,6 +228,7 @@ pub struct ReadBusSignal<T> {
 
 /// State for ReadBusSignal
 pub struct ReadBusSignalState<T> {
+    bus_id: UniqueId,
     bus_ptr: *mut [T; config::BLOCK_SIZE],
     position: usize,
 }
@@ -233,12 +243,18 @@ unsafe impl<T: Send + Sync + Copy + Default + 'static> Signal for ReadBusSignal<
     type State = ReadBusSignalState<T>;
     
     fn on_block_start(
-        _ctx: &crate::context::SignalExecutionContext<'_, '_>,
+        ctx: &crate::context::SignalExecutionContext<'_, '_>,
         state: &mut Self::State,
     ) {
         // Reset position for new block
         state.position = 0;
-        // Note: bus_ptr is set during signal initialization from the bus registry
+        
+        // Look up the bus and cache its pointer
+        if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
+            if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
+                state.bus_ptr = unsafe { bus.as_mut_ptr() };
+            }
+        }
     }
     
     fn tick_frame(
@@ -276,7 +292,8 @@ where
                 _phantom: PhantomData,
             },
             state: BinOpBusSignalState {
-                bus_ptr: std::ptr::null_mut(), // Will be set by the audio thread
+                bus_id: self.bus_id,
+                bus_ptr: std::ptr::null_mut(), // Will be set in on_block_start
                 position: 0,
                 op: self.op,
             },
@@ -291,6 +308,7 @@ pub struct BinOpBusSignal<T, F> {
 
 /// State for BinOpBusSignal
 pub struct BinOpBusSignalState<T, F> {
+    bus_id: UniqueId,
     bus_ptr: *mut [T; config::BLOCK_SIZE],
     position: usize,
     op: F,
@@ -310,12 +328,18 @@ where
     type State = BinOpBusSignalState<T, F>;
     
     fn on_block_start(
-        _ctx: &crate::context::SignalExecutionContext<'_, '_>,
+        ctx: &crate::context::SignalExecutionContext<'_, '_>,
         state: &mut Self::State,
     ) {
         // Reset position for new block
         state.position = 0;
-        // Note: bus_ptr is set during signal initialization from the bus registry
+        
+        // Look up the bus and cache its pointer
+        if let Some(bus_arc) = ctx.fixed.buses.get(&state.bus_id) {
+            if let Some(bus) = bus_arc.downcast_ref::<Bus<T>>() {
+                state.bus_ptr = unsafe { bus.as_mut_ptr() };
+            }
+        }
     }
     
     fn tick_frame(
