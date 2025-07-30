@@ -1,10 +1,8 @@
-use std::sync::Arc;
 
 use crate::config;
 use crate::context::{FixedSignalExecutionContext, SignalExecutionContext};
 use crate::core_traits::{IntoSignal, Signal, SignalState};
 use crate::error::Result;
-use crate::synthesizer::SynthesizerState;
 use crate::unique_id::UniqueId;
 use crate::Chain;
 
@@ -26,12 +24,13 @@ impl Program {
 
     /// Add a signal fragment to this program.
     ///
-    /// The signal must have no input and no output (Input = (), Output = ()).
-    /// This is because fragments run independently and don't pass data between each other.
-    pub fn add_fragment<S>(&mut self, signal_config: S) -> Result<()>
+    /// The signal must have no input (Input = ()) but can have any output type.
+    /// The output is discarded as fragments run independently.
+    pub fn add_fragment<S, O>(&mut self, signal_config: S) -> Result<()>
     where
         S: IntoSignal,
-        S::Signal: Signal<Input = (), Output = ()> + 'static,
+        S::Signal: Signal<Input = (), Output = O> + 'static,
+        O: 'static,
     {
         let ready = signal_config.into_signal()?;
 
@@ -47,12 +46,11 @@ impl Program {
     /// Execute one block of audio for all fragments in this program.
     pub(crate) fn execute_block(
         &mut self,
-        state: &Arc<SynthesizerState>,
         program_id: &UniqueId,
         shared_ctx: &FixedSignalExecutionContext,
     ) {
         for fragment in &mut self.fragments {
-            fragment.execute_block(state, program_id, shared_ctx);
+            fragment.execute_block(program_id, shared_ctx);
         }
     }
 }
@@ -64,7 +62,6 @@ pub(crate) trait ProgramFragment: Send + Sync + 'static {
     /// Execute one block of audio processing for this fragment.
     fn execute_block(
         &mut self,
-        state: &Arc<SynthesizerState>,
         program_id: &UniqueId,
         shared_ctx: &FixedSignalExecutionContext,
     );
@@ -75,7 +72,7 @@ pub(crate) trait ProgramFragment: Send + Sync + 'static {
 /// This is the concrete implementation that allows signals to be used as fragments.
 struct SignalFragment<S>
 where
-    S: Signal<Input = (), Output = ()>,
+    S: Signal<Input = ()>,
 {
     signal: S,
     state: SignalState<S>,
@@ -83,11 +80,10 @@ where
 
 impl<S> ProgramFragment for SignalFragment<S>
 where
-    S: Signal<Input = (), Output = ()>,
+    S: Signal<Input = ()>,
 {
     fn execute_block(
         &mut self,
-        _state: &Arc<SynthesizerState>,
         _program_id: &UniqueId,
         shared_ctx: &FixedSignalExecutionContext,
     ) {
@@ -98,25 +94,23 @@ where
 
         // Process each frame in the block
         for _ in 0..config::BLOCK_SIZE {
-            S::tick_frame(&ctx, (), &mut self.state);
+            // Discard the output
+            let _ = S::tick_frame(&ctx, (), &mut self.state);
         }
     }
 }
 
 /// Convert a Chain into a single-fragment Program.
-///
-/// This cannot fail for valid chains, so we panic if add_fragment fails. In practice, add_fragment only fails if the
-/// signal's into_signal() fails, which should not happen for properly constructed chains.
-impl<S> From<Chain<S>> for Program
+impl<S> TryFrom<Chain<S>> for Program
 where
     S: IntoSignal,
     S::Signal: Signal<Input = (), Output = ()> + 'static,
 {
-    fn from(chain: Chain<S>) -> Self {
+    type Error = crate::error::Error;
+    
+    fn try_from(chain: Chain<S>) -> Result<Self> {
         let mut program = Program::new();
-        program
-            .add_fragment(chain)
-            .expect("Failed to convert chain to program - signal initialization failed");
-        program
+        program.add_fragment(chain)?;
+        Ok(program)
     }
 }

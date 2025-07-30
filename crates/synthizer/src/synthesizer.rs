@@ -33,9 +33,6 @@ impl thingbuf::recycling::Recycle<Box<dyn Command>> for CommandRecycler {
     }
 }
 
-// Temporary type for compatibility with mount system
-// Will be removed when mounts are updated to work with commands
-pub(crate) struct SynthesizerState;
 
 pub struct Synthesizer {
     command_ring: Arc<thingbuf::ThingBuf<Box<dyn Command>, CommandRecycler>>,
@@ -77,6 +74,9 @@ pub(crate) struct AudioThreadState {
 
     /// Global slots map for audio thread processing
     pub(crate) slots: std::collections::HashMap<UniqueId, SlotContainer>,
+    
+    /// Reusable vector for collecting programs to run each audio tick
+    pub(crate) programs_to_run: Vec<(UniqueId, ProgramContainer)>,
 }
 
 
@@ -189,6 +189,7 @@ impl Synthesizer {
                 time_in_blocks: 0,
                 programs: std::collections::HashMap::with_capacity(128),
                 slots: std::collections::HashMap::with_capacity(1024),
+                programs_to_run: Vec::with_capacity(128),
             };
 
             // Buffer to handle mismatch between cpal's requested frame count and our BLOCK_SIZE
@@ -274,9 +275,13 @@ impl Batch<'_> {
     }
 
 
-    pub fn mount<P: Into<Program>>(&mut self, programmable: P) -> Result<Handle> {
+    pub fn mount<P>(&mut self, programmable: P) -> Result<Handle> 
+    where
+        P: TryInto<Program>,
+        P::Error: Into<crate::error::Error>,
+    {
         let object_id = UniqueId::new();
-        let program = programmable.into();
+        let program = programmable.try_into().map_err(Into::into)?;
 
         let pending_drop = MarkDropped::new();
 
@@ -447,26 +452,24 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
         // Zero it out for this iteration.
         state.buffer.fill([0.0f64; 2]);
 
-        // Collect programs that need to run
-        let programs_to_run: Vec<(UniqueId, ProgramContainer)> = state
-            .programs
-            .iter()
-            .filter(|(_, p)| !p.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
-            .map(|(id, p)| (*id, p.clone()))
-            .collect();
+        // Collect programs that need to run (reuse existing Vec)
+        state.programs_to_run.clear();
+        state.programs_to_run.extend(
+            state
+                .programs
+                .iter()
+                .filter(|(_, p)| !p.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                .map(|(id, p)| (*id, p.clone()))
+        );
 
         // Process each program
-        for (id, p) in programs_to_run {
+        for (id, p) in &state.programs_to_run {
             let slot_ctx = SlotUpdateContext {
                 global_slots: &state.slots,
             };
 
-            // Create a temporary wrapper for compatibility
-            let fake_state = Arc::new(SynthesizerState);
-
             p.program.borrow_mut().execute_block(
-                &fake_state,
-                &id,
+                id,
                 &crate::context::FixedSignalExecutionContext {
                     time_in_blocks: state.time_in_blocks,
                     audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut state.buffer),
