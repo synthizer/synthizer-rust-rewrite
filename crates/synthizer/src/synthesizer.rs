@@ -315,16 +315,53 @@ impl Batch<'_> {
 
         let pending_drop = MarkDropped::new();
 
+        // Extract bus linkage information before moving the program
+        let input_buses = program.input_buses.clone();
+        let output_buses = program.output_buses.clone();
+
         let inserting = ProgramContainer {
             program: Arc::new(AtomicRefCell::new(program)),
             pending_drop: pending_drop.0.clone(),
         };
 
-        // Create command to insert program
+        // Create command to insert program and update dependencies
         let mut inserting_opt = Some(inserting);
         self.push_command(move |state: &mut AudioThreadState| {
             if let Some(inserting) = inserting_opt.take() {
                 state.programs.insert(object_id, inserting);
+                
+                // Update program dependencies based on bus linkages
+                let mut deps = Vec::new();
+                
+                // For each output bus, find programs that read from it
+                for (bus_id, _) in &output_buses {
+                    for (&other_id, other_container) in &state.programs {
+                        if other_id == object_id { continue; }
+                        let other_program = other_container.program.borrow();
+                        // Check if other program has this bus as input
+                        if other_program.input_buses.iter().any(|(id, _)| id == bus_id) {
+                            deps.push(other_id);
+                        }
+                    }
+                }
+                
+                if !deps.is_empty() {
+                    state.program_dependencies.insert(object_id, deps);
+                }
+                
+                // For each input bus, find programs that write to it and add ourselves as their dependency
+                for (bus_id, _) in &input_buses {
+                    for (&other_id, other_container) in &state.programs {
+                        if other_id == object_id { continue; }
+                        let other_program = other_container.program.borrow();
+                        // Check if other program has this bus as output
+                        if other_program.output_buses.iter().any(|(id, _)| id == bus_id) {
+                            state.program_dependencies.entry(other_id)
+                                .or_insert_with(Vec::new)
+                                .push(object_id);
+                        }
+                    }
+                }
             }
         });
 

@@ -9,7 +9,7 @@ mod array_utils;
 mod audio_frames;
 mod background_drop;
 pub mod biquad;
-mod bus;
+pub mod bus;
 pub mod chain;
 pub mod chain_mathops;
 mod channel_conversion;
@@ -40,6 +40,7 @@ mod unsafe_utils;
 mod value_provider;
 mod worker_pool;
 
+pub use bus::Bus;
 pub use chain::*;
 pub use channel_format::*;
 pub use config::SR;

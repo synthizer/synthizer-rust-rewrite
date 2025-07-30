@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::convert::Infallible;
 
 use crate::cpal_device::AudioDeviceError;
 use crate::loop_spec::LoopSpecError;
@@ -56,6 +57,12 @@ impl<T> From<crossbeam::channel::SendError<T>> for Error {
         Error {
             payload: ErrorPayload::ChannelClosed,
         }
+    }
+}
+
+impl From<Infallible> for Error {
+    fn from(inf: Infallible) -> Error {
+        match inf {}
     }
 }
 

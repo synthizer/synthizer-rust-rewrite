@@ -92,6 +92,13 @@ impl Program {
             _phantom: std::marker::PhantomData,
         }
     }
+    
+    /// Track that this program uses a slot
+    pub fn uses_slot<T>(&mut self, _slot: &crate::signals::Slot<T>) {
+        // This is for tracking purposes - the actual slot tracking happens
+        // when the handle is created and when replace_slot_value is called
+        // For now this is a no-op but could be used in the future
+    }
 }
 
 /// Trait for program fragments that can be executed as part of a program.
