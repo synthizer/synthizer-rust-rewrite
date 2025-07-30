@@ -12,7 +12,7 @@ use crate::cpal_device::{AudioDevice, DeviceOptions};
 use crate::error::Result;
 use crate::handle::{Handle, HandleState};
 use crate::mark_dropped::MarkDropped;
-use crate::mount_point::ErasedMountPoint;
+use crate::program::Program;
 use crate::sample_sources::UnifiedMediaSource;
 use crate::signals as sigs;
 use crate::signals::{Slot, SlotUpdateContext, SlotValueContainer};
@@ -46,11 +46,11 @@ pub struct Synthesizer {
 }
 
 #[derive(Clone)]
-pub(crate) struct MountContainer {
+pub(crate) struct ProgramContainer {
     pub(crate) pending_drop: Arc<std::sync::atomic::AtomicBool>,
 
     /// Should only be accessed from the audio thread.  Cloning is fine.
-    pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
+    pub(crate) program: Arc<AtomicRefCell<Program>>,
 }
 
 /// Container for slot value and its drop marker
@@ -72,8 +72,8 @@ pub(crate) struct AudioThreadState {
     /// time in blocks since this state was created.
     pub(crate) time_in_blocks: u64,
 
-    /// Standard library version of mounts for audio thread processing
-    pub(crate) mounts: std::collections::HashMap<UniqueId, MountContainer>,
+    /// Standard library version of programs for audio thread processing
+    pub(crate) programs: std::collections::HashMap<UniqueId, ProgramContainer>,
 
     /// Global slots map for audio thread processing
     pub(crate) slots: std::collections::HashMap<UniqueId, SlotContainer>,
@@ -96,9 +96,9 @@ impl Drop for Batch<'_> {
         let mut outgoing_commands = std::mem::take(&mut self.commands);
         
         // Create ArrayVecs outside the closure to ensure drops happen off audio thread
-        let mut mount_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
+        let mut program_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut slot_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
-        let mut removed_mounts: ArrayVec<MountContainer, 16> = ArrayVec::new();
+        let mut removed_programs: ArrayVec<ProgramContainer, 16> = ArrayVec::new();
         let mut removed_slots: ArrayVec<SlotContainer, 16> = ArrayVec::new();
         
         let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
@@ -108,12 +108,12 @@ impl Drop for Batch<'_> {
                 .for_each(|x| x.execute(state));
             
             // Then perform cleanup
-            // Collect IDs of mounts to remove
-            mount_ids_to_remove.clear();
-            mount_ids_to_remove.extend(
-                state.mounts
+            // Collect IDs of programs to remove
+            program_ids_to_remove.clear();
+            program_ids_to_remove.extend(
+                state.programs
                     .iter()
-                    .filter(|(_, m)| m.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                    .filter(|(_, p)| p.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
                     .map(|(id, _)| *id)
                     .take(16)
             );
@@ -128,12 +128,12 @@ impl Drop for Batch<'_> {
                     .take(16)
             );
             
-            // Remove mounts and store them temporarily
-            removed_mounts.clear();
-            for id in &mount_ids_to_remove {
-                let mount = state.mounts.remove(id)
-                    .expect("Mount marked for removal not found in mounts map");
-                removed_mounts.push(mount);
+            // Remove programs and store them temporarily
+            removed_programs.clear();
+            for id in &program_ids_to_remove {
+                let program = state.programs.remove(id)
+                    .expect("Program marked for removal not found in programs map");
+                removed_programs.push(program);
             }
             
             // Remove slots and store them temporarily
@@ -187,7 +187,7 @@ impl Synthesizer {
                 buf_remaining: 0,
                 buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
                 time_in_blocks: 0,
-                mounts: std::collections::HashMap::with_capacity(128),
+                programs: std::collections::HashMap::with_capacity(128),
                 slots: std::collections::HashMap::with_capacity(1024),
             };
 
@@ -274,22 +274,22 @@ impl Batch<'_> {
     }
 
 
-    pub fn mount<M: crate::mount_point::Mountable>(&mut self, new_mount: M) -> Result<Handle> {
+    pub fn mount<P: Into<Program>>(&mut self, programmable: P) -> Result<Handle> {
         let object_id = UniqueId::new();
-        let mount = new_mount.into_mount(self)?;
+        let program = programmable.into();
 
         let pending_drop = MarkDropped::new();
 
-        let inserting = MountContainer {
-            erased_mount: Arc::new(AtomicRefCell::new(mount)),
+        let inserting = ProgramContainer {
+            program: Arc::new(AtomicRefCell::new(program)),
             pending_drop: pending_drop.0.clone(),
         };
 
-        // Create command to insert mount
+        // Create command to insert program
         let mut inserting_opt = Some(inserting);
         self.push_command(move |state: &mut AudioThreadState| {
             if let Some(inserting) = inserting_opt.take() {
-                state.mounts.insert(object_id, inserting);
+                state.programs.insert(object_id, inserting);
             }
         });
 
@@ -351,7 +351,7 @@ impl Batch<'_> {
         let mut new_val_opt = Some(new_val);
         self.push_command(move |state: &mut AudioThreadState| {
             // Verify the handle exists on the audio thread
-            if !state.mounts.contains_key(&object_id) {
+            if !state.programs.contains_key(&object_id) {
                 return; // Silent failure for now
             }
 
@@ -447,25 +447,24 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
         // Zero it out for this iteration.
         state.buffer.fill([0.0f64; 2]);
 
-        // Collect mounts that need to run
-        let mounts_to_run: Vec<(UniqueId, MountContainer)> = state
-            .mounts
+        // Collect programs that need to run
+        let programs_to_run: Vec<(UniqueId, ProgramContainer)> = state
+            .programs
             .iter()
-            .filter(|(_, m)| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
-            .map(|(id, m)| (*id, m.clone()))
+            .filter(|(_, p)| !p.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+            .map(|(id, p)| (*id, p.clone()))
             .collect();
 
-        // Process each mount
-        for (id, m) in mounts_to_run {
+        // Process each program
+        for (id, p) in programs_to_run {
             let slot_ctx = SlotUpdateContext {
                 global_slots: &state.slots,
             };
 
             // Create a temporary wrapper for compatibility
-            // This will be removed when mounts are updated to work directly with AudioThreadState
             let fake_state = Arc::new(SynthesizerState);
 
-            m.erased_mount.borrow_mut().run(
+            p.program.borrow_mut().execute_block(
                 &fake_state,
                 &id,
                 &crate::context::FixedSignalExecutionContext {

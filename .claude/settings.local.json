@@ -13,7 +13,8 @@
       "WebFetch(domain:docs.rs)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(cargo run:*)"
     ],
     "deny": []
   }
