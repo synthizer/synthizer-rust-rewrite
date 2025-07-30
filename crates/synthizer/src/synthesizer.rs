@@ -1,26 +1,27 @@
 use std::any::Any;
+use std::collections::VecDeque;
 use std::marker::PhantomData as PD;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use atomic_refcell::AtomicRefCell;
-use rpds::{HashTrieMapSync, VectorSync};
 
 use crate::config;
 use crate::core_traits::*;
 use crate::cpal_device::{AudioDevice, DeviceOptions};
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::mount_point::ErasedMountPoint;
 use crate::sample_sources::UnifiedMediaSource;
 use crate::signals as sigs;
 use crate::signals::{Slot, SlotUpdateContext, SlotValueContainer};
 use crate::unique_id::UniqueId;
 
-type SynthMap<K, V> = HashTrieMapSync<K, V>;
-type SynthVec<T> = VectorSync<T>;
+// Temporary type for compatibility with mount system
+// Will be removed when mounts are updated to work with commands
+pub(crate) struct SynthesizerState;
 
 pub struct Synthesizer {
-    state: Arc<crate::data_structures::deferred_arc_swap::DeferredArcSwap<SynthesizerState>>,
+    command_queue: Arc<Mutex<VecDeque<Box<dyn crate::core_traits::Command>>>>,
 
     device: Option<AudioDevice>,
 
@@ -35,35 +36,6 @@ pub(crate) struct MountContainer {
     pub(crate) erased_mount: Arc<AtomicRefCell<Box<dyn ErasedMountPoint>>>,
 }
 
-/// This is the state published to the audio thread.
-///
-/// Here's how this works: the state is behind `Arc`.  To manipulate it, we `make_mut` that `Arc`, do whatever we're
-/// doing, then publish via `ArcSwap`.  This is "cheap" to clone in the sense that it's using persistent data
-/// structures, but the way things actually work is we have batches and each batch will modify only one copy until the
-/// batch ends.  On the audio thread, interior mutability is then used to modify the states.
-///
-/// That's a lot of pointer chasing.  To deal with that, mounts materialize once per block and run the block.
-///
-/// To make sure deallocation never happens on the audio thread, we maintain a linked list of these.  When a new state
-/// is seen by the audio thread, the old state will have been swapped into place.  Then, when a batch starts, we drop
-/// that linked list if needed.  As a result, the final Arc never goes away on the audio thread.  There is a kind of
-/// trick however: this can indeed be a cycle.  We rely on the next batch creation to clear that cycle.
-#[derive(Clone)]
-pub(crate) struct SynthesizerState {
-    arc_freelist: crate::data_structures::deferred_arc_swap::ArcStash<Self>,
-
-    pub(crate) mounts: SynthMap<UniqueId, MountContainer>,
-
-    pub(crate) slots: SynthMap<UniqueId, Arc<dyn Any + Send + Sync + 'static>>,
-
-    pub(crate) audio_thred_state: Arc<AtomicRefCell<AudioThreadState>>,
-}
-
-impl crate::data_structures::deferred_arc_swap::GetArcStash for SynthesizerState {
-    fn get_stash(&self) -> &crate::data_structures::deferred_arc_swap::ArcStash<Self> {
-        &self.arc_freelist
-    }
-}
 
 /// Ephemeral state for the audio thread itself.  Owned by the audio thread but behind AtomicRefCell to avoid unsafe
 /// code.
@@ -122,19 +94,18 @@ impl Clone for Handle {
 
 /// A batch of changes for the audio thread.
 ///
-/// You ask for a batch.  Then you manipulate things by asking the batch for their parameters.  The states all build up,
-/// and are stored with the batch.  Then, when the batch drops, they are published to the audio thread
+/// You ask for a batch.  Then you manipulate things by asking the batch for their parameters.  The commands all build up,
+/// and are stored with the batch.  Then, when the batch drops, they are sent to the audio thread
 pub struct Batch<'a> {
     synthesizer: &'a mut Synthesizer,
-    new_state: SynthesizerState,
+    commands: Vec<Box<dyn crate::core_traits::Command>>,
 }
 
 impl Drop for Batch<'_> {
     fn drop(&mut self) {
-        self.handle_pending_drops();
-        self.synthesizer
-            .state
-            .publish(Arc::new(self.new_state.clone()));
+        // Move all commands to the queue
+        let mut queue = self.synthesizer.command_queue.lock().unwrap();
+        queue.extend(self.commands.drain(..));
     }
 }
 
@@ -145,17 +116,22 @@ impl Synthesizer {
             channels: Some(2), // Stereo
         };
 
-        let state = Arc::new(
-            crate::data_structures::deferred_arc_swap::DeferredArcSwap::new(Arc::new(
-                SynthesizerState::new(),
-            )),
-        );
-
+        let command_queue = Arc::new(Mutex::new(VecDeque::new()));
         let worker_pool =
             crate::worker_pool::WorkerPoolHandle::new_threaded(config::WORKER_POOL_THREADS);
+        
         let dev = {
-            let published_state = state.clone();
+            let queue_clone = command_queue.clone();
             let wp_cloned = worker_pool.clone();
+
+            // Create persistent audio thread state
+            let mut audio_state = AudioThreadState {
+                buf_remaining: 0,
+                buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
+                time_in_blocks: 0,
+                mounts: std::collections::HashMap::new(),
+                slots: std::collections::HashMap::new(),
+            };
 
             // Buffer to handle mismatch between cpal's requested frame count and our BLOCK_SIZE
             let mut remainder_buffer = Vec::with_capacity(config::BLOCK_SIZE * 2);
@@ -180,17 +156,13 @@ impl Synthesizer {
 
                     if remaining_dest.len() >= block_size_samples {
                         // Process directly into the destination
-                        let update = published_state.load_full();
-                        at_iter(&update, &mut remaining_dest[..block_size_samples]);
-                        published_state.defer_reclaim(update);
+                        at_iter(&queue_clone, &mut audio_state, &mut remaining_dest[..block_size_samples]);
                         wp_cloned.signal_audio_tick_complete();
                         remaining_dest = &mut remaining_dest[block_size_samples..];
                     } else {
                         // Not enough space for a full block, generate into our buffer
                         let mut temp_buffer = vec![0.0f32; block_size_samples];
-                        let update = published_state.load_full();
-                        at_iter(&update, &mut temp_buffer);
-                        published_state.defer_reclaim(update);
+                        at_iter(&queue_clone, &mut audio_state, &mut temp_buffer);
                         wp_cloned.signal_audio_tick_complete();
 
                         // Copy what we can to the destination
@@ -208,22 +180,17 @@ impl Synthesizer {
         dev.start()?;
 
         Ok(Self {
-            state,
+            command_queue,
             device: Some(dev),
             worker_pool,
         })
     }
 
     pub fn batch(&mut self) -> Batch<'_> {
-        let new_state = Arc::unwrap_or_clone(self.state.load_full());
-
-        let mut ret = Batch {
+        Batch {
             synthesizer: self,
-            new_state,
-        };
-
-        ret.handle_pending_drops();
-        ret
+            commands: Vec::new(),
+        }
     }
 
     /// Convert a duration to time in samples, rounding up.
@@ -235,44 +202,23 @@ impl Synthesizer {
     }
 }
 
-impl SynthesizerState {
-    fn new() -> Self {
-        Self {
-            arc_freelist: Default::default(),
-            audio_thred_state: Arc::new(AtomicRefCell::new(AudioThreadState {
-                buf_remaining: 0,
-                buffer: [[0.0f64; 2]; config::BLOCK_SIZE],
-                time_in_blocks: 0,
-                mounts: std::collections::HashMap::new(),
-                slots: std::collections::HashMap::new(),
-            })),
-            mounts: SynthMap::new_sync(),
-            slots: SynthMap::new_sync(),
-        }
-    }
-}
 
 impl Batch<'_> {
     /// Called on batch creation to catch pending drops from last time, then again on batch publish to catch pending
     /// drops the user might have made during the batch.
     fn handle_pending_drops(&mut self) {
-        // no retain in rpds.
-        let mut pending_dropkeys = smallvec::SmallVec::<[UniqueId; 16]>::new();
-
-        for (id, m) in self.new_state.mounts.iter() {
-            if m.pending_drop.load(std::sync::atomic::Ordering::Relaxed) {
-                pending_dropkeys.push(*id);
-            }
-        }
-
-        for id in pending_dropkeys {
-            self.new_state.mounts.remove_mut(&id);
-        }
+        self.commands.push(Box::new(|state: &mut AudioThreadState| {
+            state.mounts.retain(|_, m| {
+                !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed)
+            });
+        }));
     }
 
     pub fn mount<M: crate::mount_point::Mountable>(&mut self, mut new_mount: M) -> Result<Handle> {
+        let mut slots_to_insert = Vec::new();
+        
         new_mount.trace(&mut |id, val| match val {
-            TracedResource::Slot(s) => self.new_state.slots.insert_mut(id, s),
+            TracedResource::Slot(s) => slots_to_insert.push((id, s)),
         })?;
 
         let object_id = UniqueId::new();
@@ -284,7 +230,20 @@ impl Batch<'_> {
             erased_mount: Arc::new(AtomicRefCell::new(mount)),
             pending_drop: pending_drop.0.clone(),
         };
-        self.new_state.mounts.insert_mut(object_id, inserting);
+        
+        // Create command to insert mount and slots
+        let mut inserting_opt = Some(inserting);
+        let mut slots_opt = Some(slots_to_insert);
+        self.commands.push(Box::new(move |state: &mut AudioThreadState| {
+            if let Some(inserting) = inserting_opt.take() {
+                state.mounts.insert(object_id, inserting);
+            }
+            if let Some(slots) = slots_opt.take() {
+                for (id, slot) in slots {
+                    state.slots.insert(id, slot);
+                }
+            }
+        }));
 
         Ok(Handle {
             object_id,
@@ -313,20 +272,25 @@ impl Batch<'_> {
     where
         T: Send + Sync + Clone + 'static,
     {
-        // Verify the handle exists
-        if !self.new_state.mounts.contains_key(&handle.object_id) {
-            return Err(Error::new_validation_cow("Handle does not exist"));
-        }
+        let slot_id = slot.slot_id;
+        let object_id = handle.object_id;
         
-        let slot_ref = self.new_state
-            .slots
-            .get_mut(&slot.slot_id)
-            .ok_or_else(||Error::new_validation_cow("Slot does not exist"))?;
-        let newslot = slot_ref
-            .downcast_ref::<SlotValueContainer<T>>()
-            .ok_or_else(||Error::new_validation_cow("Slot type mismatch"))?
-            .replace(new_val);
-        *slot_ref = Arc::new(newslot);
+        let mut new_val_opt = Some(new_val);
+        self.commands.push(Box::new(move |state: &mut AudioThreadState| {
+            // Verify the handle exists on the audio thread
+            if !state.mounts.contains_key(&object_id) {
+                return; // Silent failure for now
+            }
+            
+            if let Some(slot_ref) = state.slots.get_mut(&slot_id) {
+                if let Some(container) = slot_ref.downcast_ref::<SlotValueContainer<T>>() {
+                    if let Some(new_val) = new_val_opt.take() {
+                        let newslot = container.replace(new_val);
+                        *slot_ref = Arc::new(newslot);
+                    }
+                }
+            }
+        }));
 
         Ok(())
     }
@@ -362,102 +326,84 @@ impl Batch<'_> {
 }
 
 /// Run one iteration of the audio thread.
-fn at_iter(state: &Arc<SynthesizerState>, dest: &mut [f32]) {
-    // Copy state from synthesizer to audio thread state
+fn at_iter(
+    command_queue: &Arc<Mutex<VecDeque<Box<dyn crate::core_traits::Command>>>>,
+    state: &mut AudioThreadState,
+    dest: &mut [f32],
+) {
+    // First, execute any pending commands
     {
-        let mut audio_state = state.audio_thred_state.borrow_mut();
-
-        // Copy all mounts from persistent state to audio thread state
-        for (id, mount) in state.mounts.iter() {
-            audio_state.mounts.insert(*id, mount.clone());
+        let mut queue = command_queue.lock().unwrap();
+        while let Some(mut cmd) = queue.pop_front() {
+            cmd.execute(state);
         }
-
-        // Copy all slots from persistent state to audio thread state
-        for (id, slot) in state.slots.iter() {
-            audio_state.slots.insert(*id, slot.clone());
-        }
-
-        // Remove any mounts that are marked for drop
-        audio_state
-            .mounts
-            .retain(|_, m| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed));
     }
 
-    // Call the inner function
+    // Then process audio
     at_iter_inner(state, dest);
 }
 
 /// Inner implementation of audio thread iteration
-fn at_iter_inner(state: &Arc<SynthesizerState>, mut dest: &mut [f32]) {
+fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
     while !dest.is_empty() {
-        // Grab the audio thread state and copy out whatever data we can.
-        {
-            let mut audio_state = state.audio_thred_state.borrow_mut();
-            if audio_state.buf_remaining > 0 {
-                // Hardcoded stereo, at the moment.
-                let remaining = dest.len() / 2;
-                let will_do = audio_state.buf_remaining.min(remaining);
-                assert!(will_do > 0);
+        // Copy out whatever data we can from the buffer
+        if state.buf_remaining > 0 {
+            // Hardcoded stereo, at the moment.
+            let remaining = dest.len() / 2;
+            let will_do = state.buf_remaining.min(remaining);
+            assert!(will_do > 0);
 
-                let start_ind = audio_state.buffer.len() - audio_state.buf_remaining;
-                let grabbing = &mut audio_state.buffer[start_ind..(start_ind + will_do)];
-                grabbing.iter().enumerate().for_each(|(i, x)| {
-                    dest[i * 2] = x[0] as f32;
-                    dest[i * 2 + 1] = x[1] as f32;
-                });
-                // Careful: advance by stereo, not mono.
-                dest = &mut dest[will_do * 2..];
-                audio_state.buf_remaining -= will_do;
+            let start_ind = state.buffer.len() - state.buf_remaining;
+            let grabbing = &state.buffer[start_ind..(start_ind + will_do)];
+            grabbing.iter().enumerate().for_each(|(i, x)| {
+                dest[i * 2] = x[0] as f32;
+                dest[i * 2 + 1] = x[1] as f32;
+            });
+            // Careful: advance by stereo, not mono.
+            dest = &mut dest[will_do * 2..];
+            state.buf_remaining -= will_do;
 
-                if dest.is_empty() {
-                    // This was enough, and we do not need to refill the buffer.
-                    return;
-                }
+            if dest.is_empty() {
+                // This was enough, and we do not need to refill the buffer.
+                return;
             }
         }
 
-        // Prepare the audio thread state, then release the borrow, allowing mount points to grab it.
-        {
-            let mut at_state = state.audio_thred_state.borrow_mut();
-
-            at_state.buf_remaining = config::BLOCK_SIZE;
-            // Zero it out for this iteration.
-            at_state.buffer.fill([0.0f64; 2]);
-        }
+        // Prepare the audio thread state for the next block
+        state.buf_remaining = config::BLOCK_SIZE;
+        // Zero it out for this iteration.
+        state.buffer.fill([0.0f64; 2]);
 
         // Collect mounts that need to run
-        let mounts_to_run: Vec<(UniqueId, MountContainer)> = {
-            let as_ref = state.audio_thred_state.borrow();
-            as_ref
-                .mounts
-                .iter()
-                .filter(|(_, m)| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
-                .map(|(id, m)| (*id, m.clone()))
-                .collect()
-        };
+        let mounts_to_run: Vec<(UniqueId, MountContainer)> = state
+            .mounts
+            .iter()
+            .filter(|(_, m)| !m.pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+            .map(|(id, m)| (*id, m.clone()))
+            .collect();
 
         // Process each mount
         for (id, m) in mounts_to_run {
-            let mut as_mut = state.audio_thred_state.borrow_mut();
-            // Pre-deref to allow split borrows
-            let as_mut: &mut AudioThreadState = &mut *as_mut;
-            
             let slot_ctx = SlotUpdateContext {
-                global_slots: &as_mut.slots,
+                global_slots: &state.slots,
             };
             
+            // Create a temporary wrapper for compatibility
+            // This will be removed when mounts are updated to work directly with AudioThreadState
+            let fake_state = Arc::new(SynthesizerState);
+            
             m.erased_mount.borrow_mut().run(
-                state,
+                &fake_state,
                 &id,
                 &crate::context::FixedSignalExecutionContext {
-                    time_in_blocks: as_mut.time_in_blocks,
-                    audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut as_mut.buffer),
+                    time_in_blocks: state.time_in_blocks,
+                    audio_destinationh: atomic_refcell::AtomicRefCell::new(&mut state.buffer),
                     audio_destination_format: &crate::channel_format::ChannelFormat::Stereo,
                     slots: &slot_ctx,
                 },
             );
         }
 
-        state.audio_thred_state.borrow_mut().time_in_blocks += 1;
+        state.time_in_blocks += 1;
     }
 }

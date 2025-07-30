@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::context::*;
 use crate::error::Result;
+use crate::synthesizer::AudioThreadState;
 use crate::unique_id::UniqueId;
 
 // These are "core" but it's a lot of code so we pull it out.
@@ -127,3 +128,18 @@ pub(crate) type IntoSignalState<S> = <<S as IntoSignal>::Signal as Signal>::Stat
 pub(crate) type SignalInput<T> = <T as Signal>::Input;
 pub(crate) type SignalOutput<T> = <T as Signal>::Output;
 pub(crate) type SignalState<S> = <S as Signal>::State;
+
+/// Trait for commands that can be executed on the audio thread.
+pub trait Command: Send + 'static {
+    fn execute(&mut self, state: &mut AudioThreadState);
+}
+
+/// Blanket implementation for FnMut closures
+impl<F> Command for F
+where
+    F: FnMut(&mut AudioThreadState) + Send + 'static,
+{
+    fn execute(&mut self, state: &mut AudioThreadState) {
+        self(state)
+    }
+}

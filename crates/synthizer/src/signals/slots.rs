@@ -2,13 +2,9 @@ use std::any::Any;
 use std::marker::PhantomData as PD;
 use std::sync::Arc;
 
-use rpds::HashTrieMapSync;
-
 use crate::core_traits::*;
 use crate::error::Result;
 use crate::unique_id::UniqueId;
-
-pub(crate) type SlotMap<K, V> = HashTrieMapSync<K, V>;
 
 /// Reference to a "knob" on your algorithm.
 ///
