@@ -34,6 +34,7 @@ pub mod signals;
 pub mod synthesizer;
 mod unique_id;
 mod unsafe_utils;
+mod wavetable;
 mod worker_pool;
 
 pub use bus::BusHandle;
