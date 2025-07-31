@@ -19,8 +19,7 @@ type SplitSlices<Slice> = arrayvec::ArrayVec<Slice, MAX_CHANNELS>;
 /// for already interleaved audio data.
 ///
 /// This is a realtime safe type, save for methods which grow. Dropping it is *not* realtime-safe; if this type must
-/// exist and drop on the audio thread, it must be deferred via [crate::background_drop] either directly or (as is the
-/// usual case) indirectly as part of something else being dropped.  If this is part of a node, this is handled;
+/// exist and drop on the audio thread, it must be handled carefully. If this is part of a node, this is handled;
 /// deregistration of nodes already defers dropping of the entire node.
 pub(crate) struct SplittableBuffer<Storage> {
     storage: Storage,
