@@ -339,4 +339,33 @@ impl<S: IntoSignal> Chain<S> {
             inner: sigs::BypassSignalConfig::new(self.inner, other.inner),
         }
     }
+
+    /// Connect this chain's output to another chain's input.
+    ///
+    /// This is like function composition: the output of this chain becomes the input to the next chain.
+    /// The resulting chain has the same input as this chain and the output of the other chain.
+    pub fn and_then<C>(
+        self,
+        other: Chain<C>,
+    ) -> Chain<
+        impl IntoSignal<
+            Signal = impl Signal<
+                Input = IntoSignalInput<S>,
+                Output = IntoSignalOutput<C>,
+            >,
+        >,
+    >
+    where
+        S: 'static,
+        C: IntoSignal + 'static,
+        IntoSignalOutput<S>: Clone,
+        C::Signal: Signal<Input = IntoSignalOutput<S>>,
+    {
+        Chain {
+            inner: sigs::AndThenConfig {
+                left: self.inner,
+                right: other.inner,
+            },
+        }
+    }
 }

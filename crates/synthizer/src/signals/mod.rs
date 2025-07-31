@@ -16,6 +16,7 @@ mod scalars;
 mod slots;
 mod start_from_input;
 mod trig;
+mod wavetable;
 
 pub use and_then::*;
 pub use audio_io::*;
@@ -34,3 +35,4 @@ pub use periodic_f64::*;
 pub use slots::*;
 pub use start_from_input::*;
 pub use trig::*;
+pub use wavetable::*;

@@ -48,3 +48,4 @@ pub use loop_spec::LoopSpec;
 pub use program::Program;
 pub use signals::DelayLineHandle;
 pub use synthesizer::Synthesizer;
+pub use wavetable::{WaveTable, WaveTableBuilder, WaveTableHandle};

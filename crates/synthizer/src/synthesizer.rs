@@ -83,6 +83,9 @@ pub(crate) struct AudioThreadState {
     /// Global buses map for audio thread processing
     pub(crate) buses: std::collections::HashMap<UniqueId, BusContainer>,
 
+    /// Global wavetables map for audio thread processing
+    pub(crate) wavetables: std::collections::HashMap<UniqueId, (Arc<crate::wavetable::WaveTable>, Arc<std::sync::atomic::AtomicBool>)>,
+
     /// Reusable vector for collecting programs to run each audio tick
     pub(crate) programs_to_run: Vec<(UniqueId, ProgramContainer)>,
 
@@ -116,9 +119,11 @@ impl Drop for Batch<'_> {
         let mut program_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut slot_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut bus_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
+        let mut wavetable_ids_to_remove: ArrayVec<UniqueId, 16> = ArrayVec::new();
         let mut removed_programs: ArrayVec<ProgramContainer, 16> = ArrayVec::new();
         let mut removed_slots: ArrayVec<SlotContainer, 16> = ArrayVec::new();
         let mut removed_buses: ArrayVec<BusContainer, 16> = ArrayVec::new();
+        let mut removed_wavetables: ArrayVec<Arc<crate::wavetable::WaveTable>, 16> = ArrayVec::new();
 
         let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
             // Increment topology generation to trigger recompute
@@ -189,6 +194,27 @@ impl Drop for Batch<'_> {
                     .expect("Bus marked for removal not found in buses map");
                 removed_buses.push(bus);
             }
+
+            // Collect IDs of wavetables to remove
+            wavetable_ids_to_remove.clear();
+            wavetable_ids_to_remove.extend(
+                state
+                    .wavetables
+                    .iter()
+                    .filter(|(_, (_, pending_drop))| pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                    .map(|(id, _)| *id)
+                    .take(16),
+            );
+
+            // Remove wavetables and store them temporarily
+            removed_wavetables.clear();
+            for id in &wavetable_ids_to_remove {
+                let (wavetable, _) = state
+                    .wavetables
+                    .remove(id)
+                    .expect("Wavetable marked for removal not found in wavetables map");
+                removed_wavetables.push(wavetable);
+            }
         });
 
         loop {
@@ -236,6 +262,7 @@ impl Synthesizer {
                 programs: std::collections::HashMap::with_capacity(256),
                 slots: std::collections::HashMap::with_capacity(1024),
                 buses: std::collections::HashMap::with_capacity(256),
+                wavetables: std::collections::HashMap::with_capacity(256),
                 programs_to_run: Vec::with_capacity(256),
                 topology_generation: 0,
                 last_computed_generation: 0,
@@ -320,7 +347,7 @@ impl Synthesizer {
 
 impl Batch<'_> {
     /// Helper to push a command to the batch
-    fn push_command<F>(&mut self, f: F)
+    pub(crate) fn push_command<F>(&mut self, f: F)
     where
         F: FnMut(&mut AudioThreadState) + Send + Sync + 'static,
     {

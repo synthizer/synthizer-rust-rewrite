@@ -1,9 +1,12 @@
 use std::io::{Read, Seek};
+use std::sync::Arc;
 
 use crate::channel_format::ChannelFormat;
 use crate::core_traits::AudioFrame;
 use crate::error::Result;
+use crate::mark_dropped::MarkDropped;
 use crate::sample_sources::UnifiedMediaSource;
+use crate::unique_id::UniqueId;
 
 pub struct WaveTable {
     data: Vec<f32>,
@@ -76,6 +79,30 @@ where
             channel_format,
             sample_rate: self.target_sample_rate,
             frame_count,
+        })
+    }
+
+    pub fn build_with_batch(
+        self,
+        batch: &mut crate::synthesizer::Batch,
+    ) -> Result<WaveTableHandle> {
+        let wavetable = self.build()?;
+        let wavetable_id = UniqueId::new();
+        let mark_drop = MarkDropped::new();
+
+        let wavetable_arc = Arc::new(wavetable);
+        let mut wavetable_opt = Some((wavetable_arc.clone(), mark_drop.0.clone()));
+
+        batch.push_command(move |state: &mut crate::synthesizer::AudioThreadState| {
+            if let Some((wavetable, pending_drop)) = wavetable_opt.take() {
+                state.wavetables.insert(wavetable_id, (wavetable, pending_drop));
+            }
+        });
+
+        Ok(WaveTableHandle {
+            wavetable_id,
+            wavetable: wavetable_arc,
+            mark_drop: Arc::new(mark_drop),
         })
     }
 }
@@ -447,5 +474,85 @@ mod tests {
 
         let frame: f64 = wt.read_cubic::<_, true>(5.0);
         assert_eq!(frame, 1.0); // wraps to beginning
+    }
+}
+
+/// A handle to a wavetable that can be used to create signals that read from it
+pub struct WaveTableHandle {
+    pub(crate) wavetable_id: UniqueId,
+    pub(crate) wavetable: Arc<WaveTable>,
+    pub(crate) mark_drop: Arc<MarkDropped>,
+}
+
+impl WaveTableHandle {
+    /// Get the ID of this wavetable
+    pub(crate) fn id(&self) -> UniqueId {
+        self.wavetable_id
+    }
+
+    /// Get the number of frames in this wavetable
+    pub fn frame_count(&self) -> usize {
+        self.wavetable.frame_count()
+    }
+
+    /// Get the sample rate of this wavetable
+    pub fn sample_rate(&self) -> u32 {
+        self.wavetable.sample_rate()
+    }
+
+    /// Get the number of channels in this wavetable
+    pub fn channel_count(&self) -> usize {
+        self.wavetable.channel_count()
+    }
+
+    /// Create a signal that reads from this wavetable using truncation (no interpolation)
+    pub fn read_truncated<F, const LOOPING: bool>(
+        &self,
+        increment: f64,
+    ) -> impl crate::core_traits::IntoSignal<
+        Signal = impl crate::core_traits::Signal<Input = (), Output = F>,
+    >
+    where
+        F: crate::core_traits::AudioFrame<f64> + Send + Sync + 'static,
+    {
+        crate::signals::WaveTableTruncatedSignalConfig::<F, LOOPING> {
+            wavetable: self.wavetable.clone(),
+            increment,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Create a signal that reads from this wavetable using linear interpolation
+    pub fn read_linear<F, const LOOPING: bool>(
+        &self,
+        increment: f64,
+    ) -> impl crate::core_traits::IntoSignal<
+        Signal = impl crate::core_traits::Signal<Input = (), Output = F>,
+    >
+    where
+        F: crate::core_traits::AudioFrame<f64> + Send + Sync + 'static,
+    {
+        crate::signals::WaveTableLinearSignalConfig::<F, LOOPING> {
+            wavetable: self.wavetable.clone(),
+            increment,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Create a signal that reads from this wavetable using cubic interpolation
+    pub fn read_cubic<F, const LOOPING: bool>(
+        &self,
+        increment: f64,
+    ) -> impl crate::core_traits::IntoSignal<
+        Signal = impl crate::core_traits::Signal<Input = (), Output = F>,
+    >
+    where
+        F: crate::core_traits::AudioFrame<f64> + Send + Sync + 'static,
+    {
+        crate::signals::WaveTableCubicSignalConfig::<F, LOOPING> {
+            wavetable: self.wavetable.clone(),
+            increment,
+            _phantom: std::marker::PhantomData,
+        }
     }
 }
