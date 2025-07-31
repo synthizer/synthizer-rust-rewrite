@@ -14,17 +14,26 @@ macro_rules! impl_mathop {
         #[doc(hidden)]
         pub struct $signal_config<L, R>(L, R);
 
-        impl<A, B> $trait<Chain<B>> for Chain<A>
+        impl<'p, A, B> $trait<Chain<'p, B>> for Chain<'p, A>
         where
             A: IntoSignal,
             B: IntoSignal,
             $signal_config<A, B>: IntoSignal,
         {
-            type Output = Chain<$signal_config<A, B>>;
+            type Output = Chain<'p, $signal_config<A, B>>;
 
-            fn $method(self, rhs: Chain<B>) -> Self::Output {
+            fn $method(self, rhs: Chain<'p, B>) -> Self::Output {
+                assert!(
+                    std::ptr::eq(self.program, rhs.program),
+                    concat!(
+                        "Cannot ",
+                        stringify!($method),
+                        " chains from different programs"
+                    )
+                );
                 Chain {
                     inner: $signal_config(self.inner, rhs.inner),
+                    program: self.program,
                 }
             }
         }

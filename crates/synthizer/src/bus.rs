@@ -1,6 +1,6 @@
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::config;
 use crate::core_traits::{AudioFrame, IntoSignal, IntoSignalInput, Signal};
@@ -78,10 +78,16 @@ impl<T: Default + Copy> Bus<T> {
     }
 }
 
+/// State for lazy bus allocation
+pub(crate) struct BusHandleState {
+    pub(crate) container: Mutex<Option<crate::synthesizer::BusContainer>>,
+}
+
 /// A handle to a bus that can be used to link it to programs
 pub struct BusHandle<T> {
     pub(crate) bus_id: UniqueId,
     pub(crate) mark_drop: Arc<MarkDropped>,
+    pub(crate) state: Arc<BusHandleState>,
     pub(crate) _phantom: PhantomData<T>,
 }
 
@@ -89,6 +95,31 @@ impl<T> BusHandle<T> {
     /// Get the ID of this bus
     pub(crate) fn id(&self) -> UniqueId {
         self.bus_id
+    }
+
+    /// Create a new bus handle without allocating on the audio thread
+    pub(crate) fn new() -> Self
+    where
+        T: Default + Copy + Send + Sync + 'static,
+    {
+        let bus_id = UniqueId::new();
+        let mark_drop = MarkDropped::new();
+
+        let container = crate::synthesizer::BusContainer {
+            bus: Box::new(Bus::<T>::new_with_id(bus_id)) as Box<dyn GenericBus>,
+            pending_drop: mark_drop.0.clone(),
+        };
+
+        let state = Arc::new(BusHandleState {
+            container: Mutex::new(Some(container)),
+        });
+
+        BusHandle {
+            bus_id,
+            mark_drop: Arc::new(mark_drop),
+            state,
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -107,33 +138,39 @@ pub enum BusLinkType {
 ///
 /// This type is used during program construction to establish bus connections with a fluent API.
 pub struct BusLink<'a, T> {
-    pub(crate) program: &'a mut crate::program::Program,
+    pub(crate) program: &'a crate::program::Program,
     pub(crate) bus_id: UniqueId,
     pub(crate) link_type: BusLinkType,
     pub(crate) _phantom: PhantomData<T>,
 }
 
-impl<T> BusLink<'_, T> {
+impl<'a, T> BusLink<'a, T> {
     /// Create a chain that reads from this bus
-    pub fn read(self) -> crate::Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
+    pub fn read(
+        self,
+    ) -> crate::Chain<'a, impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
     where
         T: Send + Sync + Copy + Default + 'static,
     {
-        crate::Chain::new(ReadBusSignalConfig {
-            bus_id: self.bus_id,
-            _phantom: PhantomData::<T>,
-        })
+        crate::Chain::<crate::chain::EmptyChain>::with(
+            ReadBusSignalConfig {
+                bus_id: self.bus_id,
+                _phantom: PhantomData::<T>,
+            },
+            self.program,
+        )
     }
 
     /// Write a signal chain to this bus
-    pub fn write<S>(
+    pub fn write<'b, S>(
         self,
-        chain: crate::Chain<S>,
-    ) -> crate::Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = ()>>>
+        chain: crate::Chain<'b, S>,
+    ) -> crate::Chain<'a, impl IntoSignal<Signal = impl Signal<Input = (), Output = ()>>>
     where
         S: IntoSignal + 'static,
         S::Signal: Signal<Input = (), Output = T>,
         T: Send + Sync + Copy + 'static,
+        'b: 'a,
     {
         crate::Chain {
             inner: crate::signals::AndThenConfig {
@@ -143,18 +180,23 @@ impl<T> BusLink<'_, T> {
                     _phantom: PhantomData,
                 },
             },
+            program: self.program,
         }
     }
 
     /// Add a signal chain's output to this bus element-wise for AudioFrame types
-    pub fn frame_add<S>(
+    pub fn frame_add<'b, S>(
         self,
-        chain: crate::Chain<S>,
-    ) -> crate::Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
+        chain: crate::Chain<'b, S>,
+    ) -> crate::Chain<
+        'a,
+        impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>,
+    >
     where
         S: IntoSignal + 'static,
         S::Signal: Signal<Output = T>,
         T: AudioFrame<f64> + Copy + Send + Sync + 'static,
+        'b: 'a,
     {
         crate::Chain {
             inner: crate::signals::AndThenConfig {
@@ -170,6 +212,7 @@ impl<T> BusLink<'_, T> {
                     _phantom: PhantomData,
                 },
             },
+            program: self.program,
         }
     }
 }

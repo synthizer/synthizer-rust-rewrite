@@ -41,10 +41,10 @@ fn main() -> Result<()> {
         let (controller, mut media) = batch.make_media(file)?;
 
         // Create a program that plays this media and writes to the bus
-        let mut program = Program::new();
+        let program = Program::new();
 
         // Create the signal chain: media -> add to bus
-        let chain = media.start_chain::<2>(ChannelFormat::Stereo);
+        let chain = program.chain_media::<2>(&mut media, ChannelFormat::Stereo);
         let chain = program.link_output_bus(&mix_bus).frame_add(chain);
 
         program.add_fragment(chain)?;
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     }
 
     // Create the output program that reads from the bus and outputs to speakers
-    let mut output_program = Program::new();
+    let output_program = Program::new();
 
     // Create signal chain: read from bus -> output to speakers
     let output_chain = output_program

@@ -15,7 +15,7 @@ fn main() -> Result<()> {
     let phase_slot;
     let rate_slot;
     let playing_slot;
-    
+
     let handle = {
         let mut batch = synth.batch();
 
@@ -31,12 +31,15 @@ fn main() -> Result<()> {
 
         // For now, use a simple fixed increment (1.0 = normal speed)
         let increment = 1.0;
-        
-        // Create the wavetable reading signal with linear interpolation and looping
-        let output_signal = Chain::new(wavetable_handle.read_linear::<[f64; 2], true>(increment))
-            .to_audio_device(ChannelFormat::Stereo);
 
-        batch.mount(output_signal)?
+        // Create the wavetable reading signal with linear interpolation and looping
+        let program = Program::new();
+        program
+            .chain_wavetable_linear::<[f64; 2], true>(&wavetable_handle, increment)
+            .to_audio_device(ChannelFormat::Stereo)
+            .mount()?;
+
+        batch.mount(program)?
     };
 
     println!(
@@ -112,7 +115,10 @@ To test different interpolation modes, modify the example code.
                 println!("Position set to {pos} frames");
             }
             "info" => {
-                println!("Wavetable loaded with {} frames", wavetable_handle.frame_count());
+                println!(
+                    "Wavetable loaded with {} frames",
+                    wavetable_handle.frame_count()
+                );
                 println!("Sample rate: {} Hz", wavetable_handle.sample_rate());
                 println!("Channels: {}", wavetable_handle.channel_count());
             }

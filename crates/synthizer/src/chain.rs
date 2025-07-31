@@ -27,11 +27,12 @@ use crate::signals as sigs;
 ///
 /// I/O happens "late".  Building the chain only leads to errors for validation.  Files open, threads start, etc. only
 /// when the chain gets mounted.
-pub struct Chain<S> {
+pub struct Chain<'p, S> {
     pub(crate) inner: S,
+    pub(crate) program: &'p crate::program::Program,
 }
 
-impl<S> IntoSignal for Chain<S>
+impl<'p, S> IntoSignal for Chain<'p, S>
 where
     S: IntoSignal,
 {
@@ -42,37 +43,82 @@ where
     }
 }
 
-#[doc(hidden)]
-pub struct ChainConstructors;
+/// Marker type for an empty chain that hasn't been given a signal yet
+pub struct EmptyChain;
 
-impl Chain<ChainConstructors> {
-    /// Start a chain.
-    ///
-    /// `initial` can be one of a few things.  The two most common are another chain or a constant.
-    pub fn new<S: IntoSignal>(initial: S) -> Chain<S> {
-        Chain { inner: initial }
+impl<'p> Chain<'p, EmptyChain> {
+    /// Create a new empty chain
+    pub(crate) fn new(program: &'p crate::program::Program) -> Self {
+        Chain {
+            inner: EmptyChain,
+            program,
+        }
+    }
+
+    /// Create a chain with a signal (internal use)
+    pub(crate) fn with<S: IntoSignal>(
+        signal: S,
+        program: &'p crate::program::Program,
+    ) -> Chain<'p, S> {
+        Chain {
+            inner: signal,
+            program,
+        }
+    }
+    /// Start with a constant or another signal
+    pub fn start_as<S: IntoSignal>(self, initial: S) -> Chain<'p, S> {
+        Chain {
+            inner: initial,
+            program: self.program,
+        }
+    }
+
+    /// Start with a constant value
+    pub fn start_as_constant<T>(self, value: T) -> Chain<'p, T>
+    where
+        T: IntoSignal,
+    {
+        Chain {
+            inner: value,
+            program: self.program,
+        }
     }
 
     /// Start a chain which wants an input of type `I`, which will be available as the output.
     ///
     /// This is used e.g. to set up recursion, as such chains can be tacked onto the end of other chains, should the output and input types match up.
     pub fn taking_input<I: 'static>(
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = I, Output = I>>> {
+        self,
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = I, Output = I>>> {
         Chain {
             inner: sigs::StartFromInputSignalConfig::new(),
+            program: self.program,
         }
     }
 
     /// Start a chain which reads from a slot.
     pub fn read_slot<T>(
+        self,
         slot: &sigs::Slot<T>,
         initial_value: T,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = (), Output = T>>>
     where
         T: Clone + Send + Sync + 'static,
     {
+        // Track slot usage
+        self.program
+            .state
+            .write()
+            .unwrap()
+            .resources
+            .lock()
+            .unwrap()
+            .slots
+            .insert(slot.slot_id);
+
         Chain {
             inner: slot.read_signal(initial_value),
+            program: self.program,
         }
     }
 
@@ -80,19 +126,93 @@ impl Chain<ChainConstructors> {
     ///
     /// Returns `(T, bool)`.
     pub fn read_slot_and_changed<T>(
+        self,
         slot: &sigs::Slot<T>,
         initial_value: T,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = (T, bool)>>>
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = (), Output = (T, bool)>>>
     where
         T: Send + Sync + Clone + 'static,
     {
+        // Track slot usage
+        self.program
+            .state
+            .write()
+            .unwrap()
+            .resources
+            .lock()
+            .unwrap()
+            .slots
+            .insert(slot.slot_id);
+
         Chain {
             inner: slot.read_signal_and_change_flag(initial_value),
+            program: self.program,
         }
     }
 }
 
-impl<S: IntoSignal> Chain<S> {
+impl<'p, S> Chain<'p, S> {
+    /// Mount this chain into the program as a fragment
+    pub fn mount(self) -> crate::error::Result<()>
+    where
+        S: IntoSignal,
+        S::Signal: Signal<Input = (), Output = ()> + 'static,
+    {
+        self.program.add_fragment(self)
+    }
+}
+
+impl<'p, S: IntoSignal> Chain<'p, S> {
+    /// Read from a delay line using this chain's output as the delay amount
+    pub fn read_delay_line<T>(
+        self,
+        delay_line: &crate::signals::DelayLineHandle<T>,
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = T>>>
+    where
+        S::Signal: Signal<Output = usize>,
+        T: Clone + Send + 'static,
+    {
+        Chain {
+            inner: crate::signals::DelayLineReadSignalConfig {
+                line: delay_line.inner.clone(),
+                parent: self.inner,
+            },
+            program: self.program,
+        }
+    }
+
+    /// Write to a delay line using this chain's output
+    pub fn write_delay_line<T>(
+        self,
+        delay_line: &crate::signals::DelayLineHandle<T>,
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
+    where
+        S::Signal: Signal<Output = T>,
+        T: Clone + Send + 'static,
+    {
+        self.write_delay_line_with_merger(delay_line, |old: &mut T, new: &T| *old = new.clone())
+    }
+
+    /// Write to a delay line with a custom merger function
+    pub fn write_delay_line_with_merger<T, M>(
+        self,
+        delay_line: &crate::signals::DelayLineHandle<T>,
+        merger: M,
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
+    where
+        S::Signal: Signal<Output = T>,
+        T: Clone + Send + 'static,
+        M: FnMut(&mut T, &T) + Send + Sync + 'static,
+    {
+        Chain {
+            inner: crate::signals::DelayLineWriteSignalConfig {
+                line: delay_line.inner.clone(),
+                parent: self.inner,
+                merger,
+            },
+            program: self.program,
+        }
+    }
     /// Send this chain to the audio device.
     ///
     /// You must specify the format.  Synthizer cannot autodetect this because of the flexibility it allows (e.g. what
@@ -102,12 +222,13 @@ impl<S: IntoSignal> Chain<S> {
     pub fn to_audio_device(
         self,
         format: ChannelFormat,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
     where
         IntoSignalOutput<S>: AudioFrame<f64> + Clone,
     {
         Chain {
             inner: sigs::AudioOutputSignalConfig::new(self.inner, format),
+            program: self.program,
         }
     }
 
@@ -124,6 +245,7 @@ impl<S: IntoSignal> Chain<S> {
     pub fn discard_and_default<NewInputType>(
         self,
     ) -> Chain<
+        'p,
         impl IntoSignal<
             Signal = impl Signal<
                 Input = NewInputType,
@@ -139,6 +261,7 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::ConsumeInputSignalConfig::<_, NewInputType>::new(self.inner),
+            program: self.program,
         }
     }
 
@@ -147,20 +270,24 @@ impl<S: IntoSignal> Chain<S> {
     /// This is mostly used to convert a frequency (HZ) to an increment per sample, e.g. when building sine waves.
     pub fn divide_by_sr(
         self,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = f64>>>
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = f64>>>
     where
         S::Signal: Signal<Output = f64>,
         IntoSignalInput<S>: Default + Clone,
         IntoSignalOutput<S>: Clone,
     {
         let newsig = sigs::MapSignalConfig::new(self.inner, |x| x / (config::SR as f64));
-        Chain { inner: newsig }
+        Chain {
+            inner: newsig,
+            program: self.program,
+        }
     }
 
     /// Convert the output of this chain into a different type.
     pub fn output_into<T>(
         self,
     ) -> Chain<
+        'p,
         impl IntoSignal<
             Signal = impl Signal<Input = IntoSignalInput<S>, Output = T, State = IntoSignalState<S>>,
         >,
@@ -172,6 +299,7 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::ConvertOutputConfig::<S, T>::new(self.inner),
+            program: self.program,
         }
     }
 
@@ -180,7 +308,11 @@ impl<S: IntoSignal> Chain<S> {
     /// The input will be taken from whatever signal is here already, and the period is specified here as a constant.
     /// For example, if using a period of `1.0` and a signal `0.1`, you get `0.0 0.1 0.2 ... 0.9 0.0 0.0` (the final
     /// value is not included, but in practice you may get one arbitrarily close to that).
-    pub fn periodic_sum(self, period: f64, initial_value: f64) -> Chain<sigs::PeriodicF64Config<S>>
+    pub fn periodic_sum(
+        self,
+        period: f64,
+        initial_value: f64,
+    ) -> Chain<'p, sigs::PeriodicF64Config<S>>
     where
         S: IntoSignal,
         S::Signal: Signal<Output = f64>,
@@ -191,11 +323,12 @@ impl<S: IntoSignal> Chain<S> {
                 period,
                 initial_value,
             },
+            program: self.program,
         }
     }
 
     /// Take the sine of this chain.
-    pub fn sin(self) -> Chain<sigs::SinSignalConfig<S>>
+    pub fn sin(self) -> Chain<'p, sigs::SinSignalConfig<S>>
     where
         S: IntoSignal,
         S::Signal: Signal<Output = f64>,
@@ -204,15 +337,16 @@ impl<S: IntoSignal> Chain<S> {
             inner: sigs::SinSignalConfig {
                 wrapped: self.inner,
             },
+            program: self.program,
         }
     }
 
     /// Inline version of `*`.
     ///
     /// This lets you continue the `.` syntax without having to use more variables.
-    pub fn inline_mul<T>(self, other: Chain<T>) -> <Self as std::ops::Mul<Chain<T>>>::Output
+    pub fn inline_mul<T>(self, other: Chain<'p, T>) -> <Self as std::ops::Mul<Chain<'p, T>>>::Output
     where
-        Self: std::ops::Mul<Chain<T>>,
+        Self: std::ops::Mul<Chain<'p, T>>,
         IntoSignalInput<S>: Clone,
         T: IntoSignal,
     {
@@ -223,7 +357,7 @@ impl<S: IntoSignal> Chain<S> {
     ///
     /// This simplifies the type, at a performance cost.  If you do not put this boxed signal in a recursive path, the
     /// performance cost is minimal.
-    pub fn boxed<I, O>(self) -> Chain<sigs::BoxedSignalConfig<I, O>>
+    pub fn boxed<I, O>(self) -> Chain<'p, sigs::BoxedSignalConfig<I, O>>
     where
         I: Copy + Send + Sync + 'static + Default,
         O: Copy + Send + Sync + 'static + Default,
@@ -232,13 +366,15 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::BoxedSignalConfig::new(self.inner),
+            program: self.program,
         }
     }
 
     pub fn join<S2>(
         self,
-        other: Chain<S2>,
+        other: Chain<'p, S2>,
     ) -> Chain<
+        'p,
         impl IntoSignal<
             Signal = impl Signal<
                 Input = (IntoSignalInput<S>, IntoSignalInput<S2>),
@@ -253,15 +389,20 @@ impl<S: IntoSignal> Chain<S> {
         IntoSignalInput<S>: Clone,
         IntoSignalInput<S2>: Clone,
     {
+        assert!(
+            std::ptr::eq(self.program, other.program),
+            "Cannot join chains from different programs"
+        );
         Chain {
             inner: sigs::JoinSignalConfig::new(self.inner, other.inner),
+            program: self.program,
         }
     }
 
     pub fn map<F, I, O>(
         self,
         func: F,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = O>>>
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = O>>>
     where
         F: FnMut(I) -> O + Send + Sync + 'static,
         S::Signal: Signal<Output = I>,
@@ -270,13 +411,14 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::MapSignalConfig::new(self.inner, func),
+            program: self.program,
         }
     }
 
     pub fn map_input<F, I, IResult>(
         self,
         func: F,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = I, Output = IntoSignalOutput<S>>>>
+    ) -> Chain<'p, impl IntoSignal<Signal = impl Signal<Input = I, Output = IntoSignalOutput<S>>>>
     where
         F: FnMut(I) -> IResult + Send + Sync + 'static,
         S::Signal: Signal<Input = IResult>,
@@ -285,6 +427,7 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::MapInputSignalConfig::new(self.inner, func),
+            program: self.program,
         }
     }
 
@@ -299,6 +442,7 @@ impl<S: IntoSignal> Chain<S> {
         self,
         closure: F,
     ) -> Chain<
+        'p,
         impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = IntoSignalOutput<S>>>,
     >
     where
@@ -308,6 +452,7 @@ impl<S: IntoSignal> Chain<S> {
     {
         Chain {
             inner: sigs::MapFrameSignalConfig::new(self.inner, closure),
+            program: self.program,
         }
     }
     /// Bypass another chain.
@@ -320,8 +465,9 @@ impl<S: IntoSignal> Chain<S> {
     /// and then from a delay line.
     pub fn bypass<C>(
         self,
-        other: Chain<C>,
+        other: Chain<'p, C>,
     ) -> Chain<
+        'p,
         impl IntoSignal<
             Signal = impl Signal<
                 Input = IntoSignalInput<S>,
@@ -335,8 +481,13 @@ impl<S: IntoSignal> Chain<S> {
         IntoSignalOutput<C>: Clone,
         C::Signal: Signal<Input = IntoSignalOutput<S>>,
     {
+        assert!(
+            std::ptr::eq(self.program, other.program),
+            "Cannot bypass chains from different programs"
+        );
         Chain {
             inner: sigs::BypassSignalConfig::new(self.inner, other.inner),
+            program: self.program,
         }
     }
 
@@ -346,14 +497,10 @@ impl<S: IntoSignal> Chain<S> {
     /// The resulting chain has the same input as this chain and the output of the other chain.
     pub fn and_then<C>(
         self,
-        other: Chain<C>,
+        other: Chain<'p, C>,
     ) -> Chain<
-        impl IntoSignal<
-            Signal = impl Signal<
-                Input = IntoSignalInput<S>,
-                Output = IntoSignalOutput<C>,
-            >,
-        >,
+        'p,
+        impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = IntoSignalOutput<C>>>,
     >
     where
         S: 'static,
@@ -361,11 +508,16 @@ impl<S: IntoSignal> Chain<S> {
         IntoSignalOutput<S>: Clone,
         C::Signal: Signal<Input = IntoSignalOutput<S>>,
     {
+        assert!(
+            std::ptr::eq(self.program, other.program),
+            "Cannot and_then chains from different programs"
+        );
         Chain {
             inner: sigs::AndThenConfig {
                 left: self.inner,
                 right: other.inner,
             },
+            program: self.program,
         }
     }
 }

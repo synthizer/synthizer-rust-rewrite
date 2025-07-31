@@ -49,7 +49,9 @@ macro_rules! wavetable_signal {
                 let output = state.wavetable.$method::<F, LOOPING>(state.position);
                 state.position += state.increment;
                 if LOOPING {
-                    state.position = state.position.rem_euclid(state.wavetable.frame_count() as f64);
+                    state.position = state
+                        .position
+                        .rem_euclid(state.wavetable.frame_count() as f64);
                 }
                 output
             }

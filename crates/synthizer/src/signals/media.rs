@@ -3,7 +3,6 @@ use std::time::Duration;
 use crate::config::{BLOCK_SIZE, MAX_CHANNELS};
 use crate::core_traits::*;
 use crate::sample_sources::Descriptor;
-use crate::Chain;
 use crate::ChannelFormat;
 
 /// A reference to some media (AKA files, etc) in a mount.
@@ -44,28 +43,21 @@ impl Media {
         Duration::from_secs_f64(self.descriptor.duration as f64 / crate::config::SR as f64)
     }
 
-    /// Convert this media to a signal.
-    ///
-    /// This infallible method may only be called once. Duplicate calls panic.
-    ///
-    /// You must pick the output format e.g. stereo, mono, etc. You must also pick the maximum number of channels, which
-    /// tunes the size of the frames on the stack.  The resulting signal outputs an array `[f64; MAX_CHANS]`, where any
-    /// extra channels are zeroed, and missing channels discarded
-    pub fn start_chain<const MAX_CHANS: usize>(
+    /// Get the media configuration for creating a chain.
+    /// This consumes the ring buffer, so can only be called once.
+    pub(crate) fn into_config<const MAX_CHANS: usize>(
         &mut self,
         wanted_format: ChannelFormat,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = (), Output = [f64; MAX_CHANS]>>> {
-        Chain {
-            inner: MediaSignalConfig::<MAX_CHANS> {
-                descriptor: self.descriptor.clone(),
-                wanted_format,
-                ring: self.ring.take().expect("Can only call once"),
-            },
+    ) -> MediaSignalConfig<MAX_CHANS> {
+        MediaSignalConfig::<MAX_CHANS> {
+            descriptor: self.descriptor.clone(),
+            wanted_format,
+            ring: self.ring.take().expect("Can only call once"),
         }
     }
 }
 
-struct MediaSignalState {
+pub(crate) struct MediaSignalState {
     ring: audio_synchronization::spsc_ring::RingReader<f32>,
 
     /// Filled at the beginning of each block. Then drained out on ticks.  `actual_chans * BLOCK_SIZE` in size.
@@ -79,13 +71,13 @@ struct MediaSignalState {
     wanted_format: ChannelFormat,
 }
 
-struct MediaSignalConfig<const MAX_CHANS: usize> {
+pub(crate) struct MediaSignalConfig<const MAX_CHANS: usize> {
     descriptor: Descriptor,
     wanted_format: ChannelFormat,
     ring: audio_synchronization::spsc_ring::RingReader<f32>,
 }
 
-struct MediaSignal<const CHANS: usize>(());
+pub(crate) struct MediaSignal<const CHANS: usize>(());
 
 unsafe impl<const MAX_CHANS: usize> Signal for MediaSignal<MAX_CHANS> {
     type Input = ();

@@ -9,16 +9,22 @@ fn main() -> Result<()> {
 
     let pi2 = 2.0f64 * std::f64::consts::PI;
 
-    let left = Chain::new(L_FREQ)
+    let program = Program::new();
+
+    let left = program
+        .new_chain()
+        .start_as(L_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0f64)
-        .inline_mul(Chain::new(pi2))
+        .inline_mul(program.new_chain().start_as(pi2))
         .sin()
         .boxed();
-    let right = Chain::new(R_FREQ)
+    let right = program
+        .new_chain()
+        .start_as(R_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
-        .inline_mul(Chain::new(pi2))
+        .inline_mul(program.new_chain().start_as(pi2))
         .sin()
         .boxed();
 
@@ -26,9 +32,11 @@ fn main() -> Result<()> {
 
     let to_dev = ready.to_audio_device(ChannelFormat::Stereo);
 
+    to_dev.mount()?;
+
     let _handle = {
         let mut batch = synth.batch();
-        batch.mount(to_dev)?
+        batch.mount(program)?
     };
 
     std::thread::sleep(std::time::Duration::from_secs(5));

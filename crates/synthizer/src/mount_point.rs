@@ -3,9 +3,7 @@
 use crate::config;
 use crate::context::*;
 use crate::core_traits::*;
-use crate::error::Result;
 use crate::unique_id::UniqueId;
-use crate::Chain;
 
 pub(crate) struct MountPoint<S: ExecutableMount>
 where
@@ -31,13 +29,6 @@ pub mod sealed {
             mount_id: &UniqueId,
             shared_ctx: &FixedSignalExecutionContext,
         );
-    }
-
-    pub trait Mountable {
-        fn into_mount(
-            self,
-            batch: &mut crate::synthesizer::Batch,
-        ) -> Result<Box<dyn ErasedMountPoint>>;
     }
 }
 
@@ -70,24 +61,5 @@ where
 impl<S: ExecutableMount> ErasedMountPoint for MountPoint<S> {
     fn run(&mut self, mount_id: &UniqueId, shared_ctx: &FixedSignalExecutionContext) {
         S::run(self, mount_id, shared_ctx);
-    }
-}
-
-impl<S: IntoSignal> Mountable for Chain<S>
-where
-    S::Signal: Signal<Input = (), Output = ()>,
-{
-    fn into_mount(
-        self,
-        _batch: &mut crate::synthesizer::Batch,
-    ) -> Result<Box<dyn ErasedMountPoint>> {
-        let ready = self.into_signal()?;
-
-        let mp = MountPoint {
-            handler: ready.signal,
-            state: ready.state,
-        };
-
-        Ok(Box::new(mp))
     }
 }

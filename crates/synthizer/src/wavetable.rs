@@ -1,5 +1,5 @@
 use std::io::{Read, Seek};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::channel_format::ChannelFormat;
 use crate::core_traits::AudioFrame;
@@ -84,25 +84,29 @@ where
 
     pub fn build_with_batch(
         self,
-        batch: &mut crate::synthesizer::Batch,
+        _batch: &mut crate::synthesizer::Batch,
     ) -> Result<WaveTableHandle> {
+        // Just delegate to build_handle since allocation is now lazy
+        self.build_handle()
+    }
+
+    /// Build a wavetable handle without immediately allocating on the audio thread
+    pub fn build_handle(self) -> Result<WaveTableHandle> {
         let wavetable = self.build()?;
         let wavetable_id = UniqueId::new();
         let mark_drop = MarkDropped::new();
 
         let wavetable_arc = Arc::new(wavetable);
-        let mut wavetable_opt = Some((wavetable_arc.clone(), mark_drop.0.clone()));
 
-        batch.push_command(move |state: &mut crate::synthesizer::AudioThreadState| {
-            if let Some((wavetable, pending_drop)) = wavetable_opt.take() {
-                state.wavetables.insert(wavetable_id, (wavetable, pending_drop));
-            }
+        let state = Arc::new(WaveTableHandleState {
+            container: Mutex::new(Some((wavetable_arc.clone(), mark_drop.0.clone()))),
         });
 
         Ok(WaveTableHandle {
             wavetable_id,
             wavetable: wavetable_arc,
             mark_drop: Arc::new(mark_drop),
+            state,
         })
     }
 }
@@ -477,11 +481,17 @@ mod tests {
     }
 }
 
+/// State for lazy wavetable allocation
+pub(crate) struct WaveTableHandleState {
+    pub(crate) container: Mutex<Option<(Arc<WaveTable>, Arc<std::sync::atomic::AtomicBool>)>>,
+}
+
 /// A handle to a wavetable that can be used to create signals that read from it
 pub struct WaveTableHandle {
     pub(crate) wavetable_id: UniqueId,
     pub(crate) wavetable: Arc<WaveTable>,
     pub(crate) mark_drop: Arc<MarkDropped>,
+    pub(crate) state: Arc<WaveTableHandleState>,
 }
 
 impl WaveTableHandle {

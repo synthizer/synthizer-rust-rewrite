@@ -20,11 +20,13 @@ fn main() -> Result<()> {
 
         (controller, media) = batch.make_media(file)?;
 
-        batch.mount(
-            media
-                .start_chain::<2>(ChannelFormat::Stereo)
-                .to_audio_device(ChannelFormat::Stereo),
-        )?
+        let program = Program::new();
+        program
+            .chain_media::<2>(&mut media, ChannelFormat::Stereo)
+            .to_audio_device(ChannelFormat::Stereo)
+            .mount()?;
+
+        batch.mount(program)?
     };
 
     println!(

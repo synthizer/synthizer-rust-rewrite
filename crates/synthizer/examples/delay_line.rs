@@ -1,3 +1,7 @@
+//! Example that demonstrates using a delay line to delay audio by 1 second.
+//!
+//! Usage: cargo run --example delay_line <audio_file>
+
 use std::time::Duration;
 
 use synthizer::*;
@@ -15,41 +19,41 @@ fn main() -> Result<()> {
 
     let (controller, mut media);
 
+    // Create a delay line that can hold 2 seconds of stereo audio
     let delay_line = DelayLineHandle::<[f64; 2]>::new_defaulting(
-        std::num::NonZeroUsize::new(synth.duration_to_samples(Duration::from_secs(5))).unwrap(),
+        std::num::NonZeroUsize::new(synth.duration_to_samples(Duration::from_secs(2))).unwrap(),
     );
 
-    let delconst = Chain::new(synth.duration_to_samples(Duration::from_secs(2)));
-    let delchain = Chain::taking_input::<[f64; 2]>();
-
-    let writer = delay_line.write(delchain).boxed();
-    let reader = delay_line.read(delconst).boxed();
-    const V: f64 = 0.1;
-    let delchain = writer
-        .join(reader)
-        .map(|x| x.1)
-        .boxed()
-        .map_input::<_, [f64; 2], _>(|x| (x, ()))
-        .map_frame(|_, s| V * *s);
-
     let _handle = {
+        // Calculate 1 second delay in samples
+        let delay_samples = synth.duration_to_samples(Duration::from_secs(1));
+
         let mut batch = synth.batch();
 
         (controller, media) = batch.make_media(file)?;
 
-        let full = media
-            .start_chain::<2>(ChannelFormat::Stereo)
-            .bypass(delchain)
-            .boxed()
-            .map(|(l, r)| [l[0] + r[0], l[1] + r[1]])
-            .to_audio_device(ChannelFormat::Stereo)
-            .discard_and_default();
+        let program = Program::new();
 
-        batch.mount(full)?
+        // Create a chain that writes media to the delay line
+        let writer = program
+            .chain_media::<2>(&mut media, ChannelFormat::Stereo)
+            .write_delay_line(&delay_line);
+        program.add_fragment(writer)?;
+
+        // Create a chain that reads from the delay line with 1 second delay
+        let reader = program
+            .new_chain()
+            .start_as(delay_samples)
+            .read_delay_line(&delay_line)
+            .to_audio_device(ChannelFormat::Stereo);
+        program.add_fragment(reader)?;
+
+        batch.mount(program)?
     };
 
     controller.play()?;
 
+    println!("Playing audio with 1 second delay for 30 seconds...");
     std::thread::sleep(Duration::from_secs(30));
     Ok(())
 }

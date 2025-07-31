@@ -84,7 +84,13 @@ pub(crate) struct AudioThreadState {
     pub(crate) buses: std::collections::HashMap<UniqueId, BusContainer>,
 
     /// Global wavetables map for audio thread processing
-    pub(crate) wavetables: std::collections::HashMap<UniqueId, (Arc<crate::wavetable::WaveTable>, Arc<std::sync::atomic::AtomicBool>)>,
+    pub(crate) wavetables: std::collections::HashMap<
+        UniqueId,
+        (
+            Arc<crate::wavetable::WaveTable>,
+            Arc<std::sync::atomic::AtomicBool>,
+        ),
+    >,
 
     /// Reusable vector for collecting programs to run each audio tick
     pub(crate) programs_to_run: Vec<(UniqueId, ProgramContainer)>,
@@ -123,7 +129,8 @@ impl Drop for Batch<'_> {
         let mut removed_programs: ArrayVec<ProgramContainer, 16> = ArrayVec::new();
         let mut removed_slots: ArrayVec<SlotContainer, 16> = ArrayVec::new();
         let mut removed_buses: ArrayVec<BusContainer, 16> = ArrayVec::new();
-        let mut removed_wavetables: ArrayVec<Arc<crate::wavetable::WaveTable>, 16> = ArrayVec::new();
+        let mut removed_wavetables: ArrayVec<Arc<crate::wavetable::WaveTable>, 16> =
+            ArrayVec::new();
 
         let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
             // Increment topology generation to trigger recompute
@@ -201,7 +208,9 @@ impl Drop for Batch<'_> {
                 state
                     .wavetables
                     .iter()
-                    .filter(|(_, (_, pending_drop))| pending_drop.load(std::sync::atomic::Ordering::Relaxed))
+                    .filter(|(_, (_, pending_drop))| {
+                        pending_drop.load(std::sync::atomic::Ordering::Relaxed)
+                    })
                     .map(|(id, _)| *id)
                     .take(16),
             );
@@ -354,21 +363,45 @@ impl Batch<'_> {
         self.commands.push(Box::new(f));
     }
 
-    pub fn mount<P>(&mut self, programmable: P) -> Result<Handle>
-    where
-        P: TryInto<Program>,
-        P::Error: Into<crate::error::Error>,
-    {
+    pub fn mount(&mut self, program: Program) -> Result<Handle> {
         let object_id = UniqueId::new();
-        let program = programmable.try_into().map_err(Into::into)?;
+
+        // Collect all resources that need to be allocated on the audio thread
+        let (bus_allocations, wavetable_allocations, input_buses, output_buses) = {
+            let state = program.state.read().unwrap();
+            let resources = state.resources.lock().unwrap();
+
+            // Collect bus allocations - take from the Mutex<Option<>> if still present
+            let mut bus_allocations = Vec::new();
+            for (bus_id, state) in &resources.bus_handles {
+                if let Some(container) = state.container.lock().unwrap().take() {
+                    bus_allocations.push((*bus_id, container));
+                }
+            }
+
+            // Collect wavetable allocations
+            let mut wavetable_allocations = Vec::new();
+            for (wavetable_id, state) in &resources.wavetable_handles {
+                if let Some(container) = state.container.lock().unwrap().take() {
+                    wavetable_allocations.push((*wavetable_id, container));
+                }
+            }
+
+            // Extract bus linkage information before dropping locks
+            let input_buses = state.input_buses.clone();
+            let output_buses = state.output_buses.clone();
+
+            (
+                bus_allocations,
+                wavetable_allocations,
+                input_buses,
+                output_buses,
+            )
+        };
 
         let mut bus_deps = Vec::with_capacity(1024);
 
         let pending_drop = MarkDropped::new();
-
-        // Extract bus linkage information before moving the program
-        let input_buses = program.input_buses.clone();
-        let output_buses = program.output_buses.clone();
 
         let inserting = ProgramContainer {
             program: Arc::new(AtomicRefCell::new(program)),
@@ -377,21 +410,41 @@ impl Batch<'_> {
 
         // Create command to insert program and update dependencies
         let mut inserting_opt = Some(inserting);
+        let mut bus_allocations_opt = Some(bus_allocations);
+        let mut wavetable_allocations_opt = Some(wavetable_allocations);
+
         self.push_command(move |state: &mut AudioThreadState| {
+            // First, allocate any buses that haven't been allocated yet
+            if let Some(bus_allocations) = bus_allocations_opt.take() {
+                for (bus_id, container) in bus_allocations {
+                    state.buses.insert(bus_id, container);
+                }
+            }
+
+            // Allocate wavetables
+            if let Some(wavetable_allocations) = wavetable_allocations_opt.take() {
+                for (wavetable_id, (wavetable, pending_drop)) in wavetable_allocations {
+                    state
+                        .wavetables
+                        .insert(wavetable_id, (wavetable, pending_drop));
+                }
+            }
+
             let inserting = inserting_opt.take().unwrap();
             state.programs.insert(object_id, inserting);
 
             // Update program dependencies based on bus linkages
 
             // For each output bus, find programs that read from it
-            for (bus_id, _) in &output_buses {
+            for bus_id in output_buses.keys() {
                 for (&other_id, other_container) in &state.programs {
                     if other_id == object_id {
                         continue;
                     }
                     let other_program = other_container.program.borrow();
+                    let other_state = other_program.state.read().unwrap();
                     // Check if other program has this bus as input
-                    if other_program.input_buses.iter().any(|(id, _)| id == bus_id) {
+                    if other_state.input_buses.contains_key(bus_id) {
                         bus_deps.push(other_id);
                     }
                 }
@@ -404,18 +457,15 @@ impl Batch<'_> {
             }
 
             // For each input bus, find programs that write to it and add ourselves as their dependency
-            for (bus_id, _) in &input_buses {
+            for bus_id in input_buses.keys() {
                 for (&other_id, other_container) in &state.programs {
                     if other_id == object_id {
                         continue;
                     }
                     let other_program = other_container.program.borrow();
+                    let other_state = other_program.state.read().unwrap();
                     // Check if other program has this bus as output
-                    if other_program
-                        .output_buses
-                        .iter()
-                        .any(|(id, _)| id == bus_id)
-                    {
+                    if other_state.output_buses.contains_key(bus_id) {
                         state
                             .program_dependencies
                             .entry(other_id)
@@ -532,27 +582,9 @@ impl Batch<'_> {
     pub fn create_bus<T: Default + Copy + Send + Sync + 'static>(
         &mut self,
     ) -> crate::bus::BusHandle<T> {
-        let bus_id = UniqueId::new();
-        let mark_drop = MarkDropped::new();
-
-        let container = BusContainer {
-            bus: Box::new(crate::bus::Bus::<T>::new_with_id(bus_id))
-                as Box<dyn crate::bus::GenericBus>,
-            pending_drop: mark_drop.0.clone(),
-        };
-        let mut container_opt = Some(container);
-
-        self.push_command(move |state: &mut AudioThreadState| {
-            if let Some(container) = container_opt.take() {
-                state.buses.insert(bus_id, container);
-            }
-        });
-
-        crate::bus::BusHandle {
-            bus_id,
-            mark_drop: Arc::new(mark_drop),
-            _phantom: PD,
-        }
+        // Create the handle with lazy allocation
+        // The bus will be allocated on the audio thread when a program that uses it is mounted
+        crate::bus::BusHandle::new()
     }
 
     pub fn duration_to_samples(&self, dur: Duration) -> usize {
@@ -692,7 +724,7 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
                     global_slots: &state.slots,
                 };
 
-                p.program.borrow_mut().execute_block(
+                p.program.borrow().execute_block(
                     &program_id,
                     &crate::context::FixedSignalExecutionContext {
                         time_in_blocks: state.time_in_blocks,

@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use crate::core_traits::*;
 use crate::data_structures::*;
-use crate::Chain;
 
 type DelayLineStatePtr<T> = Arc<ExclusiveThreadCell<RefCell<DelayLineState<T>>>>;
 
@@ -38,20 +37,20 @@ type DelayLineStatePtr<T> = Arc<ExclusiveThreadCell<RefCell<DelayLineState<T>>>>
 /// replace.  If performing recursion with frames specifically of f64 values, consider
 /// [DelayLineHandle::read_linear_interp2] to read the line with linear interpolation between the two nearest samples.
 pub struct DelayLineHandle<T> {
-    inner: DelayLineStatePtr<T>,
+    pub(crate) inner: DelayLineStatePtr<T>,
 }
 
-struct DelayLineState<T> {
+pub(crate) struct DelayLineState<T> {
     data: Vec<T>,
 }
 
 /// Signal to perform a read of a delay line, no interpolation.
-struct DelayLineReadSignal<T, S> {
+pub(crate) struct DelayLineReadSignal<T, S> {
     _position_sig: S,
     _phantom: PD<T>,
 }
 
-struct DelayLineSignalState<T, ParState, MergeClosure> {
+pub(crate) struct DelayLineSignalState<T, ParState, MergeClosure> {
     line: DelayLineStatePtr<T>,
     par_sig_state: ParState,
     merger: MergeClosure,
@@ -96,7 +95,7 @@ where
     }
 }
 
-struct DelayLineWriteSignal<T, S, M> {
+pub(crate) struct DelayLineWriteSignal<T, S, M> {
     _parent_signal: S,
     _phantom: PD<(T, M)>,
 }
@@ -182,9 +181,9 @@ where
     }
 }
 
-struct DelayLineReadSignalConfig<T, S> {
-    parent: S,
-    line: DelayLineStatePtr<T>,
+pub(crate) struct DelayLineReadSignalConfig<T, S> {
+    pub(crate) parent: S,
+    pub(crate) line: DelayLineStatePtr<T>,
 }
 
 impl<T, S> IntoSignal for DelayLineReadSignalConfig<T, S>
@@ -212,10 +211,10 @@ where
     }
 }
 
-struct DelayLineWriteSignalConfig<T, S, M> {
-    parent: S,
-    line: DelayLineStatePtr<T>,
-    merger: M,
+pub(crate) struct DelayLineWriteSignalConfig<T, S, M> {
+    pub(crate) parent: S,
+    pub(crate) line: DelayLineStatePtr<T>,
+    pub(crate) merger: M,
 }
 
 impl<T, S, M> IntoSignal for DelayLineWriteSignalConfig<T, S, M>
@@ -301,59 +300,5 @@ impl<T> DelayLineHandle<T> {
         T: Clone,
     {
         Self::new(length, || value.clone())
-    }
-
-    /// Given a chain which outputs `usize`, make a chain which reads the underlying delay line at that delay.
-    pub fn read<S>(
-        &self,
-        parent: Chain<S>,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = T>>>
-    where
-        S: IntoSignal,
-        S::Signal: Signal<Output = usize>,
-        T: Clone + Send + 'static,
-    {
-        Chain {
-            inner: DelayLineReadSignalConfig {
-                line: self.inner.clone(),
-                parent: parent.inner,
-            },
-        }
-    }
-
-    /// Given a signal outputting `T`, make a chain which puts those values into the delay line by calling `merger` to
-    /// merge new values in.
-    ///
-    /// Outputs `()`.
-    pub fn write_with_merger<S, M>(
-        &self,
-        parent: S,
-        merger: M,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
-    where
-        S: IntoSignal,
-        S::Signal: Signal<Output = T>,
-        M: FnMut(&mut T, &T) + Send + Sync + 'static,
-        T: Send + 'static,
-    {
-        Chain {
-            inner: DelayLineWriteSignalConfig {
-                line: self.inner.clone(),
-                parent,
-                merger,
-            },
-        }
-    }
-
-    pub fn write<S>(
-        &self,
-        parent: S,
-    ) -> Chain<impl IntoSignal<Signal = impl Signal<Input = IntoSignalInput<S>, Output = ()>>>
-    where
-        S: IntoSignal,
-        S::Signal: Signal<Output = T>,
-        T: Clone + Send + 'static,
-    {
-        self.write_with_merger(parent, |a, b| *a = b.clone())
     }
 }

@@ -21,32 +21,42 @@ fn main() -> Result<()> {
         freq3 = b.allocate_slot::<f64>(G_FREQ);
     }
 
-    let note1 = Chain::read_slot(&freq1, C_FREQ)
+    let program = Program::new();
+
+    let note1 = program
+        .new_chain()
+        .read_slot(&freq1, C_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0f64)
-        .inline_mul(Chain::new(pi2))
+        .inline_mul(program.new_chain().start_as(pi2))
         .sin()
         .boxed();
-    let note2 = Chain::read_slot(&freq2, E_FREQ)
+    let note2 = program
+        .new_chain()
+        .read_slot(&freq2, E_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
-        .inline_mul(Chain::new(pi2))
+        .inline_mul(program.new_chain().start_as(pi2))
         .sin()
         .boxed();
-    let note3 = Chain::read_slot(&freq3, G_FREQ)
+    let note3 = program
+        .new_chain()
+        .read_slot(&freq3, G_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
-        .inline_mul(Chain::new(pi2))
+        .inline_mul(program.new_chain().start_as(pi2))
         .sin()
         .boxed();
 
     let added = note1 + note2 + note3;
-    let ready = added * Chain::new(0.1f64);
+    let ready = added * program.new_chain().start_as(0.1f64);
     let to_dev = ready.to_audio_device(ChannelFormat::Mono);
+
+    to_dev.mount()?;
 
     let handle = {
         let mut batch = synth.batch();
-        batch.mount(to_dev)?
+        batch.mount(program)?
     };
 
     std::thread::sleep(std::time::Duration::from_secs(1));
