@@ -70,8 +70,8 @@ macro_rules! impl_mathop {
 
         impl<I1, I2, S1, S2> IntoSignal for $signal_config<S1, S2>
         where
-            S1: IntoSignal + Send + Sync,
-            S2: IntoSignal + Send + Sync,
+            S1: IntoSignal + Send,
+            S2: IntoSignal + Send,
             S1::Signal: Signal<Input = I1, Output = f64>,
             S2::Signal: Signal<Input = I2, Output = f64>,
             I1: Clone + 'static,

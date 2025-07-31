@@ -17,16 +17,14 @@ fn main() -> Result<()> {
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0f64)
         .inline_mul(program.new_chain().start_as(pi2))
-        .sin()
-        .boxed();
+        .sin();
     let right = program
         .new_chain()
         .start_as(R_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
         .inline_mul(program.new_chain().start_as(pi2))
-        .sin()
-        .boxed();
+        .sin();
 
     let ready = left.join(right).discard_and_default::<()>();
 

@@ -29,24 +29,21 @@ fn main() -> Result<()> {
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0f64)
         .inline_mul(program.new_chain().start_as(pi2))
-        .sin()
-        .boxed();
+        .sin();
     let note2 = program
         .new_chain()
         .read_slot(&freq2, E_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
         .inline_mul(program.new_chain().start_as(pi2))
-        .sin()
-        .boxed();
+        .sin();
     let note3 = program
         .new_chain()
         .read_slot(&freq3, G_FREQ)
         .divide_by_sr()
         .periodic_sum(1.0f64, 0.0)
         .inline_mul(program.new_chain().start_as(pi2))
-        .sin()
-        .boxed();
+        .sin();
 
     let added = note1 + note2 + note3;
     let ready = added * program.new_chain().start_as(0.1f64);

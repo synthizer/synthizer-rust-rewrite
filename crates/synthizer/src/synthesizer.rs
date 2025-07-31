@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arrayvec::ArrayVec;
-use atomic_refcell::AtomicRefCell;
 
 use crate::config;
 use crate::core_traits::*;
@@ -41,12 +40,11 @@ pub struct Synthesizer {
     worker_pool: crate::worker_pool::WorkerPoolHandle,
 }
 
-#[derive(Clone)]
 pub(crate) struct ProgramContainer {
     pub(crate) pending_drop: Arc<std::sync::atomic::AtomicBool>,
 
-    /// Should only be accessed from the audio thread.  Cloning is fine.
-    pub(crate) program: Arc<AtomicRefCell<Program>>,
+    /// Should only be accessed from the audio thread.
+    pub(crate) program: Box<Program>,
 }
 
 /// Container for slot value and its drop marker
@@ -404,7 +402,7 @@ impl Batch<'_> {
         let pending_drop = MarkDropped::new();
 
         let inserting = ProgramContainer {
-            program: Arc::new(AtomicRefCell::new(program)),
+            program: Box::new(program),
             pending_drop: pending_drop.0.clone(),
         };
 
@@ -441,7 +439,7 @@ impl Batch<'_> {
                     if other_id == object_id {
                         continue;
                     }
-                    let other_program = other_container.program.borrow();
+                    let other_program = &other_container.program;
                     let other_state = other_program.state.read().unwrap();
                     // Check if other program has this bus as input
                     if other_state.input_buses.contains_key(bus_id) {
@@ -462,7 +460,7 @@ impl Batch<'_> {
                     if other_id == object_id {
                         continue;
                     }
-                    let other_program = other_container.program.borrow();
+                    let other_program = &other_container.program;
                     let other_state = other_program.state.read().unwrap();
                     // Check if other program has this bus as output
                     if other_state.output_buses.contains_key(bus_id) {
@@ -719,12 +717,12 @@ fn at_iter_inner(state: &mut AudioThreadState, mut dest: &mut [f32]) {
                     continue;
                 }
 
-                let p = p.clone(); // Clone the container to avoid borrow issues
+                // p is already a reference, no need to clone
                 let slot_ctx = SlotUpdateContext {
                     global_slots: &state.slots,
                 };
 
-                p.program.borrow().execute_block(
+                p.program.execute_block(
                     &program_id,
                     &crate::context::FixedSignalExecutionContext {
                         time_in_blocks: state.time_in_blocks,

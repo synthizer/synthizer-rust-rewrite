@@ -353,23 +353,6 @@ impl<'p, S: IntoSignal> Chain<'p, S> {
         self * other
     }
 
-    /// Box this signal.
-    ///
-    /// This simplifies the type, at a performance cost.  If you do not put this boxed signal in a recursive path, the
-    /// performance cost is minimal.
-    pub fn boxed<I, O>(self) -> Chain<'p, sigs::BoxedSignalConfig<I, O>>
-    where
-        I: Copy + Send + Sync + 'static + Default,
-        O: Copy + Send + Sync + 'static + Default,
-        S: Send + Sync + 'static,
-        S::Signal: Signal<Input = I, Output = O>,
-    {
-        Chain {
-            inner: sigs::BoxedSignalConfig::new(self.inner),
-            program: self.program,
-        }
-    }
-
     pub fn join<S2>(
         self,
         other: Chain<'p, S2>,

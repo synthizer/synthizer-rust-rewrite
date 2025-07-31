@@ -1,11 +1,9 @@
 mod and_then;
 mod audio_io;
-mod boxed;
 mod bypass;
 mod consume_input;
 mod conversion;
 mod delay_line;
-mod frame_batcher;
 mod join;
 mod map;
 mod map_frame;
@@ -20,12 +18,10 @@ mod wavetable;
 
 pub use and_then::*;
 pub use audio_io::*;
-pub use boxed::*;
 pub use bypass::*;
 pub(crate) use consume_input::*;
 pub use conversion::*;
 pub use delay_line::*;
-pub(crate) use frame_batcher::*;
 pub use join::*;
 pub use map::*;
 pub use map_frame::*;
