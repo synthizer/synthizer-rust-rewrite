@@ -147,7 +147,7 @@ impl Program {
     }
 
     /// Track that this program uses a slot
-    pub fn uses_slot<T>(&self, slot: &crate::signals::Slot<T>) {
+    pub(crate) fn uses_slot<T>(&self, slot: &crate::signals::Slot<T>) {
         self.state
             .borrow_mut()
             .resources
@@ -158,7 +158,7 @@ impl Program {
     }
 
     /// Track that this program uses a wavetable
-    pub fn uses_wavetable(&self, wavetable: &crate::wavetable::WaveTableHandle) {
+    pub(crate) fn uses_wavetable(&self, wavetable: &crate::wavetable::WaveTableHandle) {
         self.state
             .borrow_mut()
             .resources
