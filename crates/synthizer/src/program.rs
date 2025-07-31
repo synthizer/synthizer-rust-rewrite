@@ -253,7 +253,7 @@ impl Program {
 /// Trait for program fragments that can be executed as part of a program.
 ///
 /// This is the type-erased interface that allows different types of fragments to be stored and executed together.
-pub(crate) trait ProgramFragment: Send + Sync + 'static {
+pub(crate) trait ProgramFragment: Send + 'static {
     /// Execute one block of audio processing for this fragment.
     fn execute_block(&mut self, program_id: &UniqueId, shared_ctx: &FixedSignalExecutionContext);
 }

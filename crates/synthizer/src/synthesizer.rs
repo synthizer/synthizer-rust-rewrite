@@ -21,19 +21,20 @@ use crate::unique_id::UniqueId;
 /// Replaces used commands with no-op closures to maintain allocation
 struct CommandRecycler;
 
-impl thingbuf::recycling::Recycle<Box<dyn Command>> for CommandRecycler {
-    fn new_element(&self) -> Box<dyn Command> {
+impl thingbuf::recycling::Recycle<sync_wrapper::SyncWrapper<Box<dyn Command>>> for CommandRecycler {
+    fn new_element(&self) -> sync_wrapper::SyncWrapper<Box<dyn Command>> {
         // Create a no-op command
-        Box::new(|_: &mut AudioThreadState| {})
+        sync_wrapper::SyncWrapper::new(Box::new(|_: &mut AudioThreadState| {}))
     }
 
-    fn recycle(&self, _element: &mut Box<dyn Command>) {
+    fn recycle(&self, _element: &mut sync_wrapper::SyncWrapper<Box<dyn Command>>) {
         // Leave it alone. When something is next enqueued here, it will drop the old data on a non-audio thread.
     }
 }
 
 pub struct Synthesizer {
-    command_ring: Arc<thingbuf::ThingBuf<Box<dyn Command>, CommandRecycler>>,
+    command_ring:
+        Arc<thingbuf::ThingBuf<sync_wrapper::SyncWrapper<Box<dyn Command>>, CommandRecycler>>,
 
     device: Option<AudioDevice>,
 
@@ -130,7 +131,7 @@ impl Drop for Batch<'_> {
         let mut removed_wavetables: ArrayVec<Arc<crate::wavetable::WaveTable>, 16> =
             ArrayVec::new();
 
-        let mut cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
+        let cmd: Box<dyn Command> = Box::new(move |state: &mut AudioThreadState| {
             // Increment topology generation to trigger recompute
             state.topology_generation += 1;
             // First execute all user commands
@@ -223,6 +224,8 @@ impl Drop for Batch<'_> {
                 removed_wavetables.push(wavetable);
             }
         });
+
+        let mut cmd = sync_wrapper::SyncWrapper::new(cmd);
 
         loop {
             match self.synthesizer.command_ring.push(cmd) {
@@ -356,7 +359,7 @@ impl Batch<'_> {
     /// Helper to push a command to the batch
     pub(crate) fn push_command<F>(&mut self, f: F)
     where
-        F: FnMut(&mut AudioThreadState) + Send + Sync + 'static,
+        F: FnMut(&mut AudioThreadState) + Send + 'static,
     {
         self.commands.push(Box::new(f));
     }
@@ -592,14 +595,16 @@ impl Batch<'_> {
 
 /// Run one iteration of the audio thread.
 fn at_iter(
-    command_ring: &Arc<thingbuf::ThingBuf<Box<dyn Command>, CommandRecycler>>,
+    command_ring: &Arc<
+        thingbuf::ThingBuf<sync_wrapper::SyncWrapper<Box<dyn Command>>, CommandRecycler>,
+    >,
     state: &mut AudioThreadState,
     dest: &mut [f32],
 ) {
     // First, execute any pending commands
     // pop_ref is lock-free and will not block the audio thread
     while let Some(mut cmd_ref) = command_ring.pop_ref() {
-        cmd_ref.execute(state);
+        cmd_ref.get_mut().execute(state);
         // When cmd_ref is dropped, the recycler will replace it with a no-op
         // This happens in the ring buffer slot, so deallocation is deferred
     }

@@ -25,7 +25,6 @@ mod handle;
 mod is_audio_thread;
 mod loop_spec;
 mod mark_dropped;
-mod mount_point;
 mod option_recycler;
 mod program;
 mod resampling;

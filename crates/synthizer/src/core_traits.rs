@@ -17,10 +17,10 @@ pub(crate) mod sealed {
     /// This trait is unsafe because the library relies on it to uphold the contracts documented with the method.  This
     /// lets us get performance out, especially in debug builds where things like immediate unwrapping of options will
     /// not be optimized away.
-    pub unsafe trait Signal: Sized + Send + Sync + 'static {
+    pub unsafe trait Signal: Sized + Send + 'static {
         type Input: Sized;
         type Output: Sized;
-        type State: Sized + Send + Sync + 'static;
+        type State: Sized + Send + 'static;
 
         /// Process a single frame of audio.
         ///
@@ -109,14 +109,14 @@ pub(crate) type SignalOutput<T> = <T as Signal>::Output;
 pub(crate) type SignalState<S> = <S as Signal>::State;
 
 /// Trait for commands that can be executed on the audio thread.
-pub trait Command: Send + Sync + 'static {
+pub trait Command: Send + 'static {
     fn execute(&mut self, state: &mut AudioThreadState);
 }
 
 /// Blanket implementation for FnMut closures
 impl<F> Command for F
 where
-    F: FnMut(&mut AudioThreadState) + Send + Sync + 'static,
+    F: FnMut(&mut AudioThreadState) + Send + 'static,
 {
     fn execute(&mut self, state: &mut AudioThreadState) {
         self(state)
