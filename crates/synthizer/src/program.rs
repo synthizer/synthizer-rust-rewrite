@@ -5,8 +5,9 @@ use crate::core_traits::{IntoSignal, Signal, SignalState};
 use crate::error::Result;
 use crate::unique_id::UniqueId;
 use crate::Chain;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 /// Resources tracked by a program during chain construction
 #[derive(Default)]
@@ -34,8 +35,8 @@ pub struct Program {
     /// Unique ID for this program
     pub(crate) id: UniqueId,
 
-    /// Internal state wrapped in RwLock for interior mutability
-    pub(crate) state: RwLock<ProgramState>,
+    /// Internal state wrapped in RefCell for interior mutability
+    pub(crate) state: RefCell<ProgramState>,
 }
 
 impl Program {
@@ -43,7 +44,7 @@ impl Program {
     pub fn new() -> Self {
         Self {
             id: UniqueId::new(),
-            state: RwLock::new(ProgramState {
+            state: RefCell::new(ProgramState {
                 fragments: Vec::new(),
                 resources: Arc::new(Mutex::new(ProgramResources::default())),
                 input_buses: HashMap::new(),
@@ -75,11 +76,7 @@ impl Program {
             state: ready.state,
         };
 
-        self.state
-            .write()
-            .unwrap()
-            .fragments
-            .push(Box::new(fragment));
+        self.state.borrow_mut().fragments.push(Box::new(fragment));
         Ok(())
     }
 
@@ -89,7 +86,7 @@ impl Program {
         program_id: &UniqueId,
         shared_ctx: &FixedSignalExecutionContext,
     ) {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.borrow_mut();
         for fragment in &mut state.fragments {
             fragment.execute_block(program_id, shared_ctx);
         }
@@ -97,7 +94,7 @@ impl Program {
 
     /// Link an input bus to this program
     pub fn link_input_bus<'a, T>(&'a self, bus: &BusHandle<T>) -> BusLink<'a, T> {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.borrow_mut();
         state.input_buses.insert(bus.id(), Vec::new());
         state
             .resources
@@ -115,7 +112,7 @@ impl Program {
 
     /// Link an output bus to this program
     pub fn link_output_bus<'a, T>(&'a self, bus: &BusHandle<T>) -> BusLink<'a, T> {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.borrow_mut();
         state.output_buses.insert(bus.id(), Vec::new());
         state
             .resources
@@ -133,7 +130,7 @@ impl Program {
 
     /// Link an internal bus to this program
     pub fn link_internal_bus<'a, T>(&'a self, bus: &BusHandle<T>) -> BusLink<'a, T> {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.borrow_mut();
         state.internal_buses.push(bus.id());
         state
             .resources
@@ -152,8 +149,7 @@ impl Program {
     /// Track that this program uses a slot
     pub fn uses_slot<T>(&self, slot: &crate::signals::Slot<T>) {
         self.state
-            .write()
-            .unwrap()
+            .borrow_mut()
             .resources
             .lock()
             .unwrap()
@@ -164,8 +160,7 @@ impl Program {
     /// Track that this program uses a wavetable
     pub fn uses_wavetable(&self, wavetable: &crate::wavetable::WaveTableHandle) {
         self.state
-            .write()
-            .unwrap()
+            .borrow_mut()
             .resources
             .lock()
             .unwrap()
@@ -183,8 +178,7 @@ impl Program {
         F: crate::core_traits::AudioFrame<f64> + Send + Sync + 'static,
     {
         self.state
-            .write()
-            .unwrap()
+            .borrow_mut()
             .resources
             .lock()
             .unwrap()
@@ -206,8 +200,7 @@ impl Program {
         F: crate::core_traits::AudioFrame<f64> + Send + Sync + 'static,
     {
         self.state
-            .write()
-            .unwrap()
+            .borrow_mut()
             .resources
             .lock()
             .unwrap()
@@ -229,8 +222,7 @@ impl Program {
         F: crate::core_traits::AudioFrame<f64> + Send + Sync + 'static,
     {
         self.state
-            .write()
-            .unwrap()
+            .borrow_mut()
             .resources
             .lock()
             .unwrap()

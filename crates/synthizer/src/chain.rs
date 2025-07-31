@@ -108,8 +108,7 @@ impl<'p> Chain<'p, EmptyChain> {
         // Track slot usage
         self.program
             .state
-            .write()
-            .unwrap()
+            .borrow_mut()
             .resources
             .lock()
             .unwrap()
@@ -136,8 +135,7 @@ impl<'p> Chain<'p, EmptyChain> {
         // Track slot usage
         self.program
             .state
-            .write()
-            .unwrap()
+            .borrow_mut()
             .resources
             .lock()
             .unwrap()

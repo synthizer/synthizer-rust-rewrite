@@ -369,7 +369,7 @@ impl Batch<'_> {
 
         // Collect all resources that need to be allocated on the audio thread
         let (bus_allocations, wavetable_allocations, input_buses, output_buses) = {
-            let state = program.state.read().unwrap();
+            let state = program.state.borrow();
             let resources = state.resources.lock().unwrap();
 
             // Collect bus allocations - take from the Mutex<Option<>> if still present
@@ -443,7 +443,7 @@ impl Batch<'_> {
                         continue;
                     }
                     let other_program = &other_container.program;
-                    let other_state = other_program.state.read().unwrap();
+                    let other_state = other_program.state.borrow();
                     // Check if other program has this bus as input
                     if other_state.input_buses.contains_key(bus_id) {
                         bus_deps.push(other_id);
@@ -464,7 +464,7 @@ impl Batch<'_> {
                         continue;
                     }
                     let other_program = &other_container.program;
-                    let other_state = other_program.state.read().unwrap();
+                    let other_state = other_program.state.borrow();
                     // Check if other program has this bus as output
                     if other_state.output_buses.contains_key(bus_id) {
                         state
