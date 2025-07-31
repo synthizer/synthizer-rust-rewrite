@@ -1,7 +1,7 @@
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// A process-weide unique ID.
+/// A process-wide unique ID.
 ///
 /// This opaque ID is unique per process per version of Synthizer, e.g. it shouldn't be exposed.  The underlying implementation is very fast, and the ID contains a niche, meaning that `Option<UniqueId>` is never bigger than the struct.
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]

@@ -37,7 +37,7 @@ pub(crate) mod sealed {
 
         /// Called when a signal is starting a new block.
         ///
-        /// This will be called every [config::BLOCK_SIZE] ticks.  All signals wrapping other signals must call it on
+        /// This will be called every `config::BLOCK_SIZE` ticks.  All signals wrapping other signals must call it on
         /// their wrapped signals.  Only "leaf" signals may ignore it.  It is entirely correct to do nothing here.  This
         /// is used for many things, among them gathering references to buses or resetting block-based counters.
         ///
@@ -63,7 +63,7 @@ pub(crate) mod sealed {
         fn set(&mut self, index: usize, value: T);
 
         fn get_or_default(&self, index: usize) -> T {
-            if index > self.channel_count() {
+            if index >= self.channel_count() {
                 Default::default()
             } else {
                 *self.get(index)

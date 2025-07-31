@@ -55,7 +55,7 @@ impl<const N: usize> FastXoroshiro128PlusPlus<N> {
 
     /// Fill a slice of u64 with random values.
     ///
-    /// This is significantly faster than `next`, if the slice is large enough, and faster still if the slice is a multiple of `n`.
+    /// This is significantly faster than `gen_u64`, if the slice is large enough, and faster still if the slice is a multiple of `N`.
     #[inline]
     pub fn gen_slice(&mut self, destination: &mut [u64]) {
         let full_iters = destination.len() / N;
@@ -73,7 +73,7 @@ impl<const N: usize> FastXoroshiro128PlusPlus<N> {
 
     /// Return an array of random values.
     ///
-    /// This is significantly faster than `next` for larger arrays, and even faster still if the requested array size is a multiple of `N`.
+    /// This is significantly faster than `gen_u64` for larger arrays, and even faster still if the requested array size is a multiple of `N`.
     #[inline]
     pub fn gen_array<const O: usize>(&mut self) -> [u64; O] {
         let mut out = [0; O];

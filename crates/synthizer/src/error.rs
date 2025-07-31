@@ -83,7 +83,7 @@ impl Error {
             payload: ErrorPayload::Validation(message.into()),
         }
     }
-    /// Does this error represent an invalid [crate::LoopSpec]?
+    /// Does this error represent an invalid [crate::loop_spec::LoopSpec]?
     pub fn is_invalid_loop(&self) -> bool {
         self.payload.is_loop_spec()
     }

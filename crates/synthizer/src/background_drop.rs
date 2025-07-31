@@ -4,7 +4,7 @@
 //! operations.  It lags slightly, and will drop on the audio thread as a last resort should a (large) internal buffer
 //! fill up.
 //!
-//! Audio threads must mark themselves with [crate::audio_thread::mark_audio_thread]. If they don't, they will drop on
+//! Audio threads must mark themselves with [crate::is_audio_thread::mark_audio_thread]. If they don't, they will drop on
 //! the audio thread.  This is done so that the queues won't experience pressure from non-audio threads which wish to
 //! drop things that are sometimes on the audio thread.  As an example, it is important never to drop an Arc from the
 //! audio thread, but the Arc may have another reference on a non-audio thread.
@@ -108,18 +108,19 @@ impl<T: BackgroundDroppable> Drop for BackgroundDrop<T> {
             return;
         }
 
-        if !is_audio_thread() {
-            // It's not an audio thread. Nothing to do.
-            return;
+        if is_audio_thread() {
+            // We're on the audio thread, defer the drop to background thread.
+            let inner = unsafe { self.inner.take().unwrap_unchecked() };
+            inner.background_drop();
         }
 
-        let inner = unsafe { self.inner.take().unwrap_unchecked() };
-        inner.background_drop();
+        // Not on audio thread, drop normally.
+        // The inner value will be dropped when this function returns.
     }
 }
 
 /// called when a server facing the audio device is created, to make sure that the background thread is running.
-pub fn ensure_background_drop_thread_started() {
+pub(crate) fn ensure_background_drop_thread_started() {
     use std::sync::Once;
 
     static THREAD_STARTED: Once = Once::new();

@@ -7,7 +7,11 @@ use crate::core_traits::*;
 
 macro_rules! impl_mathop {
     ($trait: ident, $signal_name: ident, $signal_config:ident, $method: ident) => {
+        /// Implementation detail for chain math operations - not part of the public API
+        #[doc(hidden)]
         pub struct $signal_name<L, R>(L, R);
+        /// Implementation detail for chain math operations - not part of the public API
+        #[doc(hidden)]
         pub struct $signal_config<L, R>(L, R);
 
         impl<A, B> $trait<Chain<B>> for Chain<A>

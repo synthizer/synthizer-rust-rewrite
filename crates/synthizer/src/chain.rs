@@ -177,7 +177,7 @@ impl<S: IntoSignal> Chain<S> {
 
     /// Push a periodic summation onto this chain.
     ///
-    /// The input will be taken from whatever signal is here already, and the period is specified herer as a constant.
+    /// The input will be taken from whatever signal is here already, and the period is specified here as a constant.
     /// For example, if using a period of `1.0` and a signal `0.1`, you get `0.0 0.1 0.2 ... 0.9 0.0 0.0` (the final
     /// value is not included, but in practice you may get one arbitrarily close to that).
     pub fn periodic_sum(self, period: f64, initial_value: f64) -> Chain<sigs::PeriodicF64Config<S>>

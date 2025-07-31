@@ -69,6 +69,12 @@ macro_rules! variant {
                 }
 
                 /// Helper method to get a pointer to and the type id of the contained data.
+                ///
+                /// # Safety
+                /// The caller must ensure that:
+                /// - The returned pointer is only used while this enum variant is alive
+                /// - The pointer is cast back to the correct type before dereferencing
+                /// - No other mutable references to the contained data exist
                 unsafe fn contained_and_type_id(&mut self) -> (*mut i8, std::any::TypeId) {
                     match self {
                         $(
@@ -82,7 +88,7 @@ macro_rules! variant {
                 }
 
                 /// Call the provided closure on the payload, giving it ownership, if the payload is of the expected
-                /// type.  Return `Ok(r)` if te closure was called, else `Err(self)`.
+                /// type.  Return `Ok(r)` if the closure was called, else `Err(self)`.
                 ///
                 /// This is useful for, e.g., command handling: `cmd.take_call::<T>(|x| ...)?;` will bail when the
                 /// handler takes the value (alternatively, use `.or_else`).
@@ -91,6 +97,8 @@ macro_rules! variant {
                     let (ptr, tid) =  unsafe { self.contained_and_type_id() };
 
                     if tid == std::any::TypeId::of::<T>() {
+                        // SAFETY: We verified the type ID matches T, so the cast is valid.
+                        // We use ptr::read to move the value out, then forget self to prevent double drop.
                         unsafe{
                             let actual_ptr = ptr as *mut T;
                             let r = closure(actual_ptr.read());

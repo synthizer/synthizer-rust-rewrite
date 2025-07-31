@@ -9,6 +9,10 @@ pub(crate) fn increasing_usize<const N: usize>() -> [usize; N] {
     ret
 }
 
+/// Collect an iterator into an array of size N.
+///
+/// # Panics
+/// Panics if the iterator does not yield exactly N items.
 pub(crate) fn collect_iter<I, const N: usize>(iterator: I) -> [I::Item; N]
 where
     I: Iterator,
@@ -20,5 +24,7 @@ where
         .map(|(a, b)| a.write(b))
         .count();
     assert_eq!(did, N);
+    // SAFETY: We just verified that exactly N elements were written to the array,
+    // so all elements are initialized.
     unsafe { ret.map(|x| x.assume_init()) }
 }
